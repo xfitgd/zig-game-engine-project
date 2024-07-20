@@ -7,7 +7,7 @@ const __windows = @import("__windows.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
 const system = @import("system.zig");
-const geometry = @import("geometry.zig");
+const math = @import("math.zig");
 
 pub fn Key() type {
     if (root.platform == root.XfitPlatform.windows) {
@@ -494,8 +494,8 @@ pub inline fn key_down_or_up(_key: Key()) bool {
     }
     return __system.keys[@intFromEnum(_key)].load(std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn get_cursor_pos() geometry.point(i32) {
-    return geometry.point(i32).init(@atomicLoad(i32, &__system.cursor_pos.x, std.builtin.AtomicOrder.monotonic), @atomicLoad(i32, &__system.cursor_pos.y, std.builtin.AtomicOrder.monotonic));
+pub inline fn get_cursor_pos() math.point(i32) {
+    return math.point(i32).init(@atomicLoad(i32, &__system.cursor_pos.x, std.builtin.AtomicOrder.monotonic), @atomicLoad(i32, &__system.cursor_pos.y, std.builtin.AtomicOrder.monotonic));
 }
 pub inline fn get_mouse_scroll_dt() i32 {
     return __system.mouse_scroll_dt.load(std.builtin.AtomicOrder.monotonic);

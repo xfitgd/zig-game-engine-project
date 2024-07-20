@@ -7,7 +7,7 @@ const root = @import("root");
 const system = @import("system.zig");
 const __system = @import("__system.zig");
 const __windows = @import("__windows.zig");
-const geometry = @import("geometry.zig");
+const math = @import("math.zig");
 
 pub const window_show = enum(u32) {
     NORMAL = @bitCast(__windows.win32.SW_NORMAL),
@@ -67,7 +67,7 @@ pub fn can_resizewindow() bool {
 }
 //TODO pub fn set_window_size and pos ???
 //TODO pub fn get_window_title() set_window_title()
-pub fn set_window_mode(pos: geometry.point(i32), size: geometry.point(u32), state: system.window_state, _can_maximize: bool, _can_minimize: bool, _can_resizewindow: bool) void {
+pub fn set_window_mode(pos: math.point(i32), size: math.point(u32), state: system.window_state, _can_maximize: bool, _can_minimize: bool, _can_resizewindow: bool) void {
     if (root.platform == root.XfitPlatform.windows) {
         __windows.set_window_mode(pos, size, state, state, _can_maximize, _can_minimize, _can_resizewindow);
     } else {

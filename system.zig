@@ -10,7 +10,7 @@ const __windows = @import("__windows.zig");
 const window = @import("window.zig");
 const __vulkan = @import("__vulkan.zig");
 const __system = @import("__system.zig");
-const geometry = @import("geometry.zig");
+const math = @import("math.zig");
 
 pub const windows = __windows.win32;
 pub const android = __android.android;
@@ -50,13 +50,13 @@ pub const platform_version = struct {
 
 pub const screen_info = struct {
     monitor: *monitor_info,
-    size: geometry.point(u32),
+    size: math.point(u32),
     refleshrate: u32,
 };
 
 pub const monitor_info = struct {
     const Self = @This();
-    rect: geometry.rect(i32),
+    rect: math.rect(i32),
 
     is_primary: bool,
     primary_resolution: ?*screen_info = null,

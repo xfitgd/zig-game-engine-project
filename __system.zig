@@ -6,7 +6,7 @@ pub const allocator = std.heap.c_allocator;
 
 const system = @import("system.zig");
 const __vulkan = @import("__vulkan.zig");
-const geometry = @import("geometry.zig");
+const math = @import("math.zig");
 const input = @import("input.zig");
 
 const root = @import("root");
@@ -34,7 +34,7 @@ pub var Rmouse_up_func: ?*const fn () void = null;
 pub var window_move_func: ?*const fn () void = null;
 pub var window_size_func: ?*const fn () void = null;
 
-pub var cursor_pos: geometry.point(i32) = undefined;
+pub var cursor_pos: math.point(i32) = undefined;
 
 pub var pause: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 pub var activated: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);

@@ -7,7 +7,7 @@ const file = @import("file.zig");
 const system = @import("system.zig");
 const __system = @import("__system.zig");
 
-pub const allocator = __system.allocator;
+const allocator = __system.allocator;
 
 const root = @import("root");
 

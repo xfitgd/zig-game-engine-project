@@ -6,9 +6,9 @@ const ArrayList = std.ArrayList;
 const system = @import("system.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
-const geometry = @import("geometry.zig");
+const math = @import("math.zig");
 
-pub const allocator = __system.allocator;
+const allocator = __system.allocator;
 
 const root = @import("root");
 
@@ -225,7 +225,7 @@ pub fn windows_loop() void {
     }
 }
 
-pub fn set_window_mode(pos: geometry.point(i32), size: geometry.point(u32), state: system.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
+pub fn set_window_mode(pos: math.point(i32), size: math.point(u32), state: system.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
     const style: c_long = ((((win32.WS_OVERLAPPED |
         win32.WS_CAPTION) |
         win32.WS_SYSMENU) |
@@ -439,14 +439,14 @@ fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonito
 
     _ = win32.GetMonitorInfoA(hMonitor, @ptrCast(&monitor_info));
 
-    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = geometry.rect(i32).init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(allocator) }) catch {
+    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.rect(i32).init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(allocator) }) catch {
         system.print_error("ERR MonitorEnumProc::monitors.append\n", .{});
         unreachable;
     };
     var last = &__system.monitors.items[__system.monitors.items.len - 1];
     last.*.is_primary = (monitor_info.monitorInfo.dwFlags & win32.MONITORINFOF_PRIMARY) != 0;
     if (last.*.is_primary) __system.primary_monitor = last;
-    last.*.rect = geometry.rect(i32).init(monitor_info.monitorInfo.rcMonitor.left, monitor_info.monitorInfo.rcMonitor.right, monitor_info.monitorInfo.rcMonitor.top, monitor_info.monitorInfo.rcMonitor.bottom);
+    last.*.rect = math.rect(i32).init(monitor_info.monitorInfo.rcMonitor.left, monitor_info.monitorInfo.rcMonitor.right, monitor_info.monitorInfo.rcMonitor.top, monitor_info.monitorInfo.rcMonitor.bottom);
 
     var i: u32 = 0;
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
