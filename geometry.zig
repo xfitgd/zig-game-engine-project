@@ -33,7 +33,7 @@ pub fn point(comptime T: type) type {
     return @Vector(2, T);
 }
 
-pub fn point3dw(comptime T: type) type {
+pub fn vector(comptime T: type) type {
     math.test_number_type(T);
     return @Vector(4, T);
 }
@@ -54,14 +54,14 @@ inline fn andInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
     const v1u = @as(Tu, @bitCast(v1));
     return @as(T, @bitCast(v0u & v1u)); // andps
 }
-pub inline fn dot3(comptime T: type, v0: point3dw(T), v1: point3dw(T)) T {
+pub inline fn dot3(comptime T: type, v0: vector(T), v1: vector(T)) T {
     const dot = v0 * v1;
     return dot[0] + dot[1] + dot[2];
 }
-pub inline fn normalize3(comptime T: type, v: point3dw(T)) point3dw(T) {
-    return v * @as(point3dw(T), @splat(1)) / std.math.sqrt(dot3(v, v));
+pub inline fn normalize3(comptime T: type, v: vector(T)) vector(T) {
+    return v * @as(vector(T), @splat(1)) / std.math.sqrt(dot3(v, v));
 }
-pub inline fn cross3(comptime T: type, v0: point3dw(T), v1: point3dw(T)) point3dw(T) {
+pub inline fn cross3(comptime T: type, v0: vector(T), v1: vector(T)) vector(T) {
     var xmm0 = @shuffle(T, v0, undefined, [4]i32{ 1, 2, 1, 3 });
     var xmm1 = @shuffle(T, v1, undefined, [4]i32{ 2, 0, 1, 3 });
     var result = xmm0 * xmm1;

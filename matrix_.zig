@@ -5,7 +5,7 @@ const math = @import("math.zig");
 const geometry = @import("geometry.zig");
 
 const point = geometry.point;
-const point3dw = geometry.point3dw;
+const vector = geometry.vector;
 
 //pub const matrix3x3 = matrix(f32, 3, 3);
 
@@ -247,7 +247,7 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
-        pub fn lookToLh(eyepos: point3dw(T), eyedir: point3dw(T), updir: point3dw(T)) Self {
+        pub fn lookToLh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
             math.test_float_type(T);
             const az = geometry.normalize3(eyedir);
             const ax = geometry.normalize3(geometry.cross3(updir, az));
@@ -261,13 +261,13 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
-        pub fn lookToRh(eyepos: point3dw(T), eyedir: point3dw(T), updir: point3dw(T)) Self {
+        pub fn lookToRh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, -eyedir, updir);
         }
-        pub fn lookAtLh(eyepos: point3dw(T), focuspos: point3dw(T), updir: point3dw(T)) Self {
+        pub fn lookAtLh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, focuspos - eyepos, updir);
         }
-        pub fn lookAtRh(eyepos: point3dw(T), focuspos: point3dw(T), updir: point3dw(T)) Self {
+        pub fn lookAtRh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, eyepos - focuspos, updir);
         }
 
