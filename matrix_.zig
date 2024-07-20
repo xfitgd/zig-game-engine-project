@@ -26,6 +26,13 @@ fn compare_n(n: anytype, i: anytype) bool {
         },
     }
 }
+inline fn mulAdd(comptime T: type, v0: @Vector(4, T), v1: @Vector(4, T), v2: @Vector(4, T)) @Vector(4, T) {
+    if (@typeInfo(T) == .Float or @typeInfo(T) == .ComptimeFloat) {
+        return @mulAdd(@Vector(4, T), v0, v1, v2);
+    } else {
+        return v0 * v1 + v2;
+    }
+}
 
 ///https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
 pub fn matrix4x4(comptime T: type) type {
@@ -281,14 +288,6 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
-
-        inline fn mulAdd(v0: VT, v1: VT, v2: VT) VT {
-            if (@typeInfo(T) == .Float or @typeInfo(T) == .ComptimeFloat) {
-                return @mulAdd(VT, v0, v1, v2);
-            } else {
-                return v0 * v1 + v2;
-            }
-        }
         inline fn dot4(v0: VT, v1: VT) T {
             const xmm0 = v0 * v1; // | x0*x1 | y0*y1 | z0*z1 | w0*w1 |
             return xmm0[0] + xmm0[1] + xmm0[2] + xmm0[3];
@@ -402,9 +401,9 @@ pub fn matrix4x4(comptime T: type) type {
             v0[2] = @shuffle(T, mt.e[2], mt.e[0], [4]i32{ 1, 3, ~@as(i32, 1), ~@as(i32, 3) });
             v1[2] = @shuffle(T, mt.e[3], mt.e[1], [4]i32{ 0, 2, ~@as(i32, 0), ~@as(i32, 2) });
 
-            d0 = mulAdd(-v0[0], v1[0], d0);
-            d1 = mulAdd(-v0[1], v1[1], d1);
-            d2 = mulAdd(-v0[2], v1[2], d2);
+            d0 = mulAdd(T, -v0[0], v1[0], d0);
+            d1 = mulAdd(T, -v0[1], v1[1], d1);
+            d2 = mulAdd(T, -v0[2], v1[2], d2);
 
             v0[0] = @shuffle(T, mt.e[1], undefined, [4]i32{ 1, 2, 0, 1 });
             v1[0] = @shuffle(T, d0, d2, [4]i32{ ~@as(i32, 1), 1, 3, 0 });
@@ -429,10 +428,10 @@ pub fn matrix4x4(comptime T: type) type {
             v0[3] = @shuffle(T, mt.e[2], undefined, [4]i32{ 3, 2, 3, 1 });
             v1[3] = @shuffle(T, d1, d2, [4]i32{ 2, 1, ~@as(i32, 2), 0 });
 
-            c0 = mulAdd(-v0[0], v1[0], c0);
-            c2 = mulAdd(-v0[1], v1[1], c2);
-            c4 = mulAdd(-v0[2], v1[2], c4);
-            c6 = mulAdd(-v0[3], v1[3], c6);
+            c0 = mulAdd(T, -v0[0], v1[0], c0);
+            c2 = mulAdd(T, -v0[1], v1[1], c2);
+            c4 = mulAdd(T, -v0[2], v1[2], c4);
+            c6 = mulAdd(T, -v0[3], v1[3], c6);
 
             v0[0] = @shuffle(T, mt.e[1], undefined, [4]i32{ 3, 0, 3, 0 });
             v1[0] = @shuffle(T, d0, d2, [4]i32{ 2, ~@as(i32, 1), ~@as(i32, 0), 2 });
@@ -443,15 +442,15 @@ pub fn matrix4x4(comptime T: type) type {
             v0[3] = @shuffle(T, mt.e[2], undefined, [4]i32{ 1, 3, 0, 2 });
             v1[3] = @shuffle(T, d1, d2, [4]i32{ ~@as(i32, 3), 0, 3, ~@as(i32, 2) });
 
-            const c1 = mulAdd(-v0[0], v1[0], c0);
-            const c3 = mulAdd(v0[1], v1[1], c2);
-            const c5 = mulAdd(-v0[2], v1[2], c4);
-            const c7 = mulAdd(v0[3], v1[3], c6);
+            const c1 = mulAdd(T, -v0[0], v1[0], c0);
+            const c3 = mulAdd(T, v0[1], v1[1], c2);
+            const c5 = mulAdd(T, -v0[2], v1[2], c4);
+            const c7 = mulAdd(T, v0[3], v1[3], c6);
 
-            c0 = mulAdd(v0[0], v1[0], c0);
-            c2 = mulAdd(-v0[1], v1[1], c2);
-            c4 = mulAdd(v0[2], v1[2], c4);
-            c6 = mulAdd(-v0[3], v1[3], c6);
+            c0 = mulAdd(T, v0[0], v1[0], c0);
+            c2 = mulAdd(T, -v0[1], v1[1], c2);
+            c4 = mulAdd(T, v0[2], v1[2], c4);
+            c6 = mulAdd(T, -v0[3], v1[3], c6);
 
             var mr = Self{ .e = [4]VT{
                 .{ c0[0], c1[1], c0[2], c1[3] },
