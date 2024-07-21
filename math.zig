@@ -48,6 +48,11 @@ pub fn point(comptime T: type) type {
     return @Vector(2, T);
 }
 
+pub fn point3d(comptime T: type) type {
+    test_number_type(T);
+    return @Vector(3, T);
+}
+
 pub fn vector(comptime T: type) type {
     test_number_type(T);
     return @Vector(4, T);
