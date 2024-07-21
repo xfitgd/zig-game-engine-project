@@ -169,7 +169,7 @@ pub fn windows_start() void {
     }
 
     hWnd = win32.CreateWindowExA(@bitCast(ex_style), CLASS_NAME, @ptrCast(__system.init_set.window_title), @bitCast(window_style), window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse {
-        system.print_error("ERR windows_start::CreateWindowEx hWnd is null. code : {}\n", .{win32.GetLastError()});
+        system.print_error("ERR windows_start.CreateWindowEx hWnd is null. code : {}\n", .{win32.GetLastError()});
         unreachable;
     };
 
@@ -200,13 +200,15 @@ pub fn windows_start() void {
     _ = win32.RegisterTouchWindow(hWnd, @enumFromInt(0));
 
     _ = std.Thread.spawn(.{}, render_thread, .{}) catch |err| {
-        system.print_error("ERR windows_start::std.Thread.spawn(render_thread) Failed. msg : {}\n", .{err});
+        system.print_error("ERR windows_start.std.Thread.spawn(render_thread) Failed. msg : {}\n", .{err});
         unreachable;
     };
 }
 
 fn render_thread() void {
     __vulkan.vulkan_start();
+
+    root.xfit_init();
 
     while (!exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
@@ -266,8 +268,8 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
     var mode: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
     mode.dmSize = @sizeOf(win32.DEVMODEA);
     mode.dmFields = win32.DM_PELSWIDTH | win32.DM_PELSHEIGHT | win32.DM_DISPLAYFREQUENCY;
-    mode.dmPelsWidth = resolution.size[0];
-    mode.dmPelsHeight = resolution.size[1];
+    mode.dmPelsWidth = resolution.size.x;
+    mode.dmPelsHeight = resolution.size.y;
     mode.dmDisplayFrequency = resolution.refleshrate;
 
     const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, .{ .FULLSCREEN = 1, .RESET = 1 }, null);
@@ -398,8 +400,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
                 system.print("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
             }
-            @atomicStore(i32, &__system.cursor_pos[0], GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.cursor_pos[1], GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos.x, GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos.y, GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
             return 0;
         },
         // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
@@ -440,7 +442,7 @@ fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonito
     _ = win32.GetMonitorInfoA(hMonitor, @ptrCast(&monitor_info));
 
     __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.rect(i32).init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(allocator) }) catch {
-        system.print_error("ERR MonitorEnumProc::monitors.append\n", .{});
+        system.print_error("ERR MonitorEnumProc.monitors.append\n", .{});
         unreachable;
     };
     var last = &__system.monitors.items[__system.monitors.items.len - 1];
@@ -452,8 +454,8 @@ fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonito
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
     dm.dmSize = @sizeOf(win32.DEVMODEA);
     while (win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), @enumFromInt(i), &dm) != FALSE) : (i += 1) {
-        last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ dm.dmPelsWidth, dm.dmPelsHeight } }) catch {
-            system.print_error("ERR MonitorEnumProc::last.*.resolutions.append\n", .{});
+        last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ .x = dm.dmPelsWidth, .y = dm.dmPelsHeight } }) catch {
+            system.print_error("ERR MonitorEnumProc.last.*.resolutions.append\n", .{});
             unreachable;
         };
     }
@@ -462,7 +464,7 @@ fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonito
 
     var j: usize = 0;
     while (j < last.resolutions.items.len) : (j += 1) {
-        if (dm.dmPelsWidth == last.*.resolutions.items[j].size[0] and dm.dmPelsHeight == last.resolutions.items[j].size[1] and dm.dmDisplayFrequency == last.resolutions.items[j].refleshrate) {
+        if (dm.dmPelsWidth == last.*.resolutions.items[j].size.x and dm.dmPelsHeight == last.resolutions.items[j].size.y and dm.dmDisplayFrequency == last.resolutions.items[j].refleshrate) {
             last.*.primary_resolution = &last.*.resolutions.items[j];
             break;
         }

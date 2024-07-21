@@ -45,12 +45,36 @@ pub fn rect(comptime T: type) type {
 
 pub fn point(comptime T: type) type {
     test_number_type(T);
-    return @Vector(2, T);
+    return struct {
+        const Self = @This();
+        x: T,
+        y: T,
+
+        pub fn init(_x: T, _y: T) Self {
+            return Self{
+                .x = _x,
+                .y = _y,
+            };
+        }
+    };
 }
 
 pub fn point3d(comptime T: type) type {
     test_number_type(T);
-    return @Vector(3, T);
+    return struct {
+        const Self = @This();
+        x: T,
+        y: T,
+        z: T,
+
+        pub fn init(_x: T, _y: T, _z: T) Self {
+            return Self{
+                .x = _x,
+                .y = _y,
+                .z = _z,
+            };
+        }
+    };
 }
 
 pub fn vector(comptime T: type) type {

@@ -16,6 +16,9 @@ pub const windows = __windows.win32;
 pub const android = __android.android;
 pub const vulkan = __vulkan.vk;
 
+pub const vkCreateDebugUtilsMessengerEXT = __vulkan.vkCreateDebugUtilsMessengerEXT;
+pub const vkDestroyDebugUtilsMessengerEXT = __vulkan.vkDestroyDebugUtilsMessengerEXT;
+
 pub const window_state = enum {
     Restore,
     Maximized,

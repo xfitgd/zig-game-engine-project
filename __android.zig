@@ -128,7 +128,7 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
     const androidSurfaceCreateInfo: android.VkAndroidSurfaceCreateInfoKHR = .{ .window = @ptrCast(app.window) };
     const result = android.vkCreateAndroidSurfaceKHR(@ptrCast(vkInstance), &androidSurfaceCreateInfo, null, @ptrCast(vkSurface));
 
-    system.handle_error(result == android.VK_SUCCESS, result, "vulkan_android_start::vkCreateAndroidSurfaceKHR");
+    system.handle_error(result == android.VK_SUCCESS, result, "vulkan_android_start.vkCreateAndroidSurfaceKHR");
 }
 
 pub fn vulkan_android_recreate_surface(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
