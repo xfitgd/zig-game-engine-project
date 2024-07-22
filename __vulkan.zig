@@ -70,7 +70,6 @@ var vkRenderPass: vk.VkRenderPass = undefined;
 var vkSwapchain: vk.VkSwapchainKHR = undefined;
 
 var vkPipelineLayout: vk.VkPipelineLayout = undefined;
-var vkGraphicPipeline: vk.VkPipeline = undefined;
 var vkCommandPool: vk.VkCommandPool = undefined;
 var vkCommandBuffer: vk.VkCommandBuffer = undefined;
 
@@ -101,6 +100,10 @@ var queueFamiliesCount: u32 = 0;
 var formats: []vk.VkSurfaceFormatKHR = undefined;
 var format: vk.VkSurfaceFormatKHR = undefined;
 
+//Predefined Pipelines
+pub var color_2d_pipeline: vk.VkPipeline = undefined;
+//
+
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
     const createInfo: vk.VkShaderModuleCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code.len, .pCode = @ptrCast(@alignCast(code.ptr)) };
 
@@ -124,21 +127,22 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
     vk.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
 
-    vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, vkGraphicPipeline);
+    if (graphics.scene != null) {
+        for (graphics.scene.?.*) |value| {
+            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, value.*.pipeline);
 
-    const viewport: vk.VkViewport = .{ .x = 0, .y = 0, .width = @floatFromInt(vkExtent.width), .height = @floatFromInt(vkExtent.height), .maxDepth = 1, .minDepth = 0 };
+            const viewport: vk.VkViewport = .{ .x = 0, .y = 0, .width = @floatFromInt(vkExtent.width), .height = @floatFromInt(vkExtent.height), .maxDepth = 1, .minDepth = 0 };
 
-    const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+            const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
 
-    vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
-    vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
+            vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
+            vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
-    for (graphics.objects.items) |value| {
-        const offsets: vk.VkDeviceSize = 0;
-        const buffers = value.*.bufs[0];
-        vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers, &offsets);
+            const offsets: vk.VkDeviceSize = 0;
+            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &value.buf, &offsets);
 
-        vk.vkCmdDraw(commandBuffer, @intCast(value.*.pos.items.len), 1, 0, 0);
+            vk.vkCmdDraw(commandBuffer, @intCast(value.get_vertices_len(value)), 1, 0, 0);
+        }
     }
 
     vk.vkCmdEndRenderPass(commandBuffer);
@@ -360,16 +364,11 @@ pub fn vulkan_start() void {
 
     const dynamicStates = [_]vk.VkDynamicState{ vk.VK_DYNAMIC_STATE_VIEWPORT, vk.VK_DYNAMIC_STATE_SCISSOR };
 
-    const bindingDescription: vk.VkVertexInputBindingDescription = .{
-        .binding = 0,
-        .stride = 16,
-        .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
+    const inputAssembly: vk.VkPipelineInputAssemblyStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = vk.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = vk.VK_FALSE,
     };
-    const attributeDescriptions: vk.VkVertexInputAttributeDescription = .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 0 };
-
-    const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 1, .vertexAttributeDescriptionCount = 1, .pVertexBindingDescriptions = &bindingDescription, .pVertexAttributeDescriptions = &attributeDescriptions };
-
-    const inputAssembly: vk.VkPipelineInputAssemblyStateCreateInfo = .{ .topology = vk.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, .primitiveRestartEnable = vk.VK_FALSE };
 
     const viewport: vk.VkViewport = .{ .x = 0, .y = 0, .width = @floatFromInt(vkExtent.width), .height = @floatFromInt(vkExtent.height), .maxDepth = 1, .minDepth = 0 };
 
@@ -399,7 +398,13 @@ pub fn vulkan_start() void {
 
     const colorBlending: vk.VkPipelineColorBlendStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .logicOpEnable = vk.VK_FALSE, .logicOp = vk.VK_LOGIC_OP_COPY, .attachmentCount = 1, .pAttachments = @ptrCast(&colorBlendAttachment), .blendConstants = .{ 0, 0, 0, 0 } };
 
-    const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{ .setLayoutCount = 0, .pSetLayouts = null, .pushConstantRangeCount = 0, .pPushConstantRanges = null };
+    const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0,
+        .pSetLayouts = null,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = null,
+    };
     result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &vkPipelineLayout);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreatePipelineLayout");
 
@@ -418,10 +423,21 @@ pub fn vulkan_start() void {
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateRenderPass");
 
-    const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = &shaderStages, .pVertexInputState = &vertexInputInfo, .pInputAssemblyState = &inputAssembly, .pViewportState = &viewportState, .pRasterizationState = &rasterizer, .pMultisampleState = &multisampling, .pDepthStencilState = null, .pColorBlendState = &colorBlending, .pDynamicState = &dynamicState, .layout = vkPipelineLayout, .renderPass = vkRenderPass, .subpass = 0, .basePipelineHandle = std.mem.zeroes(vk.VkPipeline), .basePipelineIndex = -1 };
+    {
+        const bindingDescription: vk.VkVertexInputBindingDescription = .{
+            .binding = 0,
+            .stride = @sizeOf(f32) * (2 + 4),
+            .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{ .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 }, .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 } };
 
-    result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, @ptrCast(&pipelineInfo), null, @ptrCast(&vkGraphicPipeline));
-    system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateGraphicsPipelines");
+        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 1, .vertexAttributeDescriptionCount = 2, .pVertexBindingDescriptions = &bindingDescription, .pVertexAttributeDescriptions = &attributeDescriptions };
+
+        const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = &shaderStages, .pVertexInputState = &vertexInputInfo, .pInputAssemblyState = &inputAssembly, .pViewportState = &viewportState, .pRasterizationState = &rasterizer, .pMultisampleState = &multisampling, .pDepthStencilState = null, .pColorBlendState = &colorBlending, .pDynamicState = &dynamicState, .layout = vkPipelineLayout, .renderPass = vkRenderPass, .subpass = 0, .basePipelineHandle = std.mem.zeroes(vk.VkPipeline), .basePipelineIndex = -1 };
+
+        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline);
+        system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline");
+    }
 
     create_framebuffer();
 
@@ -439,8 +455,8 @@ pub fn vulkan_start() void {
     result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, @ptrCast(&vkCommandBuffer));
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkAllocateCommandBuffers");
 
-    const semaphoreInfo: vk.VkSemaphoreCreateInfo = .{};
-    const fenceInfo: vk.VkFenceCreateInfo = .{ .flags = vk.VK_FENCE_CREATE_SIGNALED_BIT, .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    const semaphoreInfo: vk.VkSemaphoreCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    const fenceInfo: vk.VkFenceCreateInfo = .{ .flags = vk.VK_FENCE_CREATE_SIGNALED_BIT, .sType = vk.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 
     result = vk.vkCreateSemaphore(vkDevice, &semaphoreInfo, null, &vkImageAvailableSemaphore);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateSemaphore");
@@ -463,7 +479,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyShaderModule(vkDevice, vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, frag_shader, null);
 
-    vk.vkDestroyPipeline(vkDevice, vkGraphicPipeline, null);
+    vk.vkDestroyPipeline(vkDevice, color_2d_pipeline, null);
     vk.vkDestroyPipelineLayout(vkDevice, vkPipelineLayout, null);
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
 
@@ -501,7 +517,15 @@ fn create_framebuffer() void {
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
         const attachments = [_]vk.VkImageView{vk_swapchain_image_views[i]};
-        const frameBufferInfo: vk.VkFramebufferCreateInfo = .{ .renderPass = vkRenderPass, .attachmentCount = 1, .pAttachments = &attachments, .width = vkExtent.width, .height = vkExtent.height, .layers = 1 };
+        const frameBufferInfo: vk.VkFramebufferCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = vkRenderPass,
+            .attachmentCount = 1,
+            .pAttachments = &attachments,
+            .width = vkExtent.width,
+            .height = vkExtent.height,
+            .layers = 1,
+        };
 
         const result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
         system.handle_error(result == vk.VK_SUCCESS, result, "create_framebuffer.vkCreateFramebuffer");
