@@ -146,7 +146,9 @@ pub fn draw_android() void {
 }
 
 pub fn destroy_android() void {
+    __vulkan.wait_for_fences();
     root.xfit_destroy();
+    __vulkan.vulkan_destroy();
 }
 
 fn android_app_write_cmd(cmd: AppEvent) void {

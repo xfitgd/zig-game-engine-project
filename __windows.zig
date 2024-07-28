@@ -213,6 +213,9 @@ fn render_thread() void {
     while (!exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
     }
+    __vulkan.wait_for_fences();
+
+    root.xfit_destroy();
     __vulkan.vulkan_destroy();
 
     render_sem.post();

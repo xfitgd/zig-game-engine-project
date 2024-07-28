@@ -4,19 +4,21 @@ const ArrayList = std.ArrayList;
 const file = @import("file.zig");
 const system = @import("system.zig");
 const __system = @import("__system.zig");
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
 const _allocator = __system.allocator;
 
 const __vulkan = @import("__vulkan.zig");
 const vk = __vulkan.vk;
+
 const math = @import("math.zig");
 const point = math.point;
 const point3d = math.point3d;
 const vector = math.vector;
-const matrix4x4 = @import("math.zig").matrix4x4;
-const matrix_error = @import("math.zig").matrix_error;
+const matrix4x4 = math.matrix4x4;
+const matrix_error = math.matrix_error;
 
-const vkDevice = &__vulkan.vkDevice;
+const vulkan_buffer_node = __vulkan_allocator.vulkan_buffer_node;
 
 pub const color_vertex_2d = color_vertex_2d_(f32);
 
@@ -51,15 +53,13 @@ pub const ivertices = struct {
     const Self = @This();
 
     get_vertices_len: *const fn (self: *ivertices) usize = undefined,
-    buf: vk.VkBuffer = null,
-    buf_mem: vk.VkDeviceMemory = undefined,
+
+    node: vulkan_buffer_node = vulkan_buffer_node.init(),
     pipeline: vk.VkPipeline = undefined,
 
     pub inline fn clean(self: *Self) void {
-        if (self.*.buf != null) {
-            vk.vkDestroyBuffer(vkDevice.*, self.*.buf, null);
-            vk.vkFreeMemory(vkDevice.*, self.*.buf_mem, null);
-            self.*.buf = null;
+        if (self.*.node.buffer != null) {
+            __vulkan_allocator.destroy_buffer(&self.*.node);
         }
     }
 };
@@ -82,40 +82,26 @@ pub fn vertices(comptime vertexT: type) type {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
             return self.*.array.items.len;
         }
-        pub inline fn free(self: *Self) void {
+        ///완전히 정리
+        pub inline fn destroy(self: *Self) void {
             clean(self);
             self.*.array.deinit();
         }
+        ///다시 빌드할수 있게 버퍼 내용만 정리
         pub inline fn clean(self: *Self) void {
             self.*.interface.clean();
         }
-        pub fn build(self: *Self) void {
+        pub fn build(self: *Self) !void {
             clean(self);
             const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.items.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
-            var result = vk.vkCreateBuffer(vkDevice.*, &buf_info, null, &self.*.interface.buf);
-            system.handle_error(result == vk.VK_SUCCESS, result, "vertex_T._build.vkCreateBuffer");
-
-            var mem_require: vk.VkMemoryRequirements = undefined;
-            vk.vkGetBufferMemoryRequirements(vkDevice.*, self.*.interface.buf, &mem_require);
-
-            const alloc_info: vk.VkMemoryAllocateInfo = .{
-                .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                .allocationSize = mem_require.size,
-                .memoryTypeIndex = find_memory_type(mem_require.memoryTypeBits, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
-            };
-
-            result = vk.vkAllocateMemory(vkDevice.*, &alloc_info, null, &self.*.interface.buf_mem);
-            system.handle_error(result == vk.VK_SUCCESS, result, "vertex_T._build.vkAllocateMemory");
-            result = vk.vkBindBufferMemory(vkDevice.*, self.*.interface.buf, self.*.interface.buf_mem, 0);
-            system.handle_error(result == vk.VK_SUCCESS, result, "vertex_T._build.vkBindBufferMemory");
+            try __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &self.*.interface.node);
 
             var data: ?*anyopaque = undefined;
-            result = vk.vkMapMemory(vkDevice.*, self.*.interface.buf_mem, 0, buf_info.size, 0, &data);
-            system.handle_error(result == vk.VK_SUCCESS, result, "vertex_T._build.vkBindBufferMemory");
+            try self.*.interface.node.map(&data);
             @memcpy(@as([*]vertexT, @alignCast(@ptrCast(data))), self.*.array.items);
             //system.print("{d} {d}\n", .{ self.*.array.len, @as([*]vertexT, @alignCast(@ptrCast(data)))[0..self.*.array.len] });
-            vk.vkUnmapMemory(vkDevice.*, self.*.interface.buf_mem);
+            self.*.interface.node.unmap();
         }
     };
 }

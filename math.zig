@@ -1,6 +1,22 @@
 const std = @import("std");
 
-pub inline fn test_number_type(T: type) void {
+///_num에서 _multiple 배수 중 가까운 값을 구합니다.
+pub fn round_up(comptime T: type, _num: T, _multiple: T) T {
+    if (_multiple == 0)
+        return _num;
+
+    const remainder: T = @abs(_num) % _multiple;
+    if (remainder == 0)
+        return _num;
+
+    if (_num < 0) {
+        return -(@abs(_num) - remainder);
+    } else {
+        return _num + _multiple - remainder;
+    }
+}
+
+pub inline fn test_number_type(comptime T: type) void {
     switch (@typeInfo(T)) {
         .Int, .Float, .ComptimeInt, .ComptimeFloat => {},
         else => {
@@ -8,7 +24,7 @@ pub inline fn test_number_type(T: type) void {
         },
     }
 }
-pub inline fn test_float_type(T: type) void {
+pub inline fn test_float_type(comptime T: type) void {
     switch (@typeInfo(T)) {
         .Float, .ComptimeFloat => {},
         else => {

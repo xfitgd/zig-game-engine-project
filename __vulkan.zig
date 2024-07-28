@@ -13,6 +13,9 @@ const allocator = __system.allocator;
 
 const root = @import("root");
 
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
+pub var vk_allocator: __vulkan_allocator = __vulkan_allocator.init();
+
 pub const vk = @cImport({
     if (root.platform == root.XfitPlatform.windows) {
         @cDefine("VK_USE_PLATFORM_WIN32_KHR", "1");
@@ -139,7 +142,7 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
             vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
             const offsets: vk.VkDeviceSize = 0;
-            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &value.buf, &offsets);
+            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &value.*.node.buffer, &offsets);
 
             vk.vkCmdDraw(commandBuffer, @intCast(value.get_vertices_len(value)), 1, 0, 0);
         }
@@ -468,13 +471,14 @@ pub fn vulkan_start() void {
 }
 
 pub fn vulkan_destroy() void {
-    cleanup_swapchain();
-
     vk.vkDestroySemaphore(vkDevice, vkImageAvailableSemaphore, null);
     vk.vkDestroySemaphore(vkDevice, vkRenderFinishedSemaphore, null);
     vk.vkDestroyFence(vkDevice, vkInFlightFence, null);
 
     vk.vkDestroyCommandPool(vkDevice, vkCommandPool, null);
+
+    cleanup_swapchain();
+    vk_allocator.destroy();
 
     vk.vkDestroyShaderModule(vkDevice, vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, frag_shader, null);
@@ -484,6 +488,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
 
     vk.vkDestroySurfaceKHR(vkInstance, vkSurface, null);
+
     vk.vkDestroyDevice(vkDevice, null);
 
     if (vkDebugMessenger != null) vkDestroyDebugUtilsMessengerEXT(vkInstance, vkDebugMessenger, null);
@@ -626,13 +631,17 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
     create_framebuffer();
 }
 
-pub fn drawFrame() void {
-    var result = vk.vkWaitForFences(vkDevice, 1, @ptrCast(&vkInFlightFence), vk.VK_TRUE, std.math.maxInt(u64));
+pub fn wait_for_fences() void {
+    const result = vk.vkWaitForFences(vkDevice, 1, @ptrCast(&vkInFlightFence), vk.VK_TRUE, std.math.maxInt(u64));
     system.handle_error(result == vk.VK_SUCCESS, result, "drawFrame.vkWaitForFences");
+}
+
+pub fn drawFrame() void {
+    wait_for_fences();
 
     var imageIndex: u32 = undefined;
 
-    result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, std.mem.zeroes(vk.VkFence), &imageIndex);
+    var result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, std.mem.zeroes(vk.VkFence), &imageIndex);
     if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain(false);
         return;
