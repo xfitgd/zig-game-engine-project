@@ -53,45 +53,49 @@ pub const vulkan_buffer_node = struct {
 
 /// Vulkan 메모리 체계가 u64이기 때문에 u64를 사용하겠습니다.
 const vulkan_buffer = struct {
-    indices: []u64,
+    is_free: []bool,
     cell_size: u64,
-    __free_len: u64,
     len: u64,
-    __init_len: u64,
-    __next: ?*u64,
+    cur: u64,
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
 
     ///! 따로 vulkan_buffer.destroy를 호출하지 않는다.
     fn destroy(self: *vulkan_buffer) void {
         vk.vkFreeMemory(__vulkan.vkDevice, self.*.mem, null);
-        _allocator.free(self.*.indices);
+        _allocator.free(self.*.is_free);
     }
-    pub fn init(_cell_size: u64, _len: u64, type_filter: u32, _prop: vk.VkMemoryPropertyFlags) !vulkan_buffer {
-        var res = vulkan_buffer{
-            .indices = try _allocator.alloc(u64, _len),
-            .cell_size = _cell_size,
-            .len = _len,
-            .__init_len = 0,
-            .__free_len = _len,
-            .mem = undefined,
-            .__next = null,
-            .info = .{ .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = _len * _cell_size, .memoryTypeIndex = find_memory_type(type_filter, _prop) },
-        };
-        const result = vk.vkAllocateMemory(__vulkan.vkDevice, &res.info, null, &res.mem);
-        errdefer _allocator.free(res.indices);
+    fn allocate_memory(_info: *const vk.VkMemoryAllocateInfo, _mem: *vk.VkDeviceMemory) !void {
+        const result = vk.vkAllocateMemory(__vulkan.vkDevice, _info, null, _mem);
+
         if (result == vk.VK_ERROR_OUT_OF_HOST_MEMORY) {
             return vulkan_alloc_error.out_of_host_memory;
         } else if (result == vk.VK_ERROR_OUT_OF_DEVICE_MEMORY) {
             return vulkan_alloc_error.out_of_device_memory;
         }
         system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_buffer.init.vkAllocateMemory");
+    }
+    /// ! 따로 vulkan_buffer.init를 호출하지 않는다.
+    fn init(_cell_size: u64, _len: u64, type_filter: u32, _prop: vk.VkMemoryPropertyFlags) !vulkan_buffer {
+        var res = vulkan_buffer{
+            .cell_size = _cell_size,
+            .len = _len,
+            .cur = 0,
+            .mem = undefined,
+            .is_free = try _allocator.alloc(bool, _len),
+            .info = .{ .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = _len * _cell_size, .memoryTypeIndex = find_memory_type(type_filter, _prop) },
+        };
+        try allocate_memory(&res.info, &res.mem);
+        errdefer _allocator.free(res.is_free);
 
-        res.__next = &res.indices[0];
+        for (res.is_free) |*value| {
+            value.* = true;
+        }
+
         return res;
     }
-    fn __bind_buffer(self: *vulkan_buffer, _buf: vk.VkBuffer, _idx: u64) !void {
-        const result = vk.vkBindBufferMemory(__vulkan.vkDevice, _buf, self.*.mem, self.*.cell_size * _idx);
+    fn __bind_buffer(self: *vulkan_buffer, _mem: vk.VkDeviceMemory, _buf: vk.VkBuffer, _idx: u64) !void {
+        const result = vk.vkBindBufferMemory(__vulkan.vkDevice, _buf, _mem, self.*.cell_size * _idx);
         if (result == vk.VK_ERROR_OUT_OF_HOST_MEMORY) {
             return vulkan_alloc_error.out_of_host_memory;
         } else if (result == vk.VK_ERROR_OUT_OF_DEVICE_MEMORY) {
@@ -112,30 +116,26 @@ const vulkan_buffer = struct {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
     ///_buf 크기는 따로 확인하지 않는다. 호출 쪽에서 확인해서 오류가 없게한다.
-    pub fn bind_buffer(self: *vulkan_buffer, _buf: vk.VkBuffer) !u64 {
-        if (self.*.__init_len < self.*.len) {
-            self.*.indices[self.*.__init_len] = self.*.__init_len + 1;
-            self.*.__init_len += 1;
+    fn bind_buffer(self: *vulkan_buffer, _buf: vk.VkBuffer) !u64 {
+        var count: u64 = 0;
+        while (!self.*.is_free[self.*.cur]) {
+            self.*.cur += 1;
+            count += 1;
+            if (count >= self.*.len) return vulkan_alloc_error.buffer_full;
+            if (self.*.cur >= self.*.len) self.*.cur = 0;
         }
-        if (self.*.__free_len > 0) {
-            try __bind_buffer(self, _buf, self.*.__next.?.*);
-            const res: u64 = self.*.__next.?.*;
-            self.*.__free_len -= 1;
-            if (self.*.__free_len > 0) {
-                self.*.__next = &self.*.indices[self.*.__next.?.*];
-            } else {
-                self.*.__next = null;
-            }
-            return res;
-        } else {
-            return vulkan_alloc_error.buffer_full;
-        }
+        try __bind_buffer(self, self.*.mem, _buf, self.*.cur);
+        self.*.is_free[self.*.cur] = false;
+
+        const res = self.*.cur;
+        self.*.cur += 1;
+        if (self.*.cur >= self.*.len) self.*.cur = 0;
+        return res;
     }
-    ///bind_buffer에서 반환된 idx를 사용, 버퍼 삭제는 별도로
-    pub fn unbind_buffer(self: *vulkan_buffer, _idx: u64) void {
-        self.*.indices[_idx] = if (self.*.__next == null) self.*.len else (@as(u64, @intFromPtr(self.*.__next.?)) - @as(u64, @intFromPtr(&self.indices[0]))) / @sizeOf(u64);
-        self.*.__next = &self.*.indices[_idx];
-        self.*.__free_len += 1;
+    ///bind_buffer에서 반환된 idx를 사용.
+    fn unbind_buffer(self: *vulkan_buffer, _buf: vk.VkBuffer, _idx: u64) void {
+        self.*.is_free[_idx] = true;
+        vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null);
     }
 };
 
@@ -159,7 +159,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
 
     var buf: ?*vulkan_buffer = null;
     for (self.*.buffer_ids.items) |value| {
-        if (mem_require.size < value.*.cell_size) continue;
+        if (mem_require.size > value.*.cell_size) continue;
         _out_vulkan_buffer_node.*.idx = value.*.bind_buffer(_out_vulkan_buffer_node.*.buffer) catch {
             continue;
         };
@@ -169,20 +169,17 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
     if (buf == null) {
         buf = try self.*.buffers.create();
         errdefer self.*.buffers.destroy(buf.?);
+        buf.?.* = try vulkan_buffer.init(math.round_up(u64, mem_require.size, mem_require.alignment), BLOCK_LEN, mem_require.memoryTypeBits, _prop);
+        errdefer buf.?.*.destroy();
+
+        _out_vulkan_buffer_node.*.idx = try buf.?.*.bind_buffer(_out_vulkan_buffer_node.*.buffer);
+        try self.*.buffer_ids.append(buf.?);
     }
-    try self.*.buffer_ids.append(buf.?);
-    errdefer _ = self.*.buffer_ids.pop();
-
-    buf.?.* = try vulkan_buffer.init(math.round_up(u64, mem_require.size, mem_require.alignment), BLOCK_LEN, mem_require.memoryTypeBits, _prop);
-    errdefer buf.?.*.destroy();
-
-    _out_vulkan_buffer_node.*.idx = try buf.?.*.bind_buffer(_out_vulkan_buffer_node.*.buffer);
     _out_vulkan_buffer_node.*.pvulkan_buffer = buf.?;
 }
 pub fn destroy_buffer(_in_vulkan_buffer_node: *vulkan_buffer_node) void {
-    vk.vkDestroyBuffer(__vulkan.vkDevice, _in_vulkan_buffer_node.*.buffer, null);
+    _in_vulkan_buffer_node.*.pvulkan_buffer.*.unbind_buffer(_in_vulkan_buffer_node.*.buffer, _in_vulkan_buffer_node.*.idx);
 
-    _in_vulkan_buffer_node.*.pvulkan_buffer.*.unbind_buffer(_in_vulkan_buffer_node.*.idx);
     _in_vulkan_buffer_node.*.buffer = null;
 }
 ///destroy_buffer 후 호출

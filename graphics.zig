@@ -102,6 +102,16 @@ pub fn vertices(comptime vertexT: type) type {
             @memcpy(@as([*]vertexT, @alignCast(@ptrCast(data))), self.*.array.items);
             //system.print("{d} {d}\n", .{ self.*.array.len, @as([*]vertexT, @alignCast(@ptrCast(data)))[0..self.*.array.len] });
             self.*.interface.node.unmap();
+
+            //? 버퍼 생성 삭제 테스트용
+            // // __vulkan_allocator.destroy_buffer(&self.*.interface.node);
+
+            // // try __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &self.*.interface.node);
+
+            // // try self.*.interface.node.map(&data);
+            // // @memcpy(@as([*]vertexT, @alignCast(@ptrCast(data))), self.*.array.items);
+            // // //system.print("{d} {d}\n", .{ self.*.array.len, @as([*]vertexT, @alignCast(@ptrCast(data)))[0..self.*.array.len] });
+            // // self.*.interface.node.unmap();
         }
     };
 }
