@@ -183,6 +183,7 @@ pub fn destroy_buffer(_in_vulkan_buffer_node: *vulkan_buffer_node) void {
     vk.vkDestroyBuffer(__vulkan.vkDevice, _in_vulkan_buffer_node.*.buffer, null);
 
     _in_vulkan_buffer_node.*.pvulkan_buffer.*.unbind_buffer(_in_vulkan_buffer_node.*.idx);
+    _in_vulkan_buffer_node.*.buffer = null;
 }
 ///destroy_buffer 후 호출
 pub fn destroy(self: *Self) void {
