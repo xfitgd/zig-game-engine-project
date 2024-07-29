@@ -76,10 +76,10 @@ var vkPipelineLayout: vk.VkPipelineLayout = undefined;
 var vkCommandPool: vk.VkCommandPool = undefined;
 var vkCommandBuffer: vk.VkCommandBuffer = undefined;
 
-var vkImageAvailableSemaphore: vk.VkSemaphore = std.mem.zeroes(vk.VkSemaphore);
-var vkRenderFinishedSemaphore: vk.VkSemaphore = std.mem.zeroes(vk.VkSemaphore);
+var vkImageAvailableSemaphore: vk.VkSemaphore = null;
+var vkRenderFinishedSemaphore: vk.VkSemaphore = null;
 
-var vkInFlightFence: vk.VkFence = std.mem.zeroes(vk.VkFence);
+var vkInFlightFence: vk.VkFence = null;
 
 var vkDebugMessenger: vk.VkDebugUtilsMessengerEXT = null;
 
@@ -104,7 +104,7 @@ var formats: []vk.VkSurfaceFormatKHR = undefined;
 var format: vk.VkSurfaceFormatKHR = undefined;
 
 //Predefined Pipelines
-pub var color_2d_pipeline: vk.VkPipeline = undefined;
+pub var color_2d_pipeline: vk.VkPipeline = null;
 //
 
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
@@ -618,13 +618,11 @@ fn create_swapchain_and_imageviews() void {
 }
 
 pub fn recreate_swapchain(_recreate_window: bool) void {
-    if (_recreate_window) {
-        if (root.platform == root.XfitPlatform.android) {
-            __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
-        }
+    if (root.platform == root.XfitPlatform.android and _recreate_window) {
+        __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
     }
     const result = vk.vkDeviceWaitIdle(vkDevice);
-    system.handle_error(result == vk.VK_SUCCESS, result, "drawFrame.vkDeviceWaitIdle");
+    system.handle_error(result == vk.VK_SUCCESS, result, "recreate_swapchain.vkDeviceWaitIdle");
 
     cleanup_swapchain();
     create_swapchain_and_imageviews();
@@ -633,7 +631,7 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
 
 pub fn wait_for_fences() void {
     const result = vk.vkWaitForFences(vkDevice, 1, @ptrCast(&vkInFlightFence), vk.VK_TRUE, std.math.maxInt(u64));
-    system.handle_error(result == vk.VK_SUCCESS, result, "drawFrame.vkWaitForFences");
+    system.handle_error(result == vk.VK_SUCCESS, result, "wait_for_fences.vkWaitForFences");
 }
 
 pub fn drawFrame() void {

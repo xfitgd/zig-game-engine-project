@@ -71,10 +71,13 @@ pub fn vertices(comptime vertexT: type) type {
         array: ArrayList(vertexT) = undefined,
         interface: ivertices = .{},
 
+        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터)
         pub fn init(allocator: std.mem.Allocator) Self {
             var self: Self = .{};
             self.array = ArrayList(vertexT).init(allocator);
             self.interface.pipeline = vertexT.get_pipeline();
+            system.handle_error_msg(self.interface.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+
             self.interface.get_vertices_len = get_vertices_len;
             return self;
         }

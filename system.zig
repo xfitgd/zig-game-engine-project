@@ -190,6 +190,13 @@ pub inline fn print_error(comptime fmt: []const u8, args: anytype) void {
     }
 }
 
+pub inline fn handle_error_msg(errtest: bool, msg: []const u8) void {
+    if (!errtest) {
+        print_error("ERR {s}\n", .{msg});
+        unreachable;
+    }
+}
+
 pub inline fn handle_error(errtest: bool, code: i32, function: []const u8) void {
     if (!errtest) {
         print_error("ERR {s} Fail {d}\n", .{ function, code });

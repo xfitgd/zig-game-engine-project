@@ -13,8 +13,10 @@ const math = @import("math.zig");
 const _allocator = __system.allocator;
 
 const BLOCK_LEN = 100;
+const MINIMUM_SIZE_DIV_CELL = 0.5;
 const Self = @This();
 
+//TODO 메모리 부족시 오류 처리가 제대로 안되있습니다.(unreachable로 때움)
 pub const vulkan_alloc_error = error{ out_of_host_memory, out_of_device_memory, buffer_full };
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
@@ -159,7 +161,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
 
     var buf: ?*vulkan_buffer = null;
     for (self.*.buffer_ids.items) |value| {
-        if (mem_require.size > value.*.cell_size) continue;
+        if (mem_require.size > value.*.cell_size or mem_require.size < @as(u64, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size))))) continue;
         _out_vulkan_buffer_node.*.idx = value.*.bind_buffer(_out_vulkan_buffer_node.*.buffer) catch {
             continue;
         };
