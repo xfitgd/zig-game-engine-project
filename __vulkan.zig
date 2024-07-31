@@ -107,11 +107,19 @@ var format: vk.VkSurfaceFormatKHR = undefined;
 pub var color_2d_pipeline: vk.VkPipeline = null;
 //
 
+const struct_VkShaderModuleCreateInfo = extern struct {
+    sType: vk.VkStructureType = @import("std").mem.zeroes(vk.VkStructureType),
+    pNext: ?*const anyopaque = @import("std").mem.zeroes(?*const anyopaque),
+    flags: vk.VkShaderModuleCreateFlags = @import("std").mem.zeroes(vk.VkShaderModuleCreateFlags),
+    codeSize: usize = @import("std").mem.zeroes(usize),
+    pCode: [*]const u8 = undefined,
+};
+
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
-    const createInfo: vk.VkShaderModuleCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code.len, .pCode = @ptrCast(@alignCast(code.ptr)) };
+    const createInfo: struct_VkShaderModuleCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code.len, .pCode = code.ptr };
 
     var shaderModule: vk.VkShaderModule = undefined;
-    const result = vk.vkCreateShaderModule(vkDevice, &createInfo, null, &shaderModule);
+    const result = vk.vkCreateShaderModule(vkDevice, @ptrCast(&createInfo), null, &shaderModule);
 
     system.handle_error(result == vk.VK_SUCCESS, result, "createShaderModule.vkCreateShaderModule");
 

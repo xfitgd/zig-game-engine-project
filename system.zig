@@ -87,6 +87,11 @@ pub const monitor_info = struct {
     }
 };
 
+///_int * 1000000000 + _dec
+pub inline fn sec_to_nano_sec(_int: anytype, _dec: anytype) @TypeOf(_int, _dec) {
+    return _int * 1000000000 + _dec;
+}
+
 pub const init_setting = struct {
     pub const DEF_POS_SIZE = __windows.CW_USEDEFAULT;
     pub const PRIMARY_SCREEN_INDEX = std.math.maxInt(u32);
@@ -109,7 +114,7 @@ pub const init_setting = struct {
     cursor: ?[]const u8 = null,
     //*
 
-    ///nanosec
+    ///nanosec 단위 1프레임당 1sec = 1000000000 nanosec
     maxframe: i64 = 0,
     refleshrate: u32 = 0,
     vSync: bool = false,

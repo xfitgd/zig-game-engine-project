@@ -42,12 +42,8 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
         .{ .os_tag = .linux, .cpu_arch = .x86_64, .abi = .android },
     };
 
-    var install_step: *std.Build.Step = undefined;
-    if (PLATFORM == XfitPlatform.android) {
-        install_step = b.step("shared lib build", "shared lib build");
-    } else {
-        install_step = b.default_step;
-    }
+    var install_step: *std.Build.Step = b.default_step;
+    install_step = b.step("shared lib build", "shared lib build");
 
     comptime var i = 0;
     inline while (i < targets.len) : (i += 1) {
@@ -155,32 +151,12 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
         if (PLATFORM != XfitPlatform.android) break;
     }
 
+    var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {
-        //aapt2 compile --dir res -o res.zip
-        const cmd = b.addSystemCommand(&.{ "aapt2", "compile", "--dir", "res", "-o", "zig-out/res.zip" });
-
-        //aapt2 link -o zig-out/output.apk -I C:/Android/platforms/android-34/android.jar zig-out/res.zip --java . --manifest AndroidManifest.xml
-        const cmd2 = b.addSystemCommand(&.{ "aapt2", "link", "-o", "zig-out/output.apk", "-I", comptime std.fmt.comptimePrint("{s}/platforms/android-{d}/android.jar", .{ ANDROID_PATH, ANDROID_VER }), "zig-out/res.zip", "--java", ".", "--manifest", "AndroidManifest.xml" });
-
-        //zip -r zig-out/output.apk ../lib/
-        const cmd3 = b.addSystemCommand(&.{ "zip", "-r", "zig-out/output.apk", "lib/" });
-
-        //zip -r zig-out/output.apk ../assets/
-        const cmd4 = b.addSystemCommand(&.{ "zip", "-r", "zig-out/output.apk", "assets/" });
-
-        //zipalign -p -f -v 4 zig-out/output.apk zig-out/unsigned.apk
-        const cmd5 = b.addSystemCommand(&.{ "zipalign", "-p", "-f", "-v", "4", "zig-out/output.apk", "zig-out/unsigned.apk" });
-
-        //apksigner sign --ks debug.keystore --ks-pass pass:android --out zig-out/signed.apk zig-out/unsigned.apk
-        const cmd6 = b.addSystemCommand(&.{ "apksigner", "sign", "--ks", ANDROID_KEYSTORE, "--ks-pass", "pass:android", "--out", "zig-out/signed.apk", "zig-out/unsigned.apk" });
-
-        cmd6.step.dependOn(&cmd5.step);
-        cmd5.step.dependOn(&cmd4.step);
-        cmd4.step.dependOn(&cmd3.step);
-        cmd3.step.dependOn(&cmd2.step);
-        cmd2.step.dependOn(&cmd.step);
-        cmd.step.dependOn(install_step);
-
-        b.default_step.dependOn(&cmd6.step);
+        cmd = b.addSystemCommand(&.{ "compile", "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
+    } else {
+        cmd = b.addSystemCommand(&.{"compile"});
     }
+    cmd.step.dependOn(install_step);
+    b.default_step.dependOn(&cmd.step);
 }

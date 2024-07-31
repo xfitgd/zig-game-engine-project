@@ -18,7 +18,7 @@ pub fn xfit_main(init_setting: *const system.init_setting) void {
         //vulkan_start, root.xfit_init()는 별도의 작업 스레드에서 호출(거기서 렌더링)
 
         __windows.windows_loop();
-    } else if (root.root.platform == root.root.XfitPlatform.android) {
+    } else if (root.platform == root.XfitPlatform.android) {
         __vulkan.vulkan_start();
 
         root.xfit_init();
