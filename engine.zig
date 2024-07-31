@@ -49,8 +49,6 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
     inline while (i < targets.len) : (i += 1) {
         var result: *std.Build.Step.Compile = undefined;
 
-        const __vulkan = b.addModule("__vulkan", .{ .root_source_file = b.path("zig-game-engine-project/__vulkan.zig") });
-
         const build_options_module = build_options.createModule();
 
         if (PLATFORM == XfitPlatform.android) {
@@ -64,59 +62,24 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
             //if (i == 2) result.link_z_notext = true; //x86 only
 
             var contents = std.ArrayList(u8).init(b.allocator);
-            errdefer contents.deinit();
-
             var writer = contents.writer();
-            //  The directory that contains `stdlib.h`.
-            //  On POSIX-like systems, include directories be found with: `cc -E -Wp,-v -xc /dev/null
             writer.print("include_dir={s}\n", .{comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include", .{ANDROID_NDK_PATH})}) catch unreachable;
-
-            //writer.print("sys_include_dir={s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/c++/v1\n", .{ANDROID_NDK_PATH}) catch unreachable;
-
-            // The system-specific include directory. May be the same as `include_dir`.
-            // On Windows it's the directory that includes `vcruntime.h`.
-            // On POSIX it's the directory that includes `sys/errno.h`.
             writer.print("sys_include_dir={s}\n", .{comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/{s}", .{ ANDROID_NDK_PATH, arch_text[i] })}) catch unreachable;
-
             writer.print("crt_dir={s}\n", .{comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}/{d}", .{ ANDROID_NDK_PATH, arch_text[i], ANDROID_VER })}) catch unreachable;
-
             writer.writeAll("msvc_lib_dir=\n") catch unreachable;
             writer.writeAll("kernel32_lib_dir=\n") catch unreachable;
             writer.writeAll("gcc_dir=\n") catch unreachable;
-
-            const step = b.addWriteFile("android-libc.conf", contents.items);
-
-            result.setLibCFile(step.files.items[0].getPath());
-
-            install_step.dependOn(&step.step);
-            //result.subsystem = .Posix;
-
-            // ?? c++
-            //result.addIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/c++/v1", .{ANDROID_NDK_PATH})});
+            const android_libc_step = b.addWriteFile("android-libc.conf", contents.items);
+            result.setLibCFile(android_libc_step.files.items[0].getPath());
+            install_step.dependOn(&android_libc_step.step);
 
             result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/{s}", .{ ANDROID_NDK_PATH, arch_text[i] }) });
-
             result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/18/include", .{ANDROID_NDK_PATH}) });
-
             result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include", .{ANDROID_NDK_PATH}) });
             result.addSystemIncludePath(b.path("."));
 
-            __vulkan.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/{s}", .{ ANDROID_NDK_PATH, arch_text[i] }) });
-
-            //?? unused
-            // result.addCSourceFile(.{.file = b.path("android_glue.c"), .flags = &[_][]const u8{"-fPIC",
-            // comptime std.fmt.comptimePrint("-I{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include",.{ANDROID_NDK_PATH}),
-            // comptime std.fmt.comptimePrint("-I{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/c++/v1",.{ANDROID_NDK_PATH}),
-            // comptime std.fmt.comptimePrint("-I{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/{s}",.{ANDROID_NDK_PATH, arch_text[i]})}});
-
-            // !! ERROR CODE
-            // result.addLibraryPath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}", .{ANDROID_NDK_PATH, arch_text[i]})});
-            // !!
-
             result.addLibraryPath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}/{d}", .{ ANDROID_NDK_PATH, arch_text[i], ANDROID_VER }) });
 
-            // result.linkSystemLibrary("c++_static");
-            // result.linkSystemLibrary("c++abi");
             result.linkSystemLibrary("android");
             result.linkSystemLibrary("vulkan");
             result.linkSystemLibrary("c");
@@ -137,7 +100,6 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
             });
             result.linkLibC();
 
-            __vulkan.addIncludePath(.{ .cwd_relative = VULKAN_INC_PATH });
             result.addIncludePath(.{ .cwd_relative = VULKAN_INC_PATH });
 
             result.addObjectFile(b.path("zig-game-engine-project/lib/vulkan.lib"));
