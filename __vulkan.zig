@@ -139,21 +139,37 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
     vk.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
 
+    const viewport: vk.VkViewport = .{
+        .x = 0,
+        .y = 0,
+        .width = @floatFromInt(vkExtent.width),
+        .height = @floatFromInt(vkExtent.height),
+        .maxDepth = 1,
+        .minDepth = 0,
+    };
+    const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+
     if (graphics.scene != null) {
         for (graphics.scene.?.*) |value| {
-            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, value.*.pipeline);
-
-            const viewport: vk.VkViewport = .{ .x = 0, .y = 0, .width = @floatFromInt(vkExtent.width), .height = @floatFromInt(vkExtent.height), .maxDepth = 1, .minDepth = 0 };
-
-            const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+            const ivertices = value.*.get_ivertices(value) orelse continue;
+            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline);
 
             vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
             vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
             const offsets: vk.VkDeviceSize = 0;
-            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &value.*.node.buffer, &offsets);
+            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.buffer, &offsets);
 
-            vk.vkCmdDraw(commandBuffer, @intCast(value.get_vertices_len(value)), 1, 0, 0);
+            const iindices = value.*.get_iindices(value);
+            if (iindices != null) {
+                vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.buffer, 0, switch (iindices.?.*.idx_type) {
+                    .U16 => vk.VK_INDEX_TYPE_UINT16,
+                    .U32 => vk.VK_INDEX_TYPE_UINT32,
+                });
+                vk.vkCmdDrawIndexed(commandBuffer, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
+            } else {
+                vk.vkCmdDraw(commandBuffer, @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
+            }
         }
     }
 
@@ -341,7 +357,14 @@ pub fn vulkan_start() void {
     var deviceFeatures: vk.VkPhysicalDeviceFeatures = .{};
 
     const device_extension_names = [_][:0]const u8{vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    var deviceCreateInfo: vk.VkDeviceCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pQueueCreateInfos = &qci, .queueCreateInfoCount = queue_count, .pEnabledFeatures = &deviceFeatures, .ppEnabledExtensionNames = @ptrCast(&device_extension_names), .enabledExtensionCount = 1 };
+    var deviceCreateInfo: vk.VkDeviceCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &qci,
+        .queueCreateInfoCount = queue_count,
+        .pEnabledFeatures = &deviceFeatures,
+        .ppEnabledExtensionNames = @ptrCast(&device_extension_names),
+        .enabledExtensionCount = 1,
+    };
     result = vk.vkCreateDevice(vk_physical_devices[0], &deviceCreateInfo, null, &vkDevice);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateDevice");
 
@@ -368,9 +391,19 @@ pub fn vulkan_start() void {
     defer allocator.free(vert_code);
     defer allocator.free(frag_code);
 
-    const vertShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = vk.VK_SHADER_STAGE_VERTEX_BIT, .module = vert_shader, .pName = "main" };
+    const vertShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = vk.VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vert_shader,
+        .pName = "main",
+    };
 
-    const fragShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = vk.VK_SHADER_STAGE_FRAGMENT_BIT, .module = frag_shader, .pName = "main" };
+    const fragShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_shader,
+        .pName = "main",
+    };
 
     const shaderStages = [_]vk.VkPipelineShaderStageCreateInfo{ vertShaderStageInfo, fragShaderStageInfo };
 
@@ -386,9 +419,19 @@ pub fn vulkan_start() void {
 
     const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
 
-    const dynamicState: vk.VkPipelineDynamicStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = dynamicStates.len, .pDynamicStates = &dynamicStates };
+    const dynamicState: vk.VkPipelineDynamicStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = dynamicStates.len,
+        .pDynamicStates = &dynamicStates,
+    };
 
-    const viewportState: vk.VkPipelineViewportStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1, .pViewports = @ptrCast(&viewport), .pScissors = @ptrCast(&scissor) };
+    const viewportState: vk.VkPipelineViewportStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .scissorCount = 1,
+        .pViewports = @ptrCast(&viewport),
+        .pScissors = @ptrCast(&scissor),
+    };
 
     const rasterizer: vk.VkPipelineRasterizationStateCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -404,11 +447,35 @@ pub fn vulkan_start() void {
         .depthBiasSlopeFactor = 0,
     };
 
-    const multisampling: vk.VkPipelineMultisampleStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, .sampleShadingEnable = vk.VK_FALSE, .rasterizationSamples = vk.VK_SAMPLE_COUNT_1_BIT, .minSampleShading = 1, .pSampleMask = null, .alphaToCoverageEnable = vk.VK_FALSE, .alphaToOneEnable = vk.VK_FALSE };
+    const multisampling: vk.VkPipelineMultisampleStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .sampleShadingEnable = vk.VK_FALSE,
+        .rasterizationSamples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .minSampleShading = 1,
+        .pSampleMask = null,
+        .alphaToCoverageEnable = vk.VK_FALSE,
+        .alphaToOneEnable = vk.VK_FALSE,
+    };
 
-    const colorBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{ .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT, .blendEnable = vk.VK_FALSE, .srcColorBlendFactor = vk.VK_BLEND_FACTOR_ONE, .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ZERO, .colorBlendOp = vk.VK_BLEND_OP_ADD, .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE, .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO, .alphaBlendOp = vk.VK_BLEND_OP_ADD };
+    const colorBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
+        .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
+        .blendEnable = vk.VK_FALSE,
+        .srcColorBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = vk.VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = vk.VK_BLEND_OP_ADD,
+    };
 
-    const colorBlending: vk.VkPipelineColorBlendStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .logicOpEnable = vk.VK_FALSE, .logicOp = vk.VK_LOGIC_OP_COPY, .attachmentCount = 1, .pAttachments = @ptrCast(&colorBlendAttachment), .blendConstants = .{ 0, 0, 0, 0 } };
+    const colorBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = vk.VK_FALSE,
+        .logicOp = vk.VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = @ptrCast(&colorBlendAttachment),
+        .blendConstants = .{ 0, 0, 0, 0 },
+    };
 
     const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -420,7 +487,16 @@ pub fn vulkan_start() void {
     result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &vkPipelineLayout);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreatePipelineLayout");
 
-    const colorAttachment: vk.VkAttachmentDescription = .{ .format = format.format, .samples = vk.VK_SAMPLE_COUNT_1_BIT, .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE, .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE, .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE, .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED, .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+    const colorAttachment: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    };
 
     const colorAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 0, .layout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
 
@@ -430,7 +506,13 @@ pub fn vulkan_start() void {
         .pColorAttachments = @ptrCast(&colorAttachmentRef),
     };
 
-    const renderPassInfo: vk.VkRenderPassCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 1, .pAttachments = @ptrCast(&colorAttachment), .subpassCount = 1, .pSubpasses = @ptrCast(&subpass) };
+    const renderPassInfo: vk.VkRenderPassCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = @ptrCast(&colorAttachment),
+        .subpassCount = 1,
+        .pSubpasses = @ptrCast(&subpass),
+    };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateRenderPass");
@@ -488,7 +570,12 @@ pub fn vulkan_start() void {
     result = vk.vkCreateCommandPool(vkDevice, &poolInfo, null, &vkCommandPool);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateCommandPool");
 
-    const allocInfo: vk.VkCommandBufferAllocateInfo = .{ .commandPool = vkCommandPool, .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1, .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    const allocInfo: vk.VkCommandBufferAllocateInfo = .{
+        .commandPool = vkCommandPool,
+        .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    };
 
     result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, @ptrCast(&vkCommandBuffer));
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkAllocateCommandBuffers");

@@ -120,6 +120,8 @@ inline fn mulAdd(comptime T: type, v0: @Vector(4, T), v1: @Vector(4, T), v2: @Ve
     }
 }
 
+pub const matrix = matrix4x4(f32);
+
 ///https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
 pub fn matrix4x4(comptime T: type) type {
     test_number_type(T);
@@ -562,7 +564,7 @@ pub fn matrix4x4(comptime T: type) type {
 }
 
 ///  row ↕, col ↔
-pub fn matrix(comptime T: type, row: comptime_int, col: comptime_int) type {
+pub fn matrix_(comptime T: type, row: comptime_int, col: comptime_int) type {
     test_number_type(T);
 
     return struct {
