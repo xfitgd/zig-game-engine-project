@@ -42,8 +42,8 @@ pub var activated: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 ///false = key_up, true = key_down
 pub var keys: [KEY_SIZE]std.atomic.Value(bool) = [_]std.atomic.Value(bool){std.atomic.Value(bool).init(false)} ** KEY_SIZE;
 pub const KEY_SIZE = 512;
-pub var key_down_func: ?*const fn (key_code: input.Key()) void = null;
-pub var key_up_func: ?*const fn (key_code: input.Key()) void = null;
+pub var key_down_func: ?*const fn (key_code: input.key()) void = null;
+pub var key_up_func: ?*const fn (key_code: input.key()) void = null;
 
 pub var monitors: ArrayList(system.monitor_info) = ArrayList(system.monitor_info).init(allocator);
 pub var primary_monitor: ?*system.monitor_info = null;

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 ///_num에서 _multiple 배수 중 가까운 값을 구합니다.
 pub fn round_up(comptime T: type, _num: T, _multiple: T) T {
@@ -28,7 +29,7 @@ pub inline fn test_float_type(comptime T: type) void {
     switch (@typeInfo(T)) {
         .Float, .ComptimeFloat => {},
         else => {
-            @compileError("not a number type");
+            @compileError("not a float number type");
         },
     }
 }
@@ -74,22 +75,6 @@ pub fn vector(comptime T: type) type {
     return @Vector(4, T);
 }
 
-inline fn f32x4_mask3(comptime T: type) @Vector(4, T) {
-    return @Vector(4, T){
-        @as(T, @bitCast(@as(u32, 0xffff_ffff))),
-        @as(T, @bitCast(@as(u32, 0xffff_ffff))),
-        @as(T, @bitCast(@as(u32, 0xffff_ffff))),
-        0,
-    };
-}
-
-inline fn andInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
-    const T = @TypeOf(v0, v1);
-    const Tu = @Vector(@typeInfo(T).Vector.Len, u32);
-    const v0u = @as(Tu, @bitCast(v0));
-    const v1u = @as(Tu, @bitCast(v1));
-    return @as(T, @bitCast(v0u & v1u)); // andps
-}
 pub inline fn dot3(comptime T: type, v0: vector(T), v1: vector(T)) T {
     const dot = v0 * v1;
     return dot[0] + dot[1] + dot[2];
@@ -107,8 +92,6 @@ pub inline fn cross3(comptime T: type, v0: vector(T), v1: vector(T)) vector(T) {
     result[3] = 0;
     return result;
 }
-
-const builtin = @import("builtin");
 
 //pub const matrix3x3 = matrix(f32, 3, 3);
 

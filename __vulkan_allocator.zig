@@ -65,8 +65,8 @@ const vulkan_buffer = struct {
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
 
-    ///! 따로 vulkan_buffer.destroy를 호출하지 않는다.
-    fn destroy(self: *vulkan_buffer) void {
+    ///! 따로 vulkan_buffer.deinit를 호출하지 않는다.
+    fn deinit(self: *vulkan_buffer) void {
         vk.vkFreeMemory(__vulkan.vkDevice, self.*.mem, null);
         _allocator.free(self.*.is_free);
     }
@@ -154,19 +154,12 @@ pub fn init() Self {
 buffers: MemoryPool(vulkan_buffer),
 buffer_ids: ArrayList(*vulkan_buffer),
 
-pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop: vk.VkMemoryPropertyFlags, _out_vulkan_buffer_node: *vulkan_buffer_node) !void {
-    const result = vk.vkCreateBuffer(__vulkan.vkDevice, _buf_info, null, &_out_vulkan_buffer_node.*.buffer);
-    system.handle_error(result == vk.VK_SUCCESS, result, "__vulkan_allocator.create_buffer.vkCreateBuffer");
-    errdefer vk.vkDestroyBuffer(__vulkan.vkDevice, _out_vulkan_buffer_node.*.buffer, null);
-
-    var mem_require: vk.VkMemoryRequirements = undefined;
-    vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, _out_vulkan_buffer_node.*.buffer, &mem_require);
-
+fn create_allocator_and_bind(self: *Self, _buf: vk.VkBuffer, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *u64) !*vulkan_buffer {
     var buf: ?*vulkan_buffer = null;
     for (self.*.buffer_ids.items) |value| {
         //?버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
-        if (mem_require.size > value.*.cell_size or (mem_require.size > MINIMUM_SIZE and mem_require.size < @as(u64, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
-        _out_vulkan_buffer_node.*.idx = value.*.bind_buffer(_out_vulkan_buffer_node.*.buffer) catch {
+        if (_mem_require.*.size > value.*.cell_size or (_mem_require.*.size > MINIMUM_SIZE and _mem_require.*.size < @as(u64, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
+        _out_idx.* = value.*.bind_buffer(_buf) catch {
             continue;
         };
         buf = value;
@@ -175,13 +168,61 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
     if (buf == null) {
         buf = try self.*.buffers.create();
         errdefer self.*.buffers.destroy(buf.?);
-        buf.?.* = try vulkan_buffer.init(math.round_up(u64, mem_require.size, mem_require.alignment), BLOCK_LEN, mem_require.memoryTypeBits, _prop);
-        errdefer buf.?.*.destroy();
+        buf.?.* = try vulkan_buffer.init(math.round_up(u64, _mem_require.*.size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
+        errdefer buf.?.*.deinit();
 
-        _out_vulkan_buffer_node.*.idx = try buf.?.*.bind_buffer(_out_vulkan_buffer_node.*.buffer);
+        _out_idx.* = try buf.?.*.bind_buffer(_buf);
         try self.*.buffer_ids.append(buf.?);
     }
-    _out_vulkan_buffer_node.*.pvulkan_buffer = buf.?;
+    return buf.?;
+}
+
+pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop: vk.VkMemoryPropertyFlags, _out_vulkan_buffer_node: *vulkan_buffer_node, _data: ?[]u8) !void {
+    var result: c_int = undefined;
+    var mem_require: vk.VkMemoryRequirements = undefined;
+    var staging_alloc: *vulkan_buffer = undefined;
+    var staging_buf: vk.VkBuffer = undefined;
+    var staging_buf_idx: u64 = undefined;
+    var buf_info = _buf_info.*;
+
+    if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
+        const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = buf_info.size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+        result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
+        system.handle_error(result == vk.VK_SUCCESS, result, "__vulkan_allocator.create_buffer.vkCreateBuffer");
+
+        vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
+
+        buf_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx) catch |err| {
+            vk.vkDestroyBuffer(__vulkan.vkDevice, staging_buf, null);
+            return err;
+        };
+        var _out_data: ?*anyopaque = null;
+        staging_alloc.*.map(staging_buf_idx, &_out_data) catch |err| {
+            vk.vkDestroyBuffer(__vulkan.vkDevice, staging_buf, null);
+            return err;
+        };
+        @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data))), _data.?);
+        staging_alloc.*.unmap();
+    }
+    result = vk.vkCreateBuffer(__vulkan.vkDevice, &buf_info, null, &_out_vulkan_buffer_node.*.buffer);
+    system.handle_error(result == vk.VK_SUCCESS, result, "__vulkan_allocator.create_buffer.vkCreateBuffer");
+    errdefer vk.vkDestroyBuffer(__vulkan.vkDevice, _out_vulkan_buffer_node.*.buffer, null);
+
+    vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, _out_vulkan_buffer_node.*.buffer, &mem_require);
+
+    _out_vulkan_buffer_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_buffer_node.*.buffer, &mem_require, _prop, &_out_vulkan_buffer_node.*.idx) catch |err| {
+        if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
+            staging_alloc.unbind_buffer(staging_buf, staging_buf_idx);
+        }
+        return err;
+    };
+
+    if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
+        __vulkan.copyBuffer(staging_buf, _out_vulkan_buffer_node.*.buffer, buf_info.size); // ! mem_require.size X
+        staging_alloc.unbind_buffer(staging_buf, staging_buf_idx);
+    }
 }
 pub fn destroy_buffer(_in_vulkan_buffer_node: *vulkan_buffer_node) void {
     _in_vulkan_buffer_node.*.pvulkan_buffer.*.unbind_buffer(_in_vulkan_buffer_node.*.buffer, _in_vulkan_buffer_node.*.idx);
@@ -189,9 +230,9 @@ pub fn destroy_buffer(_in_vulkan_buffer_node: *vulkan_buffer_node) void {
     _in_vulkan_buffer_node.*.buffer = null;
 }
 ///destroy_buffer 후 호출
-pub fn destroy(self: *Self) void {
+pub fn deinit(self: *Self) void {
     for (self.*.buffer_ids.items) |value| {
-        value.*.destroy(); // ! 따로 vulkan_buffer.destroy를 호출하지 않는다.
+        value.*.deinit(); // ! 따로 vulkan_buffer.destroy를 호출하지 않는다.
     }
     self.*.buffers.deinit();
 }

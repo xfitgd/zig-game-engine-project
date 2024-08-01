@@ -105,6 +105,7 @@ var format: vk.VkSurfaceFormatKHR = undefined;
 
 //Predefined Pipelines
 pub var color_2d_pipeline: vk.VkPipeline = null;
+pub var color_2di_pipeline: vk.VkPipeline = null;
 //
 
 const struct_VkShaderModuleCreateInfo = extern struct {
@@ -440,11 +441,37 @@ pub fn vulkan_start() void {
             .stride = @sizeOf(f32) * (2 + 4),
             .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{ .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 }, .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 } };
+        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{
+            .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 },
+            .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 },
+        };
 
-        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .vertexBindingDescriptionCount = 1, .vertexAttributeDescriptionCount = 2, .pVertexBindingDescriptions = &bindingDescription, .pVertexAttributeDescriptions = &attributeDescriptions };
+        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 1,
+            .vertexAttributeDescriptionCount = 2,
+            .pVertexBindingDescriptions = &bindingDescription,
+            .pVertexAttributeDescriptions = &attributeDescriptions,
+        };
 
-        const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = &shaderStages, .pVertexInputState = &vertexInputInfo, .pInputAssemblyState = &inputAssembly, .pViewportState = &viewportState, .pRasterizationState = &rasterizer, .pMultisampleState = &multisampling, .pDepthStencilState = null, .pColorBlendState = &colorBlending, .pDynamicState = &dynamicState, .layout = vkPipelineLayout, .renderPass = vkRenderPass, .subpass = 0, .basePipelineHandle = std.mem.zeroes(vk.VkPipeline), .basePipelineIndex = -1 };
+        const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = 2,
+            .pStages = &shaderStages,
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pDepthStencilState = null,
+            .pColorBlendState = &colorBlending,
+            .pDynamicState = &dynamicState,
+            .layout = vkPipelineLayout,
+            .renderPass = vkRenderPass,
+            .subpass = 0,
+            .basePipelineHandle = null,
+            .basePipelineIndex = -1,
+        };
 
         result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline);
         system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline");
@@ -486,7 +513,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyCommandPool(vkDevice, vkCommandPool, null);
 
     cleanup_swapchain();
-    vk_allocator.destroy();
+    vk_allocator.deinit();
 
     vk.vkDestroyShaderModule(vkDevice, vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, frag_shader, null);
@@ -623,6 +650,49 @@ fn create_swapchain_and_imageviews() void {
         result = vk.vkCreateImageView(vkDevice, &image_view_createInfo, null, &vk_swapchain_image_views[i]);
         system.handle_error(result == vk.VK_SUCCESS, result, "create_swapchain_and_imageviews.vkCreateImageView");
     }
+}
+
+pub fn copyBuffer(srcBuffer: vk.VkBuffer, dstBuffer: vk.VkBuffer, size: vk.VkDeviceSize) void {
+    const allocInfo: vk.VkCommandBufferAllocateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandPool = vkCommandPool,
+        .commandBufferCount = 1,
+    };
+
+    var commandBuffer: vk.VkCommandBuffer = undefined;
+    var result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, &commandBuffer);
+    system.handle_error(result == vk.VK_SUCCESS, result, "copyBuffer.vkAllocateCommandBuffers");
+
+    const beginInfo: vk.VkCommandBufferBeginInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    result = vk.vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    system.handle_error(result == vk.VK_SUCCESS, result, "copyBuffer.vkBeginCommandBuffer");
+
+    const copyRegion: vk.VkBufferCopy = .{
+        .size = size,
+        .srcOffset = 0,
+        .dstOffset = 0,
+    };
+
+    vk.vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+    result = vk.vkEndCommandBuffer(commandBuffer);
+    system.handle_error(result == vk.VK_SUCCESS, result, "copyBuffer.vkEndCommandBuffer");
+
+    const submitInfo: vk.VkSubmitInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer,
+    };
+
+    result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, null);
+    system.handle_error(result == vk.VK_SUCCESS, result, "copyBuffer.vkQueueSubmit");
+    result = vk.vkQueueWaitIdle(vkGraphicsQueue);
+    system.handle_error(result == vk.VK_SUCCESS, result, "copyBuffer.vkQueueWaitIdle");
+
+    vk.vkFreeCommandBuffers(vkDevice, vkCommandPool, 1, &commandBuffer);
 }
 
 pub fn recreate_swapchain(_recreate_window: bool) void {

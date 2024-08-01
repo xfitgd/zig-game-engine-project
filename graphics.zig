@@ -12,6 +12,7 @@ const __vulkan = @import("__vulkan.zig");
 const vk = __vulkan.vk;
 
 const math = @import("math.zig");
+const mem = @import("mem.zig");
 const point = math.point;
 const point3d = math.point3d;
 const vector = math.vector;
@@ -21,6 +22,16 @@ const matrix_error = math.matrix_error;
 const vulkan_buffer_node = __vulkan_allocator.vulkan_buffer_node;
 
 pub const color_vertex_2d = color_vertex_2d_(f32);
+pub const indices16 = indices(u16);
+pub const indices32 = indices(u32);
+
+pub const dummy_vertices = [@sizeOf(vertices(u8))]u8;
+pub const dummy_indices = [@sizeOf(indices(u8))]u8;
+
+pub const take_vertices = mem.align_ptr_cast;
+pub const take_indices = mem.align_ptr_cast;
+
+pub const write_flag = enum { read_gpu, readwrite_cpu };
 
 pub fn color_vertex_2d_(comptime T: type) type {
     return extern struct {
@@ -63,6 +74,62 @@ pub const ivertices = struct {
         }
     }
 };
+pub const iindices = struct {
+    const Self = @This();
+
+    get_indices_len: *const fn (self: *iindices) usize = undefined,
+
+    node: vulkan_buffer_node = vulkan_buffer_node.init(),
+
+    pub inline fn clean(self: *Self) void {
+        if (self.*.node.buffer != null) {
+            __vulkan_allocator.destroy_buffer(&self.*.node);
+        }
+    }
+};
+
+pub fn indices(comptime idxT: type) type {
+    return struct {
+        const Self = @This();
+
+        array: ArrayList(idxT) = undefined,
+        interface: iindices = .{},
+
+        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터 호출 가능)
+        pub fn init(allocator: std.mem.Allocator) Self {
+            system.handle_error_msg(__vulkan.color_2d_pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+            var self: Self = .{};
+            self.array = ArrayList(idxT).init(allocator);
+            self.interface.get_indices_len = get_indices_len;
+            return self;
+        }
+        ///완전히 정리
+        pub inline fn deinit(self: *Self) void {
+            clean(self);
+            self.*.array.deinit();
+        }
+        ///다시 빌드할수 있게 버퍼 내용만 정리
+        pub inline fn clean(self: *Self) void {
+            self.*.interface.clean();
+        }
+        fn get_indices_len(_interface: *iindices) usize {
+            const self = @as(*Self, @fieldParentPtr("interface", _interface));
+            return self.*.array.items.len;
+        }
+        pub fn build(self: *Self, _flag: write_flag) !void {
+            clean(self);
+            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.items.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+
+            const prop: vk.VkMemoryPropertyFlags =
+                switch (_flag) {
+                .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            };
+
+            try __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
+        }
+    };
+}
 
 pub fn vertices(comptime vertexT: type) type {
     return struct {
@@ -71,22 +138,22 @@ pub fn vertices(comptime vertexT: type) type {
         array: ArrayList(vertexT) = undefined,
         interface: ivertices = .{},
 
-        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터)
+        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터 호출 가능)
         pub fn init(allocator: std.mem.Allocator) Self {
             var self: Self = .{};
-            self.array = ArrayList(vertexT).init(allocator);
             self.interface.pipeline = vertexT.get_pipeline();
             system.handle_error_msg(self.interface.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+            self.array = ArrayList(vertexT).init(allocator);
 
             self.interface.get_vertices_len = get_vertices_len;
             return self;
         }
-        pub fn get_vertices_len(_interface: *ivertices) usize {
+        fn get_vertices_len(_interface: *ivertices) usize {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
             return self.*.array.items.len;
         }
         ///완전히 정리
-        pub inline fn destroy(self: *Self) void {
+        pub inline fn deinit(self: *Self) void {
             clean(self);
             self.*.array.deinit();
         }
@@ -94,27 +161,17 @@ pub fn vertices(comptime vertexT: type) type {
         pub inline fn clean(self: *Self) void {
             self.*.interface.clean();
         }
-        pub fn build(self: *Self) !void {
+        pub fn build(self: *Self, _flag: write_flag) !void {
             clean(self);
             const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.items.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
-            try __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &self.*.interface.node);
+            const prop: vk.VkMemoryPropertyFlags =
+                switch (_flag) {
+                .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            };
 
-            var data: ?*anyopaque = undefined;
-            try self.*.interface.node.map(&data);
-            @memcpy(@as([*]vertexT, @alignCast(@ptrCast(data))), self.*.array.items);
-            //system.print("{d} {d}\n", .{ self.*.array.len, @as([*]vertexT, @alignCast(@ptrCast(data)))[0..self.*.array.len] });
-            self.*.interface.node.unmap();
-
-            //? 버퍼 생성 삭제 테스트용
-            // // __vulkan_allocator.destroy_buffer(&self.*.interface.node);
-
-            // // try __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, &self.*.interface.node);
-
-            // // try self.*.interface.node.map(&data);
-            // // @memcpy(@as([*]vertexT, @alignCast(@ptrCast(data))), self.*.array.items);
-            // // //system.print("{d} {d}\n", .{ self.*.array.len, @as([*]vertexT, @alignCast(@ptrCast(data)))[0..self.*.array.len] });
-            // // self.*.interface.node.unmap();
+            try __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
         }
     };
 }

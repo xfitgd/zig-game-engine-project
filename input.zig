@@ -9,7 +9,7 @@ const __system = @import("__system.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
 
-pub fn Key() type {
+pub fn key() type {
     if (root.platform == root.XfitPlatform.windows) {
         return enum(u16) {
             A = 'A',
@@ -461,10 +461,10 @@ pub inline fn set_Rmouse_up_func(_func: *const fn () void) void {
 pub inline fn set_Mmouse_up_func(_func: *const fn () void) void {
     __system.Mmouse_up_func = _func;
 }
-pub inline fn set_key_down_func(_func: *const fn (Key()) void) void {
+pub inline fn set_key_down_func(_func: *const fn (key()) void) void {
     __system.key_down_func = _func;
 }
-pub inline fn set_key_up_func(_func: *const fn (Key()) void) void {
+pub inline fn set_key_up_func(_func: *const fn (key()) void) void {
     __system.key_up_func = _func;
 }
 
@@ -487,7 +487,7 @@ pub inline fn Rmouse_up() bool {
     return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 ///false -> up, true -> down
-pub inline fn key_down_or_up(_key: Key()) bool {
+pub inline fn key_down_or_up(_key: key()) bool {
     if (@intFromEnum(_key) >= __system.KEY_SIZE) {
         system.print("WARN key_down_or_up out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, @intFromEnum(_key) });
         return false;
