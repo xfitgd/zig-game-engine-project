@@ -1,7 +1,7 @@
 pub const UNICODE = true;
 
 const std = @import("std");
-
+const builtin = @import("builtin");
 const root = @import("root");
 
 const system = @import("system.zig");
@@ -25,4 +25,10 @@ pub fn xfit_main(init_setting: *const system.init_setting) void {
     } else {
         @compileError("not supported platforms");
     }
+    for (__system.monitors.items) |*value| {
+        value.*.resolutions.deinit();
+    }
+    __system.monitors.deinit();
+
+    if (builtin.mode == .Debug and __system.gpa.deinit() != .ok) unreachable;
 }

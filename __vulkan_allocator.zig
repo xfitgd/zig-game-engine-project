@@ -235,4 +235,5 @@ pub fn deinit(self: *Self) void {
         value.*.deinit(); // ! 따로 vulkan_buffer.destroy를 호출하지 않는다.
     }
     self.*.buffers.deinit();
+    self.*.buffer_ids.deinit();
 }

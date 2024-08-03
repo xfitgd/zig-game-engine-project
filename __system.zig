@@ -2,7 +2,9 @@ const std = @import("std");
 
 const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
-pub const allocator = std.heap.c_allocator;
+
+pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+pub const allocator = gpa.allocator();
 
 const system = @import("system.zig");
 const __vulkan = @import("__vulkan.zig");
