@@ -245,17 +245,11 @@ pub fn set_window_mode(pos: math.point(i32), size: math.point(u32), state: syste
     win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, 0);
     win32.SetWindowPos(hWnd, 0, pos.x, pos.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
-    switch (state) {
-        .Restore => {
-            _ = win32.ShowWindow(hWnd, win32.SW_RESTORE);
-        },
-        .Maximized => {
-            _ = win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
-        },
-        .Minimized => {
-            _ = win32.ShowWindow(hWnd, win32.SW_MINIMIZE);
-        },
-    }
+    _ = win32.ShowWindow(hWnd, switch (state) {
+        .Restore => win32.SW_RESTORE,
+        .Maximized => win32.SW_MAXIMIZE,
+        .Minimized => win32.SW_MINIMIZE,
+    });
 }
 
 pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
@@ -370,10 +364,12 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
         },
         win32.WM_ACTIVATE => {
             if (S.activateInited) {
-                __system.pause.store((HIWORD(wParam) != 0), std.builtin.AtomicOrder.monotonic);
-                __system.activated.store((LOWORD(wParam) != win32.WA_INACTIVE), std.builtin.AtomicOrder.monotonic);
+                const pause = (HIWORD(wParam) != 0);
+                const activated = (LOWORD(wParam) != win32.WA_INACTIVE);
+                __system.pause.store(pause, std.builtin.AtomicOrder.monotonic);
+                __system.activated.store(activated, std.builtin.AtomicOrder.monotonic);
 
-                root.xfit_activate();
+                root.xfit_activate(activated, pause);
             }
             S.activateInited = true;
             return 0;

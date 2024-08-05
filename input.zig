@@ -439,7 +439,7 @@ pub fn key() type {
             _,
         };
     } else {
-        @compileError("not supported platforms");
+        @compileError("not support platform");
     }
 }
 

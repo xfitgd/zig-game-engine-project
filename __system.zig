@@ -75,3 +75,12 @@ pub fn loop() void {
 
     //system.print_debug("rendering {d}\n", .{system.delta_time()});
 }
+
+pub fn destroy() void {
+    for (monitors.items) |*value| {
+        value.*.resolutions.deinit();
+    }
+    monitors.deinit();
+
+    if (builtin.mode == .Debug and gpa.deinit() != .ok) unreachable;
+}

@@ -13,7 +13,6 @@ pub const android = @cImport({
     @cUndef("_WIN32");
     @cDefine("_GNU_SOURCE", {});
     @cDefine("__ANDROID__", {});
-    @cDefine("VK_USE_PLATFORM_ANDROID_KHR", {});
     @cInclude("malloc.h");
     @cInclude("stdint.h");
     @cInclude("android/asset_manager.h");
@@ -22,7 +21,6 @@ pub const android = @cImport({
     @cInclude("android/looper.h");
     @cInclude("android/native_activity.h");
     @cInclude("android/sensor.h");
-    @cInclude("vulkan/vulkan.h");
     @cInclude("jni.h");
 });
 
@@ -125,30 +123,32 @@ pub fn get_AssetManager() ?*android.AAssetManager {
 }
 
 pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
-    const androidSurfaceCreateInfo: android.VkAndroidSurfaceCreateInfoKHR = .{ .window = @ptrCast(app.window) };
-    const result = android.vkCreateAndroidSurfaceKHR(@ptrCast(vkInstance), &androidSurfaceCreateInfo, null, @ptrCast(vkSurface));
+    const androidSurfaceCreateInfo: __vulkan.vk.VkAndroidSurfaceCreateInfoKHR = .{ .window = @ptrCast(app.window) };
+    const result = __vulkan.vk.vkCreateAndroidSurfaceKHR(@ptrCast(vkInstance), &androidSurfaceCreateInfo, null, @ptrCast(vkSurface));
 
-    system.handle_error(result == android.VK_SUCCESS, result, "vulkan_android_start.vkCreateAndroidSurfaceKHR");
+    system.handle_error(result == __vulkan.vk.VK_SUCCESS, result, "vulkan_android_start.vkCreateAndroidSurfaceKHR");
 }
 
 pub fn vulkan_android_recreate_surface(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
-    android.vkDestroySurfaceKHR(@ptrCast(vkInstance), @as(*android.VkSurfaceKHR, @ptrCast(vkSurface)).*, null);
+    __vulkan.vk.vkDestroySurfaceKHR(@ptrCast(vkInstance), @as(*__vulkan.vk.VkSurfaceKHR, @ptrCast(vkSurface)).*, null);
 
     vulkan_android_start(vkInstance, vkSurface);
 }
 
-pub fn init_android() void {
+fn init_android() void {
     root.main();
 }
 
-pub fn draw_android() void {
+fn draw_android() void {
     __system.loop();
 }
 
-pub fn destroy_android() void {
+fn destroy_android() void {
     __vulkan.wait_for_fences();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
+
+    __system.destroy();
 }
 
 fn android_app_write_cmd(cmd: AppEvent) void {
@@ -414,18 +414,6 @@ fn process_input(_source: ?*android_poll_source) void {
     }
 }
 
-fn engine_term_display() void {}
-
-fn engine_init_display() void {
-    app.savedata.angle = 0;
-
-    make_window();
-}
-
-fn make_window() void {
-    if (app.window != null) {}
-}
-
 fn engine_handle_cmd(_cmd: AppEvent) void {
     switch (_cmd) {
         AppEvent.APP_CMD_SAVE_STATE => {
@@ -437,11 +425,9 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
         AppEvent.APP_CMD_INIT_WINDOW => {
             if (app.window != null) {
                 if (!app.inited) {
-                    engine_init_display();
                     init_android();
                     app.inited = true;
                 } else {
-                    make_window();
                     __vulkan.recreate_swapchain(true);
                 }
             }
@@ -449,9 +435,7 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
         AppEvent.APP_CMD_WINDOW_RESIZED => {
             __vulkan.recreate_swapchain(false);
         },
-        AppEvent.APP_CMD_TERM_WINDOW => {
-            engine_term_display();
-        },
+        AppEvent.APP_CMD_TERM_WINDOW => {},
         AppEvent.APP_CMD_GAINED_FOCUS => {
             app.animating = true;
             if (app.accelerometer_sensor != null) {
@@ -465,7 +449,6 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             }
 
             app.animating = false;
-            //engine_draw_frame();
         },
         else => {},
     }
@@ -534,7 +517,7 @@ fn anrdoid_app_entry() void {
         @memcpy(std.mem.asBytes(&app.savedata), app.savedState.?);
     }
 
-    while (true) {
+    while (true) out: {
         var ident: i32 = undefined;
         var events: i32 = undefined;
         var source: ?*android_poll_source = null;
@@ -557,10 +540,8 @@ fn anrdoid_app_entry() void {
             }
 
             if (app.destroryRequested) {
-                engine_term_display();
                 destroy_android();
-
-                return;
+                break :out;
             }
         }
 
@@ -574,7 +555,6 @@ fn anrdoid_app_entry() void {
         engine_draw_frame();
     }
 
-    _ = LOGV("android_app_destroy!", .{});
     free_saved_state();
     app.mutex.lock();
     if (app.input_queue != null) {

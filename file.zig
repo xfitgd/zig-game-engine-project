@@ -52,7 +52,7 @@ pub fn file() type {
         //TODO 추후에 제대로 구현
         @compileError("구현 필요");
     } else {
-        @compileError("not supported platform");
+        @compileError("not support platform");
     }
 }
 
@@ -91,7 +91,7 @@ pub fn read_file(path: []const u8, allocator: std.mem.Allocator) ![]u8 {
 
         __android.android.AAsset_close(asset);
     } else {
-        @compileError("not supported platform");
+        @compileError("not support platform");
     }
 
     return buffer;

@@ -16,8 +16,10 @@ pub const windows = __windows.win32;
 pub const android = __android.android;
 pub const vulkan = __vulkan.vk;
 
-pub const vkCreateDebugUtilsMessengerEXT = __vulkan.vkCreateDebugUtilsMessengerEXT;
-pub const vkDestroyDebugUtilsMessengerEXT = __vulkan.vkDestroyDebugUtilsMessengerEXT;
+pub const vulkan_ext = struct {
+    pub const vkCreateDebugUtilsMessengerEXT = __vulkan.vkCreateDebugUtilsMessengerEXT;
+    pub const vkDestroyDebugUtilsMessengerEXT = __vulkan.vkDestroyDebugUtilsMessengerEXT;
+};
 
 pub const window_state = enum {
     Restore,
@@ -72,8 +74,8 @@ pub const monitor_info = struct {
             __windows.set_fullscreen_mode(&self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print_error("ERR monitor_info.set_fullscreen_mode not supported this root.platform.\n", .{});
-            unreachable;
+            print("WARN monitor_info.set_fullscreen_mode not support mobile platform.\n", .{});
+            return;
         }
     }
     pub fn set_borderlessscreen_mode(self: Self) void {
@@ -81,8 +83,8 @@ pub const monitor_info = struct {
             __windows.set_borderlessscreen_mode(&self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print_error("ERR monitor_info.set_borderlessscreen_mode not supported mobile platforms.\n", .{});
-            unreachable;
+            print("WARN monitor_info.set_borderlessscreen_mode not support mobile platform.\n", .{});
+            return;
         }
     }
 };
@@ -161,8 +163,8 @@ pub fn notify() void {
     if (root.platform == root.XfitPlatform.windows) {
         _ = __windows.win32.FlashWindow(__windows.hWnd, __windows.TRUE);
     } else {
-        print_error("ERR notify not supported mobile platforms.\n", .{});
-        unreachable;
+        print("WARN notify not support mobile platform.\n", .{});
+        return;
     }
 }
 pub fn text_notify(text: []const u8) void {
@@ -172,8 +174,7 @@ pub fn text_notify(text: []const u8) void {
     } else if (root.platform == root.XfitPlatform.android) {
         //TODO 안드로이드 텍스트 알림 구현
     } else {
-        print_error("ERR text_notify not supported mobile platforms.\n", .{});
-        unreachable;
+        @compileError("not support platform");
     }
 }
 

@@ -22,7 +22,7 @@ pub const vk = @cImport({
     } else if (root.platform == root.XfitPlatform.android) {
         @cDefine("VK_USE_PLATFORM_ANDROID_KHR", "1");
     } else {
-        @compileError("not supported platforms");
+        @compileError("not support platform");
     }
     @cInclude("vulkan/vulkan.h");
 });
@@ -43,7 +43,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
         } else if (root.platform == root.XfitPlatform.android) {
             return vk.VkExtent2D{ .width = 0, .height = 0 };
         } else {
-            @compileError("not supported platforms");
+            @compileError("not support platform");
         }
     }
 }
@@ -262,7 +262,7 @@ pub fn vulkan_start() void {
     } else if (root.platform == root.XfitPlatform.android) {
         extension_names.append("VK_KHR_android_surface") catch unreachable;
     } else {
-        @compileError("not supported platforms");
+        @compileError("not support platform");
     }
 
     const createInfo: vk.VkInstanceCreateInfo = .{
@@ -294,7 +294,7 @@ pub fn vulkan_start() void {
     } else if (root.platform == root.XfitPlatform.android) {
         __android.vulkan_android_start(vkInstance, &vkSurface);
     } else {
-        @compileError("not supported platforms");
+        @compileError("not support platform");
     }
 
     var deviceCount: u32 = 0;
