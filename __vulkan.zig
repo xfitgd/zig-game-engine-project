@@ -41,7 +41,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
             height = std.math.clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
             return vk.VkExtent2D{ .width = width, .height = height };
         } else if (root.platform == root.XfitPlatform.android) {
-            return vk.VkExtent2D{ .width = 0, .height = 0 };
+            return vk.VkExtent2D{ .width = __android.get_device_width(), .height = __android.get_device_height() };
         } else {
             @compileError("not support platform");
         }

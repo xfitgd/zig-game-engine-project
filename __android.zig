@@ -163,6 +163,15 @@ fn onConfigurationChanged(_activity: [*c]android.ANativeActivity) callconv(.C) v
     android_app_write_cmd(AppEvent.APP_CMD_CONFIG_CHANGED);
 }
 
+pub fn get_device_width() u32 {
+    const width = android.ANativeWindow_getWidth(app.window);
+    return if (width < 0) 0 else @intCast(width);
+}
+pub fn get_device_height() u32 {
+    const height = android.ANativeWindow_getHeight(app.window);
+    return if (height < 0) 0 else @intCast(height);
+}
+
 fn onSaveInstanceState(_activity: [*c]android.ANativeActivity, _out_len: [*c]usize) callconv(.C) ?*anyopaque {
     _ = LOGV("SaveInstanceState: %p", .{_activity});
 
