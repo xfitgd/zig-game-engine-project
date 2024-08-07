@@ -298,7 +298,7 @@ pub const transform = struct {
     projection: *projection = undefined,
     __model_uniform: vulkan_buffer_node = .{},
     pub inline fn is_build(self: *Self) bool {
-        return self.*.__descriptor_pool != null;
+        return self.*.camera.is_build() and self.*.projection.is_build();
     }
     pub inline fn clean(self: *Self) void {
         self.*.__model_uniform.clean();
@@ -327,12 +327,12 @@ pub const iobject = struct {
     __descriptor_pool: vk.VkDescriptorPool = null,
 
     pub inline fn is_build(self: *Self) bool {
-        return self.*.__descriptor_pool != null;
+        return self.*.__descriptor_pool != null and self.*.transform.is_build();
     }
     ///transform에 포함된 버퍼 값이 변경될때마다 호출한다. 리소스만 변경시에는 대신 map_update 호출
     pub fn update(self: *Self) void {
-        if (!self.*.is_build() or !self.*.transform.camera.is_build() or !self.*.transform.projection.is_build()) {
-            system.print_error("ERR : need transform build or need transform.camera, projection build(invaild)\n", .{});
+        if (!self.*.is_build()) {
+            system.print_error("ERR : need transform build and need transform.camera, projection build(invaild)\n", .{});
             unreachable;
         }
         const buffer_info = [3]vk.VkDescriptorBufferInfo{
@@ -401,7 +401,7 @@ pub const iobject = struct {
         //update(self); 중복 업데이트 하면 값이 갱신된다.
     }
     pub fn deinit(self: *Self) void {
-        if (is_build(self)) {
+        if (self.*.__descriptor_pool != null) {
             vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
             self.*.__descriptor_pool = null;
             self.*.__descriptor_set = null;
