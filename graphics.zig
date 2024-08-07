@@ -292,7 +292,9 @@ pub const transform = struct {
     const Self = @This();
 
     model: matrix = matrix.identity(),
+    ///이 값이 변경되면 update 필요 또는 build로 초기화하기
     camera: *camera = undefined,
+    ///이 값이 변경되면 update 필요 또는 build로 초기화하기
     projection: *projection = undefined,
     __model_uniform: vulkan_buffer_node = .{},
     pub inline fn is_build(self: *Self) bool {
@@ -327,37 +329,12 @@ pub const iobject = struct {
     pub inline fn is_build(self: *Self) bool {
         return self.*.__descriptor_pool != null;
     }
-
-    pub fn build(self: *Self, _flag: write_flag) void {
-        if (!self.*.transform.camera.is_build() or !self.*.transform.projection.is_build()) {
+    ///transform에 포함된 버퍼 값이 변경될때마다 호출한다. 리소스만 변경시에는 대신 map_update 호출
+    pub fn update(self: *Self) void {
+        if (!self.*.is_build() or !self.*.transform.camera.is_build() or !self.*.transform.projection.is_build()) {
+            system.print_error("ERR : need transform build or need transform.camera, projection build(invaild)\n", .{});
             unreachable;
         }
-        deinit(self);
-
-        const pool_size: vk.VkDescriptorPoolSize = .{
-            .descriptorCount = 3,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        };
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = 1,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkCreateDescriptorPool");
-
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.vkDescriptorSetLayout,
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkAllocateDescriptorSets");
-
-        self.*.transform.build(_flag);
-
         const buffer_info = [3]vk.VkDescriptorBufferInfo{
             vk.VkDescriptorBufferInfo{
                 .buffer = self.*.transform.__model_uniform.buffer,
@@ -387,6 +364,41 @@ pub const iobject = struct {
             .pTexelBufferView = null,
         };
         vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
+    }
+
+    pub fn build(self: *Self, _flag: write_flag) void {
+        if (!self.*.transform.camera.is_build() or !self.*.transform.projection.is_build()) {
+            system.print_error("ERR : need transform.camera, projection build(invaild)\n", .{});
+            unreachable;
+        }
+        deinit(self);
+
+        const pool_size: vk.VkDescriptorPoolSize = .{
+            .descriptorCount = 3,
+            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        };
+        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 1,
+            .pPoolSizes = &pool_size,
+            .maxSets = 1,
+        };
+        var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
+        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkCreateDescriptorPool");
+
+        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = self.*.__descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &__vulkan.vkDescriptorSetLayout,
+        };
+        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
+        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkAllocateDescriptorSets");
+
+        self.*.transform.build(_flag);
+
+        update(self);
+        //update(self); 중복 업데이트 하면 값이 갱신된다.
     }
     pub fn deinit(self: *Self) void {
         if (is_build(self)) {
@@ -433,6 +445,10 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             self.*.interface.build(_flag);
+        }
+        ///transform에 포함된 버퍼 값이 변경될때마다 호출한다. 리소스만 변경시에는 대신 map_update 호출
+        pub fn update(self: *Self) void {
+            self.*.interface.update();
         }
         pub fn deinit(self: *Self) void {
             //     if (self.*.vertices != null) self.*.vertices.deinit();
