@@ -6,7 +6,7 @@ pub const XfitPlatform = enum(u32) { windows, android, linux, mac, end };
 //* User Setting
 //크로스 플랫폼 빌드시 zig build -Dtarget=aarch64-windows(linux)
 //x86_64-windows(linux)
-//? Android 쪽은 한번 테스트하고 안해서(Windows쪽 완성되면 할 예정) 버그 있을 겁니다.
+// Android 쪽은 한번 테스트하고 안해서(Windows쪽 완성되면 할 예정) 버그 있을 겁니다.
 const ANDROID_PATH = "C:/Android";
 const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.11718014", .{ANDROID_PATH});
 const ANDROID_VER = 34;
@@ -59,7 +59,7 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
                 .optimize = OPTIMIZE,
                 .pic = true,
             });
-            //if (i == 2) result.link_z_notext = true; //x86 only
+            //if (targets[i].cpu_arch == .x86) result.link_z_notext = true; //x86 only
 
             var contents = std.ArrayList(u8).init(b.allocator);
             var writer = contents.writer();

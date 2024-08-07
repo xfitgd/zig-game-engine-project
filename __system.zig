@@ -34,7 +34,6 @@ pub var Mmouse_up_func: ?*const fn () void = null;
 pub var Rmouse_up_func: ?*const fn () void = null;
 
 pub var window_move_func: ?*const fn () void = null;
-pub var window_size_func: ?*const fn () void = null;
 
 pub var cursor_pos: math.point(i32) = undefined;
 

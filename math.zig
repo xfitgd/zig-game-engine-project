@@ -80,10 +80,10 @@ pub inline fn dot3(comptime T: type, v0: vector(T), v1: vector(T)) T {
     return dot[0] + dot[1] + dot[2];
 }
 pub inline fn normalize3(comptime T: type, v: vector(T)) vector(T) {
-    return v * @as(vector(T), @splat(1)) / std.sqrt(dot3(v, v));
+    return v * (@as(vector(T), @splat(1)) / @as(vector(T), @splat(std.math.sqrt(dot3(T, v, v)))));
 }
 pub inline fn cross3(comptime T: type, v0: vector(T), v1: vector(T)) vector(T) {
-    var xmm0 = @shuffle(T, v0, undefined, [4]i32{ 1, 2, 1, 3 });
+    var xmm0 = @shuffle(T, v0, undefined, [4]i32{ 1, 2, 0, 3 });
     var xmm1 = @shuffle(T, v1, undefined, [4]i32{ 2, 0, 1, 3 });
     var result = xmm0 * xmm1;
     xmm0 = @shuffle(T, xmm0, undefined, [4]i32{ 1, 2, 0, 3 });
@@ -95,7 +95,7 @@ pub inline fn cross3(comptime T: type, v0: vector(T), v1: vector(T)) vector(T) {
 
 //pub const matrix3x3 = matrix(f32, 3, 3);
 
-pub const matrix_error = error{ not_exist_inverse_matrix, near_and_far_bigger_0, sfov_0, far_near_0, near_far_0, aspect_0, w_0, h_0 };
+pub const matrix_error = error{ not_exist_inverse_matrix, invaild_near_far, sfov_0, far_near_0, near_far_0, aspect_0, w_0, h_0 };
 
 fn compare_n(n: anytype, i: anytype) bool {
     switch (@typeInfo(@TypeOf(n, i))) {
@@ -255,13 +255,13 @@ pub fn matrix4x4(comptime T: type) type {
             test_float_type(T);
             return translation(1 / x, 1 / y, 1 / z);
         }
-
-        pub fn perspectiveFovLh(fovy: T, aspect: T, near: T, far: T) !Self {
+        ///Vulkan 으로 테스트 완료
+        pub fn perspectiveFovLh(fovy: T, aspect: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
-            const sfov = std.sin(0.5 * fovy);
-            const cfov = std.cos(0.5 * fovy);
+            const sfov = std.math.sin(0.5 * fovy);
+            const cfov = std.math.cos(0.5 * fovy);
 
-            if (near > 0.0 and far > 0.0) return matrix_error.near_and_far_bigger_0;
+            if (!(near > 0.0 and far > 0.0 and far > near)) return matrix_error.invaild_near_far;
             if (compare_n(sfov, 0)) return matrix_error.sfov_0;
             if (compare_n((far - near), 0)) return matrix_error.far_near_0;
             if (compare_n(aspect, 0)) return matrix_error.aspect_0;
@@ -275,16 +275,16 @@ pub fn matrix4x4(comptime T: type) type {
             return Self{ .e = .{
                 .{ w, 0, 0, 0 },
                 .{ 0, h, 0, 0 },
-                .{ 0, 0, r, 0 },
+                .{ 0, 0, r, 1 },
                 .{ 0, 0, -r * near, 0 },
             } };
         }
-        pub fn perspectiveFovRh(fovy: T, aspect: T, near: T, far: T) Self {
+        pub fn perspectiveFovRh(fovy: T, aspect: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
-            const sfov = std.sin(0.5 * fovy);
-            const cfov = std.cos(0.5 * fovy);
+            const sfov = std.math.sin(0.5 * fovy);
+            const cfov = std.math.cos(0.5 * fovy);
 
-            if (near > 0.0 and far > 0.0) return matrix_error.near_and_far_bigger_0;
+            if (!(near > 0.0 and far > 0.0 and far > near)) return matrix_error.invaild_near_far;
             if (compare_n(sfov, 0)) return matrix_error.sfov_0;
             if (compare_n((near - far), 0)) return matrix_error.near_far_0;
             if (compare_n(aspect, 0)) return matrix_error.aspect_0;
@@ -302,7 +302,32 @@ pub fn matrix4x4(comptime T: type) type {
                 .{ 0, 0, r * near, 0 },
             } };
         }
-        pub fn orthographicLh(w: f32, h: f32, near: f32, far: f32) Self {
+        /// Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
+        pub fn perspectiveFovRhGL(fovy: T, aspect: T, near: T, far: T) matrix_error!Self {
+            test_float_type(T);
+            const sfov = std.math.sin(0.5 * fovy);
+            const cfov = std.math.cos(0.5 * fovy);
+
+            if (!(near > 0.0 and far > 0.0 and far > near)) return matrix_error.invaild_near_far;
+            if (compare_n(sfov, 0)) return matrix_error.sfov_0;
+            if (compare_n((near - far), 0)) return matrix_error.near_far_0;
+            if (compare_n(aspect, 0)) return matrix_error.aspect_0;
+            // assert(!approxEqAbs(f32, scfov[0], 0.0, 0.001));
+            // assert(!approxEqAbs(f32, far, near, 0.001));
+            // assert(!approxEqAbs(f32, aspect, 0.0, 0.01));
+
+            const h = cfov / sfov;
+            const w = h / aspect;
+            const r = near - far;
+            return Self{ .e = .{
+                .{ w, 0, 0, 0 },
+                .{ 0, h, 0, 0 },
+                .{ 0, 0, (near + far) / r, -1 },
+                .{ 0, 0, 2 * near * far / r, 0 },
+            } };
+        }
+        ///Vulkan 으로 테스트 완료
+        pub fn orthographicLh(w: T, h: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
             // assert(!approxEqAbs(f32, w, 0.0, 0.001));
             // assert(!approxEqAbs(f32, h, 0.0, 0.001));
@@ -321,8 +346,7 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
-
-        pub fn orthographicRh(w: f32, h: f32, near: f32, far: f32) Self {
+        pub fn orthographicRh(w: T, h: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
             // assert(!approxEqAbs(f32, w, 0.0, 0.001));
             // assert(!approxEqAbs(f32, h, 0.0, 0.001));
@@ -341,26 +365,30 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
+        ///w좌표는 신경 x
         pub fn lookToLh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
             test_float_type(T);
-            const az = normalize3(eyedir);
-            const ax = normalize3(cross3(updir, az));
-            const ay = normalize3(cross3(az, ax));
+            const az = normalize3(T, eyedir);
+            const ax = normalize3(T, cross3(T, updir, az));
+            const ay = normalize3(T, cross3(T, az, ax));
             return .{
                 .e = .{
                     .{ ax[0], ay[0], az[0], 0 },
                     .{ ax[1], ay[1], az[1], 0 },
                     .{ ax[2], ay[2], az[2], 0 },
-                    .{ -dot3(ax, eyepos), -dot3(ay, eyepos), -dot3(az, eyepos), 1.0 },
+                    .{ -dot3(T, ax, eyepos), -dot3(T, ay, eyepos), -dot3(T, az, eyepos), 1 },
                 },
             };
         }
+        ///w좌표는 신경 x
         pub fn lookToRh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, -eyedir, updir);
         }
+        ///Vulkan 으로 테스트 완료, w좌표는 신경 x
         pub fn lookAtLh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, focuspos - eyepos, updir);
         }
+        ///w좌표는 신경 x
         pub fn lookAtRh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
             return lookToLh(eyepos, eyepos - focuspos, updir);
         }

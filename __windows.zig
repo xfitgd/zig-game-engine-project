@@ -57,7 +57,7 @@ inline fn GET_Y_LPARAM(l: anytype) INT {
     return @intCast(HIWORD(l));
 }
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
-    //? hinstance, hwnd 필드 포인터 정렬 문제 때문에 직접 만들어서 넣음. extern struct -> C style struct
+    // hinstance, hwnd 필드 포인터 정렬 문제 때문에 직접 만들어서 넣음. extern struct -> C style struct
     const VkWin32SurfaceCreateInfoKHR = extern struct {
         sType: c_int = __vulkan.vk.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
         pNext: ?*const anyopaque = null,
@@ -380,7 +380,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                     @atomicStore(i32, &__system.init_set.window_width, @intCast(LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
                     @atomicStore(i32, &__system.init_set.window_height, @intCast(HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
-                    if (__system.window_size_func != null) __system.window_size_func.?();
+                    root.xfit_size();
                 }
 
                 S.sizeInited = true;

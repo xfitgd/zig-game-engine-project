@@ -6,6 +6,8 @@ const __windows = @import("__windows.zig");
 const __android = @import("__android.zig");
 const file = @import("file.zig");
 const system = @import("system.zig");
+const math = @import("math.zig");
+const matrix = math.matrix;
 const graphics = @import("graphics.zig");
 const __system = @import("__system.zig");
 
@@ -72,7 +74,8 @@ var vkSurface: vk.VkSurfaceKHR = undefined;
 var vkRenderPass: vk.VkRenderPass = undefined;
 var vkSwapchain: vk.VkSwapchainKHR = undefined;
 
-var vkPipelineLayout: vk.VkPipelineLayout = undefined;
+pub var vkPipelineLayout: vk.VkPipelineLayout = undefined;
+pub var vkDescriptorSetLayout: vk.VkDescriptorSetLayout = undefined;
 var vkCommandPool: vk.VkCommandPool = undefined;
 var vkCommandBuffer: vk.VkCommandBuffer = undefined;
 
@@ -86,11 +89,10 @@ var vkDebugMessenger: vk.VkDebugUtilsMessengerEXT = null;
 var vkGraphicsQueue: vk.VkQueue = undefined;
 var vkPresentQueue: vk.VkQueue = undefined;
 
-var vert_shader: vk.VkShaderModule = undefined;
-var frag_shader: vk.VkShaderModule = undefined;
+var vert_shader1: vk.VkShaderModule = undefined;
+var frag_shader1: vk.VkShaderModule = undefined;
 
 var vkExtent: vk.VkExtent2D = undefined;
-
 var vk_swapchain_frame_buffers: []vk.VkFramebuffer = undefined;
 var vk_swapchain_image_views: []vk.VkImageView = undefined;
 
@@ -156,6 +158,8 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
             vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
             vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
+
+            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipelineLayout, 0, 1, &value.__descriptor_set, 0, null);
 
             const offsets: vk.VkDeviceSize = 0;
             vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.buffer, &offsets);
@@ -378,35 +382,6 @@ pub fn vulkan_start() void {
 
     create_swapchain_and_imageviews();
 
-    const vert_code = file.read_file("vert.spv", allocator) catch |err| {
-        system.handle_error2(false, 0, "vulkan_start.file.read_file(vert_code)", err);
-        unreachable;
-    };
-    const frag_code = file.read_file("frag.spv", allocator) catch |err| {
-        system.handle_error2(false, 0, "vulkan_start.file.read_file(frag_code)", err);
-        unreachable;
-    };
-    vert_shader = createShaderModule(vert_code);
-    frag_shader = createShaderModule(frag_code);
-    defer allocator.free(vert_code);
-    defer allocator.free(frag_code);
-
-    const vertShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = vk.VK_SHADER_STAGE_VERTEX_BIT,
-        .module = vert_shader,
-        .pName = "main",
-    };
-
-    const fragShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-        .module = frag_shader,
-        .pName = "main",
-    };
-
-    const shaderStages = [_]vk.VkPipelineShaderStageCreateInfo{ vertShaderStageInfo, fragShaderStageInfo };
-
     const dynamicStates = [_]vk.VkDynamicState{ vk.VK_DYNAMIC_STATE_VIEWPORT, vk.VK_DYNAMIC_STATE_SCISSOR };
 
     const inputAssembly: vk.VkPipelineInputAssemblyStateCreateInfo = .{
@@ -477,16 +452,6 @@ pub fn vulkan_start() void {
         .blendConstants = .{ 0, 0, 0, 0 },
     };
 
-    const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,
-        .pSetLayouts = null,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = null,
-    };
-    result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &vkPipelineLayout);
-    system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreatePipelineLayout");
-
     const colorAttachment: vk.VkAttachmentDescription = .{
         .format = format.format,
         .samples = vk.VK_SAMPLE_COUNT_1_BIT,
@@ -517,6 +482,79 @@ pub fn vulkan_start() void {
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateRenderPass");
 
+    const uboLayoutBinding = [3]vk.VkDescriptorSetLayoutBinding{
+        vk.VkDescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = null,
+        },
+        vk.VkDescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorCount = 1,
+            .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = null,
+        },
+        vk.VkDescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorCount = 1,
+            .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = null,
+        },
+    };
+    const set_layout_info: vk.VkDescriptorSetLayoutCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = uboLayoutBinding.len,
+        .pBindings = &uboLayoutBinding,
+    };
+    result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &vkDescriptorSetLayout);
+    system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreateDescriptorSetLayout");
+
+    const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &vkDescriptorSetLayout,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = null,
+    };
+
+    result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &vkPipelineLayout);
+    system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreatePipelineLayout");
+
+    //create_shader_stages1
+    const vert_code1 = file.read_file("vert.spv", allocator) catch |err| {
+        system.handle_error2(false, 0, "vulkan_start.file.read_file(vert_code)", err);
+        unreachable;
+    };
+    const frag_code1 = file.read_file("frag.spv", allocator) catch |err| {
+        system.handle_error2(false, 0, "vulkan_start.file.read_file(frag_code)", err);
+        unreachable;
+    };
+    vert_shader1 = createShaderModule(vert_code1);
+    frag_shader1 = createShaderModule(frag_code1);
+    defer allocator.free(vert_code1);
+    defer allocator.free(frag_code1);
+
+    const vertShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = vk.VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vert_shader1,
+        .pName = "main",
+    };
+
+    const fragShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_shader1,
+        .pName = "main",
+    };
+
+    const shader_stages1 = [_]vk.VkPipelineShaderStageCreateInfo{ vertShaderStageInfo, fragShaderStageInfo };
+
+    //create_color_2d_pipeline
     {
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
@@ -539,7 +577,7 @@ pub fn vulkan_start() void {
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount = 2,
-            .pStages = &shaderStages,
+            .pStages = &shader_stages1,
             .pVertexInputState = &vertexInputInfo,
             .pInputAssemblyState = &inputAssembly,
             .pViewportState = &viewportState,
@@ -602,11 +640,13 @@ pub fn vulkan_destroy() void {
     cleanup_swapchain();
     vk_allocator.deinit();
 
-    vk.vkDestroyShaderModule(vkDevice, vert_shader, null);
-    vk.vkDestroyShaderModule(vkDevice, frag_shader, null);
+    vk.vkDestroyShaderModule(vkDevice, vert_shader1, null);
+    vk.vkDestroyShaderModule(vkDevice, frag_shader1, null);
 
     vk.vkDestroyPipeline(vkDevice, color_2d_pipeline, null);
+
     vk.vkDestroyPipelineLayout(vkDevice, vkPipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, vkDescriptorSetLayout, null);
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
 
     vk.vkDestroySurfaceKHR(vkInstance, vkSurface, null);

@@ -3,6 +3,7 @@ const ArrayList = std.ArrayList;
 
 const file = @import("file.zig");
 const system = @import("system.zig");
+const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
@@ -16,18 +17,19 @@ const mem = @import("mem.zig");
 const point = math.point;
 const point3d = math.point3d;
 const vector = math.vector;
-const matrix4x4 = math.matrix4x4;
+const matrix = math.matrix;
 const matrix_error = math.matrix_error;
 
 const vulkan_buffer_node = __vulkan_allocator.vulkan_buffer_node;
 
 pub const color_vertex_2d = color_vertex_2d_(f32);
-pub const indices16 = indices(.U16);
-pub const indices32 = indices(.U32);
+pub const indices16 = indices_(.U16);
+pub const indices32 = indices_(.U32);
+pub const indices = indices_(DEF_IDX_TYPE);
 
 pub const dummy_vertices = [@sizeOf(vertices(u8))]u8;
-pub const dummy_indices = [@sizeOf(indices(.U32))]u8;
-pub const dummy_object = [@sizeOf(object(u8, .U32))]u8;
+pub const dummy_indices = [@sizeOf(indices)]u8;
+pub const dummy_object = [@sizeOf(object(u8))]u8;
 
 pub const take_vertices = mem.align_ptr_cast;
 pub const take_indices = mem.align_ptr_cast;
@@ -49,6 +51,7 @@ pub fn color_vertex_2d_(comptime T: type) type {
 pub var scene: ?*[]*iobject = null;
 
 pub const index_type = enum { U16, U32 };
+pub const DEF_IDX_TYPE: index_type = .U16;
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
     var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
@@ -70,13 +73,11 @@ pub const ivertices = struct {
     get_vertices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
 
-    node: vulkan_buffer_node = vulkan_buffer_node.init(),
+    node: vulkan_buffer_node = .{},
     pipeline: vk.VkPipeline = undefined,
 
     pub inline fn clean(self: *Self) void {
-        if (self.*.node.buffer != null) {
-            __vulkan_allocator.destroy_buffer(&self.*.node);
-        }
+        self.*.node.clean();
     }
 };
 pub const iindices = struct {
@@ -85,13 +86,11 @@ pub const iindices = struct {
     get_indices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
 
-    node: vulkan_buffer_node = vulkan_buffer_node.init(),
+    node: vulkan_buffer_node = .{},
     idx_type: index_type = undefined,
 
     pub inline fn clean(self: *Self) void {
-        if (self.*.node.buffer != null) {
-            __vulkan_allocator.destroy_buffer(&self.*.node);
-        }
+        self.*.node.clean();
     }
 };
 
@@ -140,12 +139,12 @@ pub fn vertices(comptime vertexT: type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items)) catch unreachable;
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
         }
     };
 }
 
-pub fn indices(comptime _type: index_type) type {
+pub fn indices_(comptime _type: index_type) type {
     return struct {
         const Self = @This();
         const idxT = switch (_type) {
@@ -193,30 +192,222 @@ pub fn indices(comptime _type: index_type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items)) catch unreachable;
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
         }
     };
 }
 
-pub const shape2d = object(color_vertex_2d, .U16);
+pub const shape2d = object(color_vertex_2d);
 
-/// ! iobject는 deinit 필요없음 ivertices, iindices는 따로 해제
+pub const projection = struct {
+    const Self = @This();
+    pub const view_type = enum { orthographic, perspective };
+    proj: matrix = undefined,
+    __uniform: vulkan_buffer_node = .{},
+
+    ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출 perspective일 경우 near, far 기본값 각각 0.1, 100
+    pub fn init(_view_type: view_type, fov: f32) matrix_error!Self {
+        var res: Self = .{};
+        try res.init_matrix(_view_type, fov);
+        return res;
+    }
+    ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출
+    pub fn init2(_view_type: view_type, fov: f32, near: f32, far: f32) matrix_error!Self {
+        var res: Self = .{};
+        try res.init_matrix2(_view_type, fov, near, far);
+        return res;
+    }
+    pub fn init_matrix(self: *Self, _view_type: view_type, fov: f32) matrix_error!void {
+        self.*.proj = switch (_view_type) {
+            .orthographic => try matrix.orthographicLh(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), 0.1, 100),
+            .perspective => try matrix.perspectiveFovLh(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), 0.1, 100),
+        };
+    }
+    pub fn init_matrix2(self: *Self, _view_type: view_type, fov: f32, near: f32, far: f32) matrix_error!void {
+        self.*.proj = switch (_view_type) {
+            .orthographic => try matrix.orthographicLh(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), near, far),
+            .perspective => try matrix.perspectiveFovLh(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), near, far),
+        };
+    }
+    pub inline fn is_build(self: *Self) bool {
+        return self.*.__uniform.is_build();
+    }
+    pub inline fn clean(self: *Self) void {
+        self.*.__uniform.clean();
+    }
+    pub fn build(self: *Self, _flag: write_flag) void {
+        clean(self);
+        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+
+        const prop: vk.VkMemoryPropertyFlags =
+            switch (_flag) {
+            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        };
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.proj));
+    }
+    ///write_flag가 readwrite_cpu만 호출
+    pub fn map_update(self: *Self) void {
+        var data: ?*matrix = undefined;
+        self.*.__uniform.map(@ptrCast(&data));
+        mem.memcpy_nonarray(data.?, &self.*.proj);
+        self.*.__uniform.unmap();
+    }
+};
+pub const camera = struct {
+    const Self = @This();
+    view: matrix = undefined,
+    __uniform: vulkan_buffer_node = .{},
+
+    /// w좌표는 신경 x
+    pub fn init(eyepos: vector(f32), focuspos: vector(f32), updir: vector(f32)) Self {
+        return .{ .view = matrix.lookAtLh(eyepos, focuspos, updir) };
+    }
+    pub inline fn is_build(self: *Self) bool {
+        return self.*.__uniform.is_build();
+    }
+    pub inline fn clean(self: *Self) void {
+        self.*.__uniform.clean();
+    }
+    pub fn build(self: *Self, _flag: write_flag) void {
+        clean(self);
+        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+
+        const prop: vk.VkMemoryPropertyFlags =
+            switch (_flag) {
+            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        };
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.view));
+    }
+    ///write_flag가 readwrite_cpu만 호출
+    pub fn map_update(self: *Self) void {
+        var data: ?*matrix = undefined;
+        self.*.__uniform.map(@ptrCast(&data));
+        mem.memcpy_nonarray(data, &self.*.view);
+        self.*.__uniform.unmap();
+    }
+};
+pub const transform = struct {
+    const Self = @This();
+
+    model: matrix = matrix.identity(),
+    camera: *camera = undefined,
+    projection: *projection = undefined,
+    __model_uniform: vulkan_buffer_node = .{},
+    pub inline fn is_build(self: *Self) bool {
+        return self.*.__descriptor_pool != null;
+    }
+    pub inline fn clean(self: *Self) void {
+        self.*.__model_uniform.clean();
+    }
+    pub fn build(self: *Self, _flag: write_flag) void {
+        clean(self);
+        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+
+        const prop: vk.VkMemoryPropertyFlags =
+            switch (_flag) {
+            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        };
+
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__model_uniform, mem.u8arr(self.*.model));
+    }
+};
+/// ! object는 deinit 필요없음 vertices, indices는 따로 해제
 pub const iobject = struct {
     const Self = @This();
 
     get_ivertices: *const fn (self: *iobject) ?*ivertices = undefined,
     get_iindices: *const fn (self: *iobject) ?*iindices = undefined,
+    transform: transform = .{},
+    __descriptor_set: vk.VkDescriptorSet = null,
+    __descriptor_pool: vk.VkDescriptorPool = null,
 
-    mat: math.matrix,
+    pub inline fn is_build(self: *Self) bool {
+        return self.*.__descriptor_pool != null;
+    }
+
+    pub fn build(self: *Self, _flag: write_flag) void {
+        if (!self.*.transform.camera.is_build() or !self.*.transform.projection.is_build()) {
+            unreachable;
+        }
+        deinit(self);
+
+        const pool_size: vk.VkDescriptorPoolSize = .{
+            .descriptorCount = 3,
+            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        };
+        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 1,
+            .pPoolSizes = &pool_size,
+            .maxSets = 1,
+        };
+        var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
+        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkCreateDescriptorPool");
+
+        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = self.*.__descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &__vulkan.vkDescriptorSetLayout,
+        };
+        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
+        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkAllocateDescriptorSets");
+
+        self.*.transform.build(_flag);
+
+        const buffer_info = [3]vk.VkDescriptorBufferInfo{
+            vk.VkDescriptorBufferInfo{
+                .buffer = self.*.transform.__model_uniform.buffer,
+                .offset = 0,
+                .range = @sizeOf(matrix),
+            },
+            vk.VkDescriptorBufferInfo{
+                .buffer = self.*.transform.camera.*.__uniform.buffer,
+                .offset = 0,
+                .range = @sizeOf(matrix),
+            },
+            vk.VkDescriptorBufferInfo{
+                .buffer = self.*.transform.projection.*.__uniform.buffer,
+                .offset = 0,
+                .range = @sizeOf(matrix),
+            },
+        };
+        const descriptorWrite: vk.VkWriteDescriptorSet = .{
+            .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = self.*.__descriptor_set,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = buffer_info.len,
+            .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &buffer_info,
+            .pImageInfo = null,
+            .pTexelBufferView = null,
+        };
+        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
+    }
+    pub fn deinit(self: *Self) void {
+        if (is_build(self)) {
+            vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
+            self.*.__descriptor_pool = null;
+            self.*.__descriptor_set = null;
+        }
+        self.*.transform.clean();
+    }
 };
-
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
-pub fn object(comptime vertexT: type, comptime _idx_type: index_type) type {
+pub fn object(comptime vertexT: type) type {
+    return object_(vertexT, DEF_IDX_TYPE);
+}
+/// ! object는 deinit 필요없음 vertices, indices는 따로 해제
+pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
     return struct {
         const Self = @This();
 
         vertices: ?*vertices(vertexT),
-        indices: ?*indices(_idx_type),
+        indices: ?*indices_(_idx_type),
         interface: iobject,
 
         fn get_ivertices(_interface: *iobject) ?*ivertices {
@@ -228,20 +419,25 @@ pub fn object(comptime vertexT: type, comptime _idx_type: index_type) type {
             return if (self.*.indices != null) &self.*.indices.?.*.interface else null;
         }
 
-        pub fn init() Self {
+        pub fn init(_camera: *camera, _projection: *projection) Self {
             var self = Self{
                 .vertices = null,
                 .indices = null,
-                .interface = undefined,
+                .interface = .{},
             };
             self.interface.get_ivertices = get_ivertices;
             self.interface.get_iindices = get_iindices;
-            self.interface.mat = math.matrix.identity();
+            self.interface.transform.camera = _camera;
+            self.interface.transform.projection = _projection;
             return self;
         }
-        // pub fn deinit(self: *Self) void {
-        //     if (self.*.vertices != null) self.*.vertices.deinit();
-        //     if (self.*.indices != null) self.*.indices.deinit();
-        // }
+        pub fn build(self: *Self, _flag: write_flag) void {
+            self.*.interface.build(_flag);
+        }
+        pub fn deinit(self: *Self) void {
+            //     if (self.*.vertices != null) self.*.vertices.deinit();
+            //     if (self.*.indices != null) self.*.indices.deinit();
+            self.*.interface.transform.clean();
+        }
     };
 }
