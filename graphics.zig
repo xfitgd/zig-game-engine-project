@@ -247,7 +247,6 @@ pub const projection = struct {
         };
         __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.proj));
     }
-    ///write_flag가 readwrite_cpu만 호출
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
         self.*.__uniform.map(@ptrCast(&data));
@@ -282,7 +281,6 @@ pub const camera = struct {
         };
         __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.view));
     }
-    ///write_flag가 readwrite_cpu만 호출
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
         self.*.__uniform.map(@ptrCast(&data));
@@ -310,6 +308,13 @@ pub const transform = struct {
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
         __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, mem.u8arr(self.*.model));
+    }
+    ///write_flag가 readwrite_cpu만 호출
+    pub fn map_update(self: *Self) void {
+        var data: ?*matrix = undefined;
+        self.*.__model_uniform.map(@ptrCast(&data));
+        mem.memcpy_nonarray(data.?, &self.*.model);
+        self.*.__model_uniform.unmap();
     }
 };
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
