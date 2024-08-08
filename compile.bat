@@ -1,10 +1,20 @@
-IF "%2" == "android" (
-aapt2 compile --dir res -o %1/res.zip
-aapt2 link -o %1/output.apk -I %3/platforms/android-%4/android.jar %1/res.zip --java . --manifest zig-game-engine-project/AndroidManifest.xml
-zip -r %1/output.apk lib/
-zip -r %1/output.apk assets/
-zipalign -p -f -v 4 %1/output.apk %1/unsigned.apk
-apksigner sign --ks zig-game-engine-project/debug.keystore --ks-pass pass:android --out %1/signed.apk %1/unsigned.apk
+set ENGINE_DIR=%1
+set OUT_DIR=%2
+set PLATFORM=%3
+set NDK_PATH=%4
+set ANDROID_VER=%5
+
+IF "%PLATFORM%" == "android" (
+aapt2 compile --dir res -o %OUT_DIR%/res.zip
+aapt2 link -o %OUT_DIR%/output.apk -I %NDK_PATH%/platforms/android-%ANDROID_VER%/android.jar %OUT_DIR%/res.zip --java . --manifest %ENGINE_DIR%/AndroidManifest.xml
+%ENGINE_DIR%/zip -r %OUT_DIR%/output.apk lib/
+%ENGINE_DIR%/zip -r %OUT_DIR%/output.apk assets/
+zipalign -p -f -v 4 %OUT_DIR%/output.apk %OUT_DIR%/unsigned.apk
+apksigner sign --ks %ENGINE_DIR%/debug.keystore --ks-pass pass:android --out %OUT_DIR%/signed.apk %OUT_DIR%/unsigned.apk
 )
 
-zig-game-engine-project/shader_compile
+
+:: shader compile
+glslc %ENGINE_DIR%/shader.vert -o assets/vert.spv
+glslc %ENGINE_DIR%/shader.frag -o assets/frag.spv
+::

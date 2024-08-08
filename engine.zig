@@ -11,11 +11,17 @@ const ANDROID_PATH = "C:/Android";
 const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.11718014", .{ANDROID_PATH});
 const ANDROID_VER = 34;
 const VULKAN_INC_PATH = "C:/vk/include";
+///(기본값)상대 경로 또는 절대 경로로 설정하기
+const ENGINE_DIR = "zig-game-engine-project";
 
 //keystore 없으면 생성
 //keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000
 const ANDROID_KEYSTORE = "debug.keystore";
 //*
+
+inline fn get_lazypath(b: *std.Build, path: []const u8) std.Build.LazyPath {
+    return if (std.fs.path.isAbsolute(path)) .{ .cwd_relative = path } else b.path(path);
+}
 
 pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
     const target = b.standardTargetOptions(.{});
@@ -102,7 +108,7 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
 
             result.addIncludePath(.{ .cwd_relative = VULKAN_INC_PATH });
 
-            result.addObjectFile(b.path("zig-game-engine-project/lib/vulkan.lib"));
+            result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/vulkan.lib"));
             result.subsystem = .Windows;
 
             result.root_module.addImport("build_options", build_options_module);
@@ -115,10 +121,10 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {
-        cmd = b.addSystemCommand(&.{ "zig-game-engine-project/compile", b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
+        cmd = b.addSystemCommand(&.{ ENGINE_DIR ++ "/compile", ENGINE_DIR, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
     } else {
         //std.debug.print("{s}\n", .{b.install_path});
-        cmd = b.addSystemCommand(&.{ "zig-game-engine-project/compile", b.install_path });
+        cmd = b.addSystemCommand(&.{ ENGINE_DIR ++ "/compile", ENGINE_DIR, b.install_path });
     }
     cmd.step.dependOn(install_step);
     b.default_step.dependOn(&cmd.step);
