@@ -115,9 +115,10 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {
-        cmd = b.addSystemCommand(&.{ "compile", "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
+        cmd = b.addSystemCommand(&.{ "zig-game-engine-project/compile", b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
     } else {
-        cmd = b.addSystemCommand(&.{"compile"});
+        //std.debug.print("{s}\n", .{b.install_path});
+        cmd = b.addSystemCommand(&.{ "zig-game-engine-project/compile", b.install_path });
     }
     cmd.step.dependOn(install_step);
     b.default_step.dependOn(&cmd.step);

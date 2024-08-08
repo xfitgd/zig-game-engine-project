@@ -22,7 +22,7 @@ pub fn window_width() i32 {
         const result = @atomicLoad(i32, &__system.init_set.window_width, std.builtin.AtomicOrder.monotonic);
         return result;
     } else if (root.platform == root.XfitPlatform.android) {
-        return __android.get_device_width();
+        return @intCast(__android.get_device_width());
     }
     @compileError("not support platform.");
 }
@@ -30,7 +30,7 @@ pub fn window_height() i32 {
     if (root.platform == root.XfitPlatform.windows) {
         return @atomicLoad(i32, &__system.init_set.window_height, std.builtin.AtomicOrder.monotonic);
     } else if (root.platform == root.XfitPlatform.android) {
-        return __android.get_device_height();
+        return @intCast(__android.get_device_height());
     }
     @compileError("not support platform.");
 }
