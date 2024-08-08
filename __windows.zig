@@ -380,6 +380,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                     @atomicStore(i32, &__system.init_set.window_width, @intCast(LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
                     @atomicStore(i32, &__system.init_set.window_height, @intCast(HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
+                    __system.size_update_sem.post();
                     root.xfit_size();
                 }
 
