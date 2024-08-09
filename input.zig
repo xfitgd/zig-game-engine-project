@@ -94,11 +94,15 @@ pub fn key() type {
             Comma = @intFromEnum(__windows.win32.VK_OEM_COMMA),
             Plus = @intFromEnum(__windows.win32.VK_OEM_PLUS),
             Minus = @intFromEnum(__windows.win32.VK_OEM_MINUS),
-            BackSlash = @intFromEnum(__windows.win32.VK_OEM_5), //\
+            ///\
+            BackSlash = @intFromEnum(__windows.win32.VK_OEM_5),
             Slash = @intFromEnum(__windows.win32.VK_OEM_2),
-            LSquareBracket = @intFromEnum(__windows.win32.VK_OEM_4), //[
-            RSquareBracket = @intFromEnum(__windows.win32.VK_OEM_6), //]
-            SwungDash = @intFromEnum(__windows.win32.VK_OEM_3), //`
+            ///[
+            LSquareBracket = @intFromEnum(__windows.win32.VK_OEM_4),
+            ///]
+            RSquareBracket = @intFromEnum(__windows.win32.VK_OEM_6),
+            ///`
+            SwungDash = @intFromEnum(__windows.win32.VK_OEM_3),
             Insert = @intFromEnum(__windows.win32.VK_INSERT),
             Home = @intFromEnum(__windows.win32.VK_HOME),
             PageUp = @intFromEnum(__windows.win32.VK_PRIOR),
@@ -106,8 +110,10 @@ pub fn key() type {
             Delete = @intFromEnum(__windows.win32.VK_DELETE),
             End = @intFromEnum(__windows.win32.VK_END),
             Pause = @intFromEnum(__windows.win32.VK_PAUSE),
-            Semicolon = @intFromEnum(__windows.win32.VK_OEM_1), //;
-            Apostrophe = @intFromEnum(__windows.win32.VK_OEM_7), //'
+            ///;
+            Semicolon = @intFromEnum(__windows.win32.VK_OEM_1),
+            ///'
+            Apostrophe = @intFromEnum(__windows.win32.VK_OEM_7),
             Up = @intFromEnum(__windows.win32.VK_UP),
             Down = @intFromEnum(__windows.win32.VK_DOWN),
             Left = @intFromEnum(__windows.win32.VK_LEFT),
@@ -194,21 +200,31 @@ pub fn key() type {
             RShift = __android.android.AKEYCODE_SHIFT_RIGHT,
             Tap = __android.android.AKEYCODE_TAB,
             SpaceBar = __android.android.AKEYCODE_SPACE,
-            Sym = __android.android.AKEYCODE_SYM, // Used to enter alternate symbols.
-            Browser = __android.android.AKEYCODE_EXPLORER, // Used to launch a browser application.
+            /// Used to enter alternate symbols.
+            Sym = __android.android.AKEYCODE_SYM,
+            /// Used to launch a browser application.
+            Browser = __android.android.AKEYCODE_EXPLORER,
             Mail = __android.android.AKEYCODE_ENVELOPE,
             Enter = __android.android.AKEYCODE_ENTER,
             BackSpace = __android.android.AKEYCODE_DEL,
-            SwungDash = __android.android.AKEYCODE_GRAVE, //`
+            ///`
+            SwungDash = __android.android.AKEYCODE_GRAVE,
             Minus = __android.android.AKEYCODE_MINUS,
             Equal = __android.android.AKEYCODE_EQUALS,
-            LSquareBracket = __android.android.AKEYCODE_LEFT_BRACKET, //[
-            RSquareBracket = __android.android.AKEYCODE_RIGHT_BRACKET, //]
-            BackSlash = __android.android.AKEYCODE_BACKSLASH, //\
-            Semicolon = __android.android.AKEYCODE_SEMICOLON, //;
-            Apostrophe = __android.android.AKEYCODE_APOSTROPHE, //'
-            Slash = __android.android.AKEYCODE_SLASH, // /
-            At = __android.android.AKEYCODE_AT, //@
+            ///[
+            LSquareBracket = __android.android.AKEYCODE_LEFT_BRACKET,
+            ///]
+            RSquareBracket = __android.android.AKEYCODE_RIGHT_BRACKET,
+            ///\
+            BackSlash = __android.android.AKEYCODE_BACKSLASH,
+            ///;
+            Semicolon = __android.android.AKEYCODE_SEMICOLON,
+            ///'
+            Apostrophe = __android.android.AKEYCODE_APOSTROPHE,
+            /// /
+            Slash = __android.android.AKEYCODE_SLASH,
+            ///@
+            At = __android.android.AKEYCODE_AT,
             Num = __android.android.AKEYCODE_NUM,
             HeadsetHook = __android.android.AKEYCODE_HEADSETHOOK,
             Focus = __android.android.AKEYCODE_FOCUS,

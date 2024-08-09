@@ -23,6 +23,14 @@ inline fn get_lazypath(b: *std.Build, path: []const u8) std.Build.LazyPath {
     return if (std.fs.path.isAbsolute(path)) .{ .cwd_relative = path } else b.path(path);
 }
 
+inline fn get_arch_text(idx: comptime_int) []const u8 {
+    return switch (idx) {
+        1 => "x86_64",
+        0 => "aarch64",
+        else => unreachable,
+    };
+}
+
 pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
     const target = b.standardTargetOptions(.{});
     const build_options = b.addOptions();
@@ -41,15 +49,14 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
         //"x86",
         "../lib/x86_64",
     };
-    const targets = [_]std.zig.CrossTarget{
+    const targets = [2]std.zig.CrossTarget{
         .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{.v8a}) },
         //.{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
         //.{ .os_tag = .linux, .cpu_arch = .x86, .abi = .android },
         .{ .os_tag = .linux, .cpu_arch = .x86_64, .abi = .android },
     };
 
-    var install_step: *std.Build.Step = b.default_step;
-    install_step = b.step("shared lib build", "shared lib build");
+    const install_step: *std.Build.Step = b.step("shared lib build", "shared lib build");
 
     comptime var i = 0;
     inline while (i < targets.len) : (i += 1) {
@@ -113,11 +120,24 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
 
             result.root_module.addImport("build_options", build_options_module);
 
+            switch (target.result.cpu.arch) {
+                .x86_64 => {
+                    result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/windows/x86_64/libwebp.a"));
+                },
+                .aarch64 => {
+                    result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/windows/aarch64/libwebp.a"));
+                },
+                else => unreachable,
+            }
+
             callback(result);
             b.installArtifact(result);
         } else unreachable;
+
+        result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include"));
         if (PLATFORM != XfitPlatform.android) break;
     }
+    install_step.dependOn(&b.addSystemCommand(&.{ ENGINE_DIR ++ "/shader_compile", ENGINE_DIR }).step);
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {

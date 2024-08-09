@@ -1,3 +1,5 @@
+@echo off
+
 set ENGINE_DIR=%1
 set OUT_DIR=%2
 set PLATFORM=%3
@@ -12,9 +14,3 @@ aapt2 link -o %OUT_DIR%/output.apk -I %NDK_PATH%/platforms/android-%ANDROID_VER%
 zipalign -p -f -v 4 %OUT_DIR%/output.apk %OUT_DIR%/unsigned.apk
 apksigner sign --ks %ENGINE_DIR%/debug.keystore --ks-pass pass:android --out %OUT_DIR%/signed.apk %OUT_DIR%/unsigned.apk
 )
-
-
-:: shader compile
-glslc %ENGINE_DIR%/shader.vert -o assets/vert.spv
-glslc %ENGINE_DIR%/shader.frag -o assets/frag.spv
-::

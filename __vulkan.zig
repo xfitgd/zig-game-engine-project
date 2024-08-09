@@ -4,7 +4,6 @@ const ArrayList = std.ArrayList;
 
 const __windows = @import("__windows.zig");
 const __android = @import("__android.zig");
-const file = @import("file.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
 const matrix = math.matrix;
@@ -525,18 +524,10 @@ pub fn vulkan_start() void {
     system.handle_error(result == vk.VK_SUCCESS, result, "vulkan_start.vkCreatePipelineLayout");
 
     //create_shader_stages1
-    const vert_code1 = file.read_file("vert.spv", allocator) catch |err| {
-        system.handle_error2(false, 0, "vulkan_start.file.read_file(vert_code)", err);
-        unreachable;
-    };
-    const frag_code1 = file.read_file("frag.spv", allocator) catch |err| {
-        system.handle_error2(false, 0, "vulkan_start.file.read_file(frag_code)", err);
-        unreachable;
-    };
+    const vert_code1 = @embedFile("shaders/out/vert.spv");
+    const frag_code1 = @embedFile("shaders/out/frag.spv");
     vert_shader1 = createShaderModule(vert_code1);
     frag_shader1 = createShaderModule(frag_code1);
-    defer allocator.free(vert_code1);
-    defer allocator.free(frag_code1);
 
     const vertShaderStageInfo: vk.VkPipelineShaderStageCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
