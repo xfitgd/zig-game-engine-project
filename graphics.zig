@@ -5,6 +5,10 @@ const file = @import("file.zig");
 const system = @import("system.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
+
+const builtin = @import("builtin");
+const dbg = builtin.mode == .Debug;
+
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
 const _allocator = __system.allocator;
@@ -204,12 +208,15 @@ pub const projection = struct {
     pub const view_type = enum { orthographic, perspective };
     proj: matrix = undefined,
     __uniform: vulkan_buffer_node = .{},
+    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
 
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출 perspective일 경우 near, far 기본값 각각 0.1, 100
     pub fn init(_view_type: view_type, fov: f32) matrix_error!Self {
         var res: Self = .{};
         try res.init_matrix(_view_type, fov);
         build(&res, .readwrite_cpu);
+
+        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
         return res;
     }
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출
@@ -217,6 +224,8 @@ pub const projection = struct {
         var res: Self = .{};
         try res.init_matrix2(_view_type, fov, near, far);
         build(&res, .readwrite_cpu);
+
+        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
         return res;
     }
     pub fn init_matrix(self: *Self, _view_type: view_type, fov: f32) matrix_error!void {
@@ -236,6 +245,8 @@ pub const projection = struct {
     }
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
+
+        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
     }
     fn build(self: *Self, _flag: write_flag) void {
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
@@ -258,11 +269,14 @@ pub const camera = struct {
     const Self = @This();
     view: matrix = undefined,
     __uniform: vulkan_buffer_node = .{},
+    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
 
     /// w좌표는 신경 x, 시스템 초기화 후 호출
     pub fn init(eyepos: vector(f32), focuspos: vector(f32), updir: vector(f32)) Self {
         var res = Self{ .view = matrix.lookAtLh(eyepos, focuspos, updir) };
         build(&res, .readwrite_cpu);
+
+        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
         return res;
     }
     pub inline fn is_inited(self: *Self) bool {
@@ -270,6 +284,8 @@ pub const camera = struct {
     }
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
+
+        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
     }
     fn build(self: *Self, _flag: write_flag) void {
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
@@ -288,6 +304,7 @@ pub const camera = struct {
         self.*.__uniform.unmap();
     }
 };
+//transform는 object와 한몸이라 따로 check_alloc 필요없음
 pub const transform = struct {
     const Self = @This();
 
@@ -300,11 +317,11 @@ pub const transform = struct {
     pub inline fn is_build(self: *Self) bool {
         return self.*.__model_uniform.is_build() and self.*.camera != null and self.*.projection != null and self.*.camera.?.*.is_inited() and self.*.projection.?.*.is_inited();
     }
-    pub inline fn deinit(self: *Self) void {
+    pub inline fn clean(self: *Self) void {
         self.*.__model_uniform.clean();
     }
     pub fn build(self: *Self) void {
-        deinit(self);
+        clean(self);
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
         __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, mem.u8arr(self.*.model));
@@ -326,6 +343,7 @@ pub const iobject = struct {
     transform: transform = .{},
     __descriptor_set: vk.VkDescriptorSet = null,
     __descriptor_pool: vk.VkDescriptorPool = null,
+    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
 
     pub inline fn is_build(self: *Self) bool {
         return self.*.__descriptor_pool != null and self.*.transform.is_build();
@@ -367,13 +385,19 @@ pub const iobject = struct {
         vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
     }
 
+    pub fn init() Self {
+        var res: Self = .{};
+        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
+        return res;
+    }
+
     pub fn build(self: *Self, _flag: write_flag) void {
         _ = _flag;
         if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.is_inited() or !self.*.transform.projection.?.*.is_inited()) {
             system.print_error("ERR : need transform.camera, projection build(invaild)\n", .{});
             unreachable;
         }
-        deinit(self);
+        clean(self);
 
         const pool_size: vk.VkDescriptorPoolSize = .{
             .descriptorCount = 3,
@@ -403,12 +427,17 @@ pub const iobject = struct {
         //update(self); 중복 업데이트 하면 값이 갱신된다.
     }
     pub fn deinit(self: *Self) void {
+        clean(self);
+
+        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
+    }
+    pub fn clean(self: *Self) void {
         if (self.*.__descriptor_pool != null) {
             vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
             self.*.__descriptor_pool = null;
             self.*.__descriptor_set = null;
         }
-        self.*.transform.deinit();
+        self.*.transform.clean();
     }
 };
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
@@ -439,8 +468,10 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
                 .indices = null,
                 .interface = .{},
             };
+            self.interface = iobject.init();
             self.interface.get_ivertices = get_ivertices;
             self.interface.get_iindices = get_iindices;
+
             return self;
         }
         pub fn build(self: *Self, _flag: write_flag) void {
@@ -451,7 +482,7 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
             self.*.interface.update();
         }
         pub fn deinit(self: *Self) void {
-            self.*.interface.transform.deinit();
+            self.*.interface.deinit();
         }
     };
 }

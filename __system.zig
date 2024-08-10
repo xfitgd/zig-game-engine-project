@@ -10,6 +10,7 @@ const system = @import("system.zig");
 const __vulkan = @import("__vulkan.zig");
 const math = @import("math.zig");
 const input = @import("input.zig");
+const mem = @import("mem.zig");
 
 const root = @import("root");
 
@@ -50,6 +51,8 @@ pub var monitors: ArrayList(system.monitor_info) = ArrayList(system.monitor_info
 pub var primary_monitor: ?*system.monitor_info = null;
 pub var size_update_sem: std.Thread.Semaphore = .{};
 
+pub var dummy_allocator = mem.dummy_allocator.init(allocator);
+
 pub fn loop() void {
     const S = struct {
         var start = false;
@@ -64,9 +67,9 @@ pub fn loop() void {
         delta_time = @intCast(S.now - temp);
         const maxframe = @atomicLoad(i64, &init_set.maxframe, std.builtin.AtomicOrder.monotonic);
         if (maxframe > 0) {
-            const maxf: i64 = @divFloor((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
+            const maxf: i64 = @divTrunc((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
             const sleep: i64 = maxf - delta_time;
-            if (sleep > 0) std.time.sleep(@intCast(sleep));
+            if (sleep > 0) system.sleep(@intCast(sleep));
             delta_time = maxf;
         }
     }
@@ -89,5 +92,6 @@ pub fn destroy() void {
     }
     monitors.deinit();
 
+    if (builtin.mode == .Debug and dummy_allocator.deinit() != .ok) unreachable;
     if (builtin.mode == .Debug and gpa.deinit() != .ok) unreachable;
 }

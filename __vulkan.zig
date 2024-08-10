@@ -197,9 +197,11 @@ pub fn vkDestroyDebugUtilsMessengerEXT(instance: vk.VkInstance, debugMessenger: 
 }
 
 fn debug_callback(messageSeverity: vk.VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: vk.VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: ?*const vk.VkDebugUtilsMessengerCallbackDataEXT, pUserData: ?*anyopaque) callconv(.C) vk.VkBool32 {
+    if (pCallbackData.?.*.messageIdNumber == 1284057537) return vk.VK_FALSE; //https://vulkan.lunarg.com/doc/view/1.3.283.0/windows/1.3-extensions/vkspec.html#VUID-VkSwapchainCreateInfoKHR-pNext-07781
     _ = messageSeverity;
     _ = messageType;
     _ = pUserData;
+
     system.print("{s}\n\n", .{pCallbackData.?.*.pMessage});
 
     return vk.VK_FALSE;
@@ -692,9 +694,7 @@ fn create_framebuffer() void {
 
 fn create_swapchain_and_imageviews() void {
     var surfaceCap: vk.VkSurfaceCapabilitiesKHR = undefined;
-    var result = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_physical_devices[0], vkSurface, @ptrCast(&surfaceCap));
-    system.handle_error(result == vk.VK_SUCCESS, result, "create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
-
+    var result: c_int = undefined;
     var formatCount: u32 = 0;
     result = vk.vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_devices[0], vkSurface, &formatCount, null);
     system.handle_error(result == vk.VK_SUCCESS, result, "create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceFormatsKHR(1)");
@@ -722,6 +722,9 @@ fn create_swapchain_and_imageviews() void {
     result = vk.vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_devices[0], vkSurface, &presentModeCount, presentModes.ptr);
     system.handle_error(result == vk.VK_SUCCESS, result, "create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfacePresentModesKHR(2)");
 
+    result = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_physical_devices[0], vkSurface, @ptrCast(&surfaceCap));
+    system.handle_error(result == vk.VK_SUCCESS, result, "create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+
     vkExtent = chooseSwapExtent(surfaceCap);
     format = chooseSwapSurfaceFormat(formats);
     const presentMode = chooseSwapPresentMode(presentModes);
@@ -730,6 +733,7 @@ fn create_swapchain_and_imageviews() void {
     if (surfaceCap.maxImageCount > 0 and imageCount > surfaceCap.maxImageCount) {
         imageCount = surfaceCap.maxImageCount;
     }
+
     var swapChainCreateInfo: vk.VkSwapchainCreateInfoKHR = .{ .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = vkSurface, .minImageCount = imageCount, .imageFormat = format.format, .imageColorSpace = format.colorSpace, .imageExtent = vkExtent, .imageArrayLayers = 1, .imageUsage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, .presentMode = presentMode, .preTransform = surfaceCap.currentTransform, .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, .clipped = 1, .oldSwapchain = std.mem.zeroes(vk.VkSwapchainKHR), .imageSharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
     const queueFamiliesIndices = [_]u32{ graphicsFamilyIndex, presentFamilyIndex };

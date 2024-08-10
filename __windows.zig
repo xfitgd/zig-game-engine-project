@@ -39,6 +39,8 @@ pub var screen_mode: system.screen_mode = system.screen_mode.WINDOW;
 pub var current_monitor: ?*system.monitor_info = null;
 pub var current_resolution: ?*system.screen_info = null;
 
+pub var timer: win32.HANDLE = undefined;
+
 var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
 pub inline fn HIWORD(l: anytype) WORD {
@@ -115,6 +117,11 @@ pub fn system_windows_start() void {
 
 pub fn windows_start() void {
     hInstance = win32.GetModuleHandleA(null) orelse unreachable;
+
+    timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse {
+        system.print_error("ERR windows_start.CreateWaitableTimerA failed Code {}\n", .{win32.GetLastError()});
+        unreachable;
+    };
 
     const CLASS_NAME = "Xfit Window Class";
 
@@ -219,6 +226,7 @@ fn render_thread() void {
     __vulkan.vulkan_destroy();
 
     render_sem.post();
+    _ = win32.CloseHandle(timer);
 }
 
 pub fn windows_loop() void {
@@ -285,6 +293,19 @@ pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.sc
     win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
 
     change_fullscreen(monitor, resolution);
+}
+
+pub fn nanosleep(ns: u64) void {
+    if (win32.SetWaitableTimer(timer, &win32.LARGE_INTEGER{ .QuadPart = -@as(i64, @intCast(@divTrunc(ns, 100))) }, 0, null, null, FALSE) == FALSE) {
+        system.print("WARN nanosleep.SetWaitableTimer FAILED Code {}\n", .{win32.GetLastError()});
+        std.time.sleep(ns);
+        return;
+    }
+    if (@intFromEnum(win32.WAIT_FAILED) == win32.WaitForSingleObject(timer, win32.INFINITE)) {
+        system.print("WARN nanosleep.WaitForSingleObject FAILED Code {}\n", .{win32.GetLastError()});
+        std.time.sleep(ns);
+        return;
+    }
 }
 
 //TODO IME 입력 이벤트는 에디트 박스 구현할때 같이 하기

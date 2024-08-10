@@ -223,3 +223,11 @@ pub inline fn handle_try_error(errtest: bool, code: i32, function: []const u8, e
         try err;
     }
 }
+
+pub inline fn sleep(ns: u64) void {
+    if (root.platform == root.XfitPlatform.windows) {
+        __windows.nanosleep(ns);
+    } else {
+        std.time.sleep(ns);
+    }
+}
