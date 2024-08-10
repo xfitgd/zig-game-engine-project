@@ -13,7 +13,20 @@ const allocator = __system.allocator;
 const root = @import("root");
 
 pub const win32 = struct {
-    pub usingnamespace @import("include/win32.zig").everything;
+    pub usingnamespace @import("include/win32.zig").zig;
+    pub usingnamespace @import("include/win32.zig").foundation;
+    pub usingnamespace @import("include/win32.zig").system.system_services;
+    pub usingnamespace @import("include/win32.zig").system.console;
+    pub usingnamespace @import("include/win32.zig").system.library_loader;
+    pub usingnamespace @import("include/win32.zig").system.system_information;
+    pub usingnamespace @import("include/win32.zig").system.windows_programming;
+    pub usingnamespace @import("include/win32.zig").system.threading;
+    pub usingnamespace @import("include/win32.zig").ui.windows_and_messaging;
+    pub usingnamespace @import("include/win32.zig").ui.controls;
+    pub usingnamespace @import("include/win32.zig").ui.input;
+    pub usingnamespace @import("include/win32.zig").ui.input.touch;
+    pub usingnamespace @import("include/win32.zig").ui.input.keyboard_and_mouse;
+    pub usingnamespace @import("include/win32.zig").graphics.gdi;
 };
 
 const WINAPI = @import("std").os.windows.WINAPI;
