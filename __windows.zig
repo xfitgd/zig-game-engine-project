@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
 
 const system = @import("system.zig");
+const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
 const math = @import("math.zig");
@@ -121,7 +122,7 @@ pub fn system_windows_start() void {
         __system.platform_ver.version.windows.version = if (serverOS) system.platform_version.windows_version.WindowsServer2016 else system.platform_version.windows_version.Windows10;
     } else {
         __system.platform_ver.version.windows.version = system.platform_version.windows_version.Unknown;
-        system.print_debug("WARN system_windows_start UNKNOWN this root.platform.\n", .{});
+        system.print_debug("WARN system_windows_start UNKNOWN platform.\n", .{});
     }
 
     _ = win32.EnumDisplayMonitors(null, null, MonitorEnumProc, 0);
@@ -251,7 +252,28 @@ pub fn windows_loop() void {
     }
 }
 
-pub fn set_window_mode(pos: math.point(i32), size: math.point(u32), state: system.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
+pub fn set_window_mode() void {
+    const style: c_long = ((((win32.WS_OVERLAPPED |
+        win32.WS_CAPTION) |
+        win32.WS_SYSMENU) |
+        if (window.can_resizewindow()) win32.WS_THICKFRAME else 0) |
+        if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
+        if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
+
+    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
+    win32.AdjustWindowRect(&rect, style, FALSE);
+
+    win32.SetWindowLongPtr(hWnd, win32.GWL_STYLE, style);
+    win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, 0);
+    win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+
+    _ = win32.ShowWindow(hWnd, switch (__system.prev_window.state) {
+        .Restore => win32.SW_RESTORE,
+        .Maximized => win32.SW_MAXIMIZE,
+        .Minimized => win32.SW_MINIMIZE,
+    });
+}
+pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: window.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
     const style: c_long = ((((win32.WS_OVERLAPPED |
         win32.WS_CAPTION) |
         win32.WS_SYSMENU) |
@@ -280,6 +302,22 @@ pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
     win32.SetWindowPos(hWnd, 0, monitor.*.rect.left, monitor.*.rect.top, monitor.*.rect.right - monitor.*.rect.left, monitor.*.rect.bottom - monitor.*.rect.top, win32.SWP_DRAWFRAME);
 
     win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
+}
+
+pub fn get_window_state() window.window_state {
+    var pwn: win32.WINDOWPLACEMENT = undefined;
+    pwn.length = @sizeOf(win32.WINDOWPLACEMENT);
+    if (win32.GetWindowPlacement(hWnd, &pwn) == FALSE) {
+        system.print_error("ERR get_window_state.GetWindowPlacement FAILED code : {}\n", .{win32.GetLastError()});
+        unreachable;
+    }
+    if (pwn.showCmd == win32.SW_MAXIMIZE) {
+        return .Maximized;
+    }
+    if (pwn.showCmd == win32.SW_MINIMIZE) {
+        return .Minimized;
+    }
+    return .Restore;
 }
 
 fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_info) void {

@@ -7,12 +7,21 @@ pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 pub const allocator = gpa.allocator();
 
 const system = @import("system.zig");
+const window = @import("window.zig");
 const __vulkan = @import("__vulkan.zig");
 const math = @import("math.zig");
 const input = @import("input.zig");
 const mem = @import("mem.zig");
 
 const root = @import("root");
+
+pub var prev_window: struct {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    state: window.window_state,
+} = undefined;
 
 pub var init_set: system.init_setting = .{};
 pub var delta_time: i64 = 0;
@@ -35,6 +44,7 @@ pub var Mmouse_up_func: ?*const fn () void = null;
 pub var Rmouse_up_func: ?*const fn () void = null;
 
 pub var window_move_func: ?*const fn () void = null;
+pub var window_size_func: ?*const fn () void = null;
 
 pub var cursor_pos: math.point(i32) = undefined;
 

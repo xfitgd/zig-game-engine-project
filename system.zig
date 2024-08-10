@@ -21,12 +21,6 @@ pub const vulkan_ext = struct {
     pub const vkDestroyDebugUtilsMessengerEXT = __vulkan.vkDestroyDebugUtilsMessengerEXT;
 };
 
-pub const window_state = enum {
-    Restore,
-    Maximized,
-    Minimized,
-};
-
 pub const screen_mode = enum { WINDOW, BORDERLESSSCREEN, FULLSCREEN };
 
 pub inline fn get_processor_core_len() u32 {
@@ -69,7 +63,20 @@ pub const monitor_info = struct {
 
     name: [32]u8 = std.mem.zeroes([32]u8),
 
+    fn save_prev_window_state() void {
+        if (__system.init_set.screen_mode == .WINDOW) {
+            __system.prev_window = .{
+                .x = window.window_x(),
+                .y = window.window_y(),
+                .width = window.window_width(),
+                .height = window.window_height(),
+                .state = if (root.platform == root.XfitPlatform.windows) __windows.get_window_state() else window.window_state.Restore,
+            };
+        }
+    }
+
     pub fn set_fullscreen_mode(self: Self, resolution: *screen_info) void {
+        save_prev_window_state();
         if (root.platform == root.XfitPlatform.windows) {
             __windows.set_fullscreen_mode(&self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
@@ -79,6 +86,7 @@ pub const monitor_info = struct {
         }
     }
     pub fn set_borderlessscreen_mode(self: Self) void {
+        save_prev_window_state();
         if (root.platform == root.XfitPlatform.windows) {
             __windows.set_borderlessscreen_mode(&self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);

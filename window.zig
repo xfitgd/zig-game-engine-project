@@ -10,6 +10,12 @@ const __windows = @import("__windows.zig");
 const __android = @import("__android.zig");
 const math = @import("math.zig");
 
+pub const window_state = enum {
+    Restore,
+    Maximized,
+    Minimized,
+};
+
 pub const window_show = enum(u32) {
     NORMAL = @bitCast(__windows.win32.SW_NORMAL),
     DEFAULT = @bitCast(__windows.win32.SW_SHOWDEFAULT),
@@ -81,9 +87,34 @@ pub fn can_resizewindow() bool {
 }
 //TODO pub fn set_window_size and pos ???
 //TODO pub fn get_window_title() set_window_title()
-pub fn set_window_mode(pos: math.point(i32), size: math.point(u32), state: system.window_state, _can_maximize: bool, _can_minimize: bool, _can_resizewindow: bool) void {
+pub fn set_window_mode() void {
     if (root.platform == root.XfitPlatform.windows) {
-        __windows.set_window_mode(pos, size, state, state, _can_maximize, _can_minimize, _can_resizewindow);
+        __windows.set_window_mode();
+    } else {
+        system.print_error("ERR monitor_info.set_window_mode not support mobile platform.\n", .{});
+        unreachable;
+    }
+    @atomicStore(system.screen_mode, &__system.init_set.screen_mode, system.screen_mode.WINDOW, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_x, __system.prev_window.x, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_y, __system.prev_window.y, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_width, __system.prev_window.width, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_height, __system.prev_window.height, std.builtin.AtomicOrder.monotonic);
+
+    switch (__system.prev_window.state) {
+        .Restore => {
+            @atomicStore(window_show, &__system.init_set.window_show, window_show.NORMAL, std.builtin.AtomicOrder.monotonic);
+        },
+        .Maximized => {
+            @atomicStore(window_show, &__system.init_set.window_show, window_show.MAXIMIZE, std.builtin.AtomicOrder.monotonic);
+        },
+        .Minimized => {
+            @atomicStore(window_show, &__system.init_set.window_show, window_show.MINIMIZE, std.builtin.AtomicOrder.monotonic);
+        },
+    }
+}
+pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: system.window_state, _can_maximize: bool, _can_minimize: bool, _can_resizewindow: bool) void {
+    if (root.platform == root.XfitPlatform.windows) {
+        __windows.set_window_mode2(pos, size, state, state, _can_maximize, _can_minimize, _can_resizewindow);
     } else {
         system.print_error("ERR monitor_info.set_window_mode not support mobile platform.\n", .{});
         unreachable;
