@@ -24,7 +24,7 @@ const vector = math.vector;
 const matrix = math.matrix;
 const matrix_error = math.matrix_error;
 
-const vulkan_buffer_node = __vulkan_allocator.vulkan_buffer_node;
+const vulkan_res_node = __vulkan_allocator.vulkan_res_node;
 
 pub const color_vertex_2d = color_vertex_2d_(f32);
 pub const indices16 = indices_(.U16);
@@ -77,7 +77,7 @@ pub const ivertices = struct {
     get_vertices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
 
-    node: vulkan_buffer_node = .{},
+    node: vulkan_res_node(.buffer) = .{},
     pipeline: vk.VkPipeline = undefined,
 
     pub inline fn clean(self: *Self) void {
@@ -90,7 +90,7 @@ pub const iindices = struct {
     get_indices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
 
-    node: vulkan_buffer_node = .{},
+    node: vulkan_res_node(.buffer) = .{},
     idx_type: index_type = undefined,
 
     pub inline fn clean(self: *Self) void {
@@ -145,6 +145,13 @@ pub fn vertices(comptime vertexT: type) type {
 
             __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
         }
+        ///write_flag가 readwrite_cpu만 호출
+        pub fn map_update(self: *Self) void {
+            var data: ?*vertexT = undefined;
+            self.*.interface.node.map(@ptrCast(&data));
+            mem.memcpy_nonarray(data.?, self.*.array.items.ptr);
+            self.*.interface.node.unmap();
+        }
     };
 }
 
@@ -198,6 +205,13 @@ pub fn indices_(comptime _type: index_type) type {
 
             __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
         }
+        ///write_flag가 readwrite_cpu만 호출
+        pub fn map_update(self: *Self) void {
+            var data: ?*idxT = undefined;
+            self.*.interface.node.map(@ptrCast(&data));
+            mem.memcpy_nonarray(data.?, self.*.array.items.ptr);
+            self.*.interface.node.unmap();
+        }
     };
 }
 
@@ -207,7 +221,7 @@ pub const projection = struct {
     const Self = @This();
     pub const view_type = enum { orthographic, perspective };
     proj: matrix = undefined,
-    __uniform: vulkan_buffer_node = .{},
+    __uniform: vulkan_res_node(.buffer) = .{},
     __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
 
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출 perspective일 경우 near, far 기본값 각각 0.1, 100
@@ -268,7 +282,7 @@ pub const projection = struct {
 pub const camera = struct {
     const Self = @This();
     view: matrix = undefined,
-    __uniform: vulkan_buffer_node = .{},
+    __uniform: vulkan_res_node(.buffer) = .{},
     __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
 
     /// w좌표는 신경 x, 시스템 초기화 후 호출
@@ -313,7 +327,7 @@ pub const transform = struct {
     camera: ?*camera = null,
     ///이 값이 변경되면 update 필요 또는 build로 초기화하기
     projection: ?*projection = null,
-    __model_uniform: vulkan_buffer_node = .{},
+    __model_uniform: vulkan_res_node(.buffer) = .{},
     pub inline fn is_build(self: *Self) bool {
         return self.*.__model_uniform.is_build() and self.*.camera != null and self.*.projection != null and self.*.camera.?.*.is_inited() and self.*.projection.?.*.is_inited();
     }
@@ -334,6 +348,64 @@ pub const transform = struct {
         self.*.__model_uniform.unmap();
     }
 };
+
+pub const texture = struct {
+    const Self = @This();
+    __sampler: vk.VkSampler = null,
+    __image: vulkan_res_node(.image) = .{},
+    width: u32 = undefined,
+    height: u32 = undefined,
+    pixels: ArrayList(u8),
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return Self{
+            .pixels = ArrayList(u8).init(allocator),
+        };
+    }
+    ///완전히 정리
+    pub inline fn deinit(self: *Self) void {
+        clean(self);
+        self.*.pixels.deinit();
+    }
+    ///write_flag가 readwrite_cpu만 호출
+    pub fn map_update(self: *Self) void {
+        var data: ?*u8 = undefined;
+        self.*.__model_uniform.map(@ptrCast(&data));
+        mem.memcpy_nonarray(data.?, self.*.pixels.items.ptr);
+        self.*.__model_uniform.unmap();
+    }
+    ///다시 빌드할수 있게 버퍼 내용만 정리
+    pub inline fn clean(self: *Self) void {
+        self.*.__image.clean();
+    }
+    pub fn build(self: *Self, _flag: write_flag) void {
+        clean(self);
+        const img_info: vk.VkImageCreateInfo = .{
+            .arrayLayers = 1,
+            .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
+            .flags = 0,
+            .format = vk.VK_FORMAT_R8G8B8A8_UNORM,
+            .imageType = vk.VK_IMAGE_TYPE_2D,
+            .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+            .mipLevels = 1,
+            .pQueueFamilyIndices = null,
+            .queueFamilyIndexCount = 0,
+            .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+            .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
+            .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
+            .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
+        };
+
+        const prop: vk.VkMemoryPropertyFlags =
+            switch (_flag) {
+            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        };
+
+        __vulkan.vk_allocator.create_image(&img_info, prop, &self.*.__image, std.mem.sliceAsBytes(self.*.array.items));
+    }
+};
+
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
 pub const iobject = struct {
     const Self = @This();
@@ -356,17 +428,17 @@ pub const iobject = struct {
         }
         const buffer_info = [3]vk.VkDescriptorBufferInfo{
             vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.__model_uniform.buffer,
+                .buffer = self.*.transform.__model_uniform.res,
                 .offset = 0,
                 .range = @sizeOf(matrix),
             },
             vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.camera.?.*.__uniform.buffer,
+                .buffer = self.*.transform.camera.?.*.__uniform.res,
                 .offset = 0,
                 .range = @sizeOf(matrix),
             },
             vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.projection.?.*.__uniform.buffer,
+                .buffer = self.*.transform.projection.?.*.__uniform.res,
                 .offset = 0,
                 .range = @sizeOf(matrix),
             },

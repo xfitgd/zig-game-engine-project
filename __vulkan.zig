@@ -152,11 +152,11 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
             vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipelineLayout, 0, 1, &value.__descriptor_set, 0, null);
 
             const offsets: vk.VkDeviceSize = 0;
-            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.buffer, &offsets);
+            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.res, &offsets);
 
             const iindices = value.*.get_iindices(value);
             if (iindices != null) {
-                vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.buffer, 0, switch (iindices.?.*.idx_type) {
+                vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
                     .U16 => vk.VK_INDEX_TYPE_UINT16,
                     .U32 => vk.VK_INDEX_TYPE_UINT32,
                 });
