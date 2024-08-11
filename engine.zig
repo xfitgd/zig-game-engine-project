@@ -10,7 +10,6 @@ pub const XfitPlatform = enum(u32) { windows, android, linux, mac, end };
 const ANDROID_PATH = "C:/Android";
 const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.11718014", .{ANDROID_PATH});
 const ANDROID_VER = 34;
-const VULKAN_INC_PATH = "C:/vk/include";
 ///(기본값)상대 경로 또는 절대 경로로 설정하기
 const ENGINE_DIR = "zig-game-engine-project";
 
@@ -98,6 +97,8 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
             result.linkSystemLibrary("c");
             result.linkSystemLibrary("log");
 
+            result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/android/" ++ get_arch_text(i) ++ "/libwebp.a"));
+
             result.root_module.addImport("build_options", build_options_module);
             callback(result);
 
@@ -112,8 +113,6 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
                 .optimize = OPTIMIZE,
             });
             result.linkLibC();
-
-            result.addIncludePath(.{ .cwd_relative = VULKAN_INC_PATH });
 
             result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/vulkan.lib"));
             result.subsystem = .Windows;

@@ -17,16 +17,7 @@ const root = @import("root");
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 pub var vk_allocator: __vulkan_allocator = __vulkan_allocator.init();
 
-pub const vk = @cImport({
-    if (root.platform == root.XfitPlatform.windows) {
-        @cDefine("VK_USE_PLATFORM_WIN32_KHR", "1");
-    } else if (root.platform == root.XfitPlatform.android) {
-        @cDefine("VK_USE_PLATFORM_ANDROID_KHR", "1");
-    } else {
-        @compileError("not support platform");
-    }
-    @cInclude("vulkan/vulkan.h");
-});
+pub const vk = @import("include/vulkan.zig");
 
 fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
     if (capabilities.currentExtent.width != std.math.maxInt(u32)) {

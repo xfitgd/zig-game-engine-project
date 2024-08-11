@@ -73,19 +73,12 @@ inline fn GET_Y_LPARAM(l: anytype) INT {
     return @intCast(HIWORD(l));
 }
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
-    // hinstance, hwnd 필드 포인터 정렬 문제 때문에 직접 만들어서 넣음. extern struct -> C style struct
-    const VkWin32SurfaceCreateInfoKHR = extern struct {
-        sType: c_int = __vulkan.vk.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-        pNext: ?*const anyopaque = null,
-        flags: __vulkan.vk.VkWin32SurfaceCreateFlagsKHR = 0,
-        hinstance: HINSTANCE,
-        hwnd: HWND,
-    };
-    const win32SurfaceCreateInfo: VkWin32SurfaceCreateInfoKHR = .{
+    const win32SurfaceCreateInfo: __vulkan.vk.VkWin32SurfaceCreateInfoKHR = .{
         .hwnd = hWnd,
         .hinstance = hInstance,
+        .flags = 0,
     };
-    const result = __vulkan.vk.vkCreateWin32SurfaceKHR(vkInstance, @ptrCast(&win32SurfaceCreateInfo), null, vkSurface);
+    const result = __vulkan.vk.vkCreateWin32SurfaceKHR(vkInstance, &win32SurfaceCreateInfo, null, vkSurface);
     if (result != __vulkan.vk.VK_SUCCESS) unreachable;
 }
 
