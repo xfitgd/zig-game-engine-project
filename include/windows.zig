@@ -1,3 +1,18 @@
+test {
+    const std = @import("std");
+    @setEvalBranchQuota(100000);
+    std.testing.refAllDeclsRecursive(@This());
+    inline for (comptime std.meta.declarations(@This())) |decl| {
+        switch (@typeInfo(@TypeOf(@field(@This(), decl.name)))) {
+            .Fn => |fn_info| {
+                _ = fn_info;
+                std.debug.print("{s}\n", .{decl.name});
+            },
+            else => {},
+        }
+    }
+}
+
 pub const BOOL = c_int;
 pub const CHAR = u8;
 pub const SHORT = c_short;
@@ -6,6 +21,9 @@ pub const LONG = c_long;
 pub const UCHAR = u8;
 pub const USHORT = c_ushort;
 pub const UINT = c_uint;
+pub const UINT16 = c_ushort;
+pub const UINT32 = UINT;
+pub const UINT64 = u64;
 pub const ULONG = c_ulong;
 pub const BYTE = u8;
 pub const WORD = c_ushort;
@@ -18,6 +36,7 @@ pub const ATOM = WORD;
 pub const ULONG32 = c_uint;
 pub const DWORD64 = u64;
 pub const ULONG64 = u64;
+pub const LPINT = [*c]c_int;
 pub const INT32 = c_int;
 pub const INT64 = c_longlong;
 pub const DWORDLONG = u64;
@@ -470,7 +489,6 @@ pub extern fn CheckRemoteDebuggerPresent(hProcess: HANDLE, hbDebuggerPresent: PB
 pub extern fn OutputDebugStringA(lpOutputString: LPCSTR) void;
 pub extern fn OutputDebugStringW(lpOutputString: LPCWSTR) void;
 pub extern fn GetThreadContext(hThread: HANDLE, lpContext: LPCONTEXT) BOOL;
-pub extern fn RegisterTouchWindow(hwnd: HWND, ulFlags: ULONG) BOOL;
 pub extern fn DebugActiveProcess(dwProcessId: DWORD) BOOL;
 pub extern fn DebugActiveProcessStop(dwProcessId: DWORD) BOOL;
 pub extern fn SymSetOptions(SymOptions: DWORD) DWORD;
@@ -1561,63 +1579,6 @@ pub fn IsWindowsVersionOrLess(arg_major: WORD, arg_minor: WORD, arg_servpack: WO
     _ = &vi;
     return VerifyVersionInfoW(&vi, @as(DWORD, @bitCast(@as(c_long, (@as(c_int, 2) | @as(c_int, 1)) | @as(c_int, 32)))), VerSetConditionMask(VerSetConditionMask(VerSetConditionMask(@as(ULONGLONG, @bitCast(@as(c_longlong, @as(c_int, 0)))), @as(DWORD, @bitCast(@as(c_long, @as(c_int, 2)))), @as(BYTE, @bitCast(@as(i8, @truncate(@as(c_int, 5)))))), @as(DWORD, @bitCast(@as(c_long, @as(c_int, 1)))), @as(BYTE, @bitCast(@as(i8, @truncate(@as(c_int, 5)))))), @as(DWORD, @bitCast(@as(c_long, @as(c_int, 32)))), @as(BYTE, @bitCast(@as(i8, @truncate(@as(c_int, 5)))))));
 }
-pub fn GetWindowsVersionCUSTOM(arg_major: PWORD, arg_minor: PWORD, arg_srvpack: PWORD) callconv(.C) void {
-    var major = arg_major;
-    _ = &major;
-    var minor = arg_minor;
-    _ = &minor;
-    var srvpack = arg_srvpack;
-    _ = &srvpack;
-    if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 2560)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 2560)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 10;
-        minor.* = 0;
-        srvpack.* = 0;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1539)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1539)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 6;
-        minor.* = 3;
-        srvpack.* = 0;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1538)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1538)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 6;
-        minor.* = 2;
-        srvpack.* = 0;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1537)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1537)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 1)))))) != 0) {
-        major.* = 6;
-        minor.* = 1;
-        srvpack.* = 1;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1537)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1537)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 6;
-        minor.* = 1;
-        srvpack.* = 0;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 2)))))) != 0) {
-        major.* = 6;
-        minor.* = 0;
-        srvpack.* = 2;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 1)))))) != 0) {
-        major.* = 6;
-        minor.* = 0;
-        srvpack.* = 1;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1536)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 6;
-        minor.* = 0;
-        srvpack.* = 0;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 3)))))) != 0) {
-        major.* = 5;
-        minor.* = 1;
-        srvpack.* = 2;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 1)))))) != 0) {
-        major.* = 5;
-        minor.* = 1;
-        srvpack.* = 1;
-    } else if (IsWindowsVersionOrGreater(@as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate((@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) >> @intCast(8)) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_ushort, @as(BYTE, @bitCast(@as(u8, @truncate(@as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 1281)))) & @as(DWORD_PTR, @bitCast(@as(c_longlong, @as(c_int, 255))))))))))), @as(WORD, @bitCast(@as(c_short, @truncate(@as(c_int, 0)))))) != 0) {
-        major.* = 5;
-        minor.* = 1;
-        srvpack.* = 0;
-    } else {
-        major.* = 0;
-        minor.* = 0;
-        srvpack.* = 0;
-    }
-}
 pub extern fn __cpuid(cpuInfo: [*c]c_int, function_id: c_int) void;
 pub extern fn __cpuidex(cpuInfo: [*c]c_int, function_id: c_int, subfunction_id: c_int) void;
 pub extern fn EnumDisplayDevicesA(lpDevice: LPCSTR, iDevNum: DWORD, lpDisplayDevice: PDISPLAY_DEVICEA, dwFlags: DWORD) BOOL;
@@ -1791,13 +1752,13 @@ pub const WNDCLASS = struct_tagWNDCLASS;
 pub const WNDCLASSA = WNDCLASS;
 pub const PWNDCLASS = [*c]struct_tagWNDCLASS;
 pub const PWNDCLASSA = [*c]struct_tagWNDCLASS;
-pub const struct_tagPOINT = extern struct {
+pub const POINT = extern struct {
     x: LONG = @import("std").mem.zeroes(LONG),
     y: LONG = @import("std").mem.zeroes(LONG),
 };
-pub const POINT = struct_tagPOINT;
-pub const PPOINT = [*c]struct_tagPOINT;
-pub const struct_tagMSG = extern struct {
+pub const PPOINT = [*c]POINT;
+pub const LPPOINT = [*c]POINT;
+pub const MSG = extern struct {
     hwnd: HWND = @import("std").mem.zeroes(HWND),
     message: UINT = @import("std").mem.zeroes(UINT),
     wParam: WPARAM = @import("std").mem.zeroes(WPARAM),
@@ -1805,9 +1766,8 @@ pub const struct_tagMSG = extern struct {
     time: DWORD = @import("std").mem.zeroes(DWORD),
     pt: POINT = @import("std").mem.zeroes(POINT),
 };
-pub const MSG = struct_tagMSG;
-pub const PMSG = [*c]struct_tagMSG;
-pub const LPMSG = [*c]struct_tagMSG;
+pub const PMSG = [*c]MSG;
+pub const LPMSG = [*c]MSG;
 pub extern fn MessageBoxA(hWND: HWND, lpText: LPCSTR, lpCaption: LPCSTR, uType: UINT) c_int;
 pub extern fn MessageBoxW(hWND: HWND, lpText: LPCWSTR, lpCaption: LPCWSTR, uType: UINT) c_int;
 pub extern fn RegisterClassA(lpWndClass: ?*WNDCLASS) ATOM;
@@ -1885,27 +1845,6 @@ pub inline fn GET_X_LPARAM(l: anytype) INT {
 }
 pub inline fn GET_Y_LPARAM(l: anytype) INT {
     return @intCast(HIWORD(l));
-}
-
-pub inline fn HRESULT_IS_WIN32(x: anytype) @TypeOf(((x >> @as(c_int, 16)) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex)) == @as(c_int, 0x8)) {
-    _ = &x;
-    return ((x >> @as(c_int, 16)) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex)) == @as(c_int, 0x8);
-}
-pub inline fn HRESULT_IS_FAILURE(x: anytype) @TypeOf(((x >> @as(c_int, 31)) & @as(c_int, 0x1)) == @as(c_int, 0x1)) {
-    _ = &x;
-    return ((x >> @as(c_int, 31)) & @as(c_int, 0x1)) == @as(c_int, 0x1);
-}
-pub inline fn HRESULT_FACILITY(x: anytype) @TypeOf((x >> @as(c_int, 16)) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex)) {
-    _ = &x;
-    return (x >> @as(c_int, 16)) & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex);
-}
-pub inline fn HRESULT_CODE(x: anytype) @TypeOf(x & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex)) {
-    _ = &x;
-    return x & @import("std").zig.c_translation.promoteIntLiteral(c_int, 0xFFFF, .hex);
-}
-pub inline fn HRESULT_FROM_WIN32(x: anytype) @TypeOf(@import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80070000, .hex) | x) {
-    _ = &x;
-    return @import("std").zig.c_translation.promoteIntLiteral(c_int, 0x80070000, .hex) | x;
 }
 
 pub const MINCHAR = @as(c_int, 0x80);
@@ -2472,14 +2411,10 @@ pub const _SYMBOL_INFO = struct__SYMBOL_INFO;
 pub const _SYMBOL_INFOW = struct__SYMBOL_INFOW;
 pub const _IMAGEHLP_LINE64 = struct__IMAGEHLP_LINE64;
 pub const _IMAGEHLP_LINEW64 = struct__IMAGEHLP_LINEW64;
-pub const tagTHREADENTRY32 = struct_tagTHREADENTRY32;
-pub const _tagADDRESS64 = struct__tagADDRESS64;
 pub const _KDHELP64 = struct__KDHELP64;
-pub const _tagSTACKFRAME64 = struct__tagSTACKFRAME64;
 pub const _LUID = struct__LUID;
 pub const _LUID_AND_ATTRIBUTES = struct__LUID_AND_ATTRIBUTES;
 pub const _TOKEN_PRIVILEGES = struct__TOKEN_PRIVILEGES;
-pub const tagVS_FIXEDFILEINFO = struct_tagVS_FIXEDFILEINFO;
 pub const _MINIDUMP_TYPE = enum__MINIDUMP_TYPE;
 pub const _MINIDUMP_EXCEPTION_INFORMATION = struct__MINIDUMP_EXCEPTION_INFORMATION;
 pub const _MINIDUMP_EXCEPTION_INFORMATION64 = struct__MINIDUMP_EXCEPTION_INFORMATION64;
@@ -2547,28 +2482,24 @@ pub const _RTL_CRITICAL_SECTION_DEBUG = struct__RTL_CRITICAL_SECTION_DEBUG;
 pub const _RTL_CONDITION_VARIABLE = struct__RTL_CONDITION_VARIABLE;
 pub const _RTL_SRWLOCK = struct__RTL_SRWLOCK;
 pub const _RECT = struct__RECT;
-pub const tagWNDCLASS = struct_tagWNDCLASS;
-pub const tagPOINT = struct_tagPOINT;
-pub const tagMSG = struct_tagMSG;
+pub const SW_HIDE: c_int = 0;
+pub const SW_SHOWNORMAL: c_int = 1;
+pub const SW_NORMAL: c_int = 1;
+pub const SW_SHOWMINIMIZED: c_int = 2;
+pub const SW_SHOWMAXIMIZED: c_int = 3;
+pub const SW_MAXIMIZE: c_int = 3;
+pub const SW_SHOWNOACTIVATE: c_int = 4;
+pub const SW_SHOW: c_int = 5;
+pub const SW_MINIMIZE: c_int = 6;
+pub const SW_SHOWMINNOACTIVE: c_int = 7;
+pub const SW_SHOWNA: c_int = 8;
+pub const SW_RESTORE: c_int = 9;
+pub const SW_SHOWDEFAULT: c_int = 10;
+pub const SW_FORCEMINIMIZE: c_int = 11;
 
-pub const SW_HIDE = 0;
-pub const SW_SHOWNORMAL = 1;
-pub const SW_NORMAL = 1;
-pub const SW_SHOWMINIMIZED = 2;
-pub const SW_SHOWMAXIMIZED = 3;
-pub const SW_MAXIMIZE = 3;
-pub const SW_SHOWNOACTIVATE = 4;
-pub const SW_SHOW = 5;
-pub const SW_MINIMIZE = 6;
-pub const SW_SHOWMINNOACTIVE = 7;
-pub const SW_SHOWNA = 8;
-pub const SW_RESTORE = 9;
-pub const SW_SHOWDEFAULT = 10;
-pub const SW_FORCEMINIMIZE = 11;
-
-pub const VER_NT_WORKSTATION = 0x1;
-pub const VER_NT_SERVER = 0x3;
-pub const VER_NT_DOMAIN_CONTROLLER = 0x2;
+pub const VER_NT_WORKSTATION: BYTE = 0x1;
+pub const VER_NT_SERVER: BYTE = 0x3;
+pub const VER_NT_DOMAIN_CONTROLLER: BYTE = 0x2;
 
 pub const LPCRECT = [*c]const RECT;
 pub const POINTL = POINT;
@@ -2608,8 +2539,8 @@ pub const DEVMODEA = extern struct {
     dmSize: u16,
     dmDriverExtra: u16,
     dmFields: u32,
-    Anonymous1: extern union {
-        Anonymous1: extern struct {
+    u: extern union {
+        u1: extern struct {
             dmOrientation: i16,
             dmPaperSize: i16,
             dmPaperLength: i16,
@@ -2619,7 +2550,7 @@ pub const DEVMODEA = extern struct {
             dmDefaultSource: i16,
             dmPrintQuality: i16,
         },
-        Anonymous2: extern struct {
+        u2: extern struct {
             dmPosition: POINTL,
             dmDisplayOrientation: u32,
             dmDisplayFixedOutput: u32,
@@ -2635,7 +2566,7 @@ pub const DEVMODEA = extern struct {
     dmBitsPerPel: u32,
     dmPelsWidth: u32,
     dmPelsHeight: u32,
-    Anonymous2: extern union {
+    u3: extern union {
         dmDisplayFlags: u32,
         dmNup: u32,
     },
@@ -2657,8 +2588,8 @@ pub const DEVMODEW = extern struct {
     dmSize: u16,
     dmDriverExtra: u16,
     dmFields: u32,
-    Anonymous1: extern union {
-        Anonymous1: extern struct {
+    u: extern union {
+        u1: extern struct {
             dmOrientation: i16,
             dmPaperSize: i16,
             dmPaperLength: i16,
@@ -2668,7 +2599,7 @@ pub const DEVMODEW = extern struct {
             dmDefaultSource: i16,
             dmPrintQuality: i16,
         },
-        Anonymous2: extern struct {
+        u2: extern struct {
             dmPosition: POINTL,
             dmDisplayOrientation: u32,
             dmDisplayFixedOutput: u32,
@@ -2684,7 +2615,7 @@ pub const DEVMODEW = extern struct {
     dmBitsPerPel: u32,
     dmPelsWidth: u32,
     dmPelsHeight: u32,
-    Anonymous2: extern union {
+    u3: extern union {
         dmDisplayFlags: u32,
         dmNup: u32,
     },
@@ -2731,32 +2662,32 @@ pub const DM_PANNINGWIDTH = @as(i32, 134217728);
 pub const DM_PANNINGHEIGHT = @as(i32, 268435456);
 pub const DM_DISPLAYFIXEDOUTPUT = @as(i32, 536870912);
 
-pub const DISP_CHANGE_SUCCESSFUL = 0;
-pub const DISP_CHANGE_RESTART = 1;
-pub const DISP_CHANGE_FAILED = -1;
-pub const DISP_CHANGE_BADMODE = -2;
-pub const DISP_CHANGE_NOTUPDATED = -3;
-pub const DISP_CHANGE_BADFLAGS = -4;
-pub const DISP_CHANGE_BADPARAM = -5;
-pub const DISP_CHANGE_BADDUALVIEW = -6;
+pub const DISP_CHANGE_SUCCESSFUL: c_int = 0;
+pub const DISP_CHANGE_RESTART: c_int = 1;
+pub const DISP_CHANGE_FAILED: c_int = -1;
+pub const DISP_CHANGE_BADMODE: c_int = -2;
+pub const DISP_CHANGE_NOTUPDATED: c_int = -3;
+pub const DISP_CHANGE_BADFLAGS: c_int = -4;
+pub const DISP_CHANGE_BADPARAM: c_int = -5;
+pub const DISP_CHANGE_BADDUALVIEW: c_int = -6;
 
-pub const CDS_FULLSCREEN = 0x00000004;
-pub const CDS_GLOBAL = 0x00000008;
-pub const CDS_NORESET = 0x10000000;
-pub const CDS_RESET = 0x40000000;
-pub const CDS_SET_PRIMARY = 0x00000010;
-pub const CDS_TEST = 0x00000002;
-pub const CDS_UPDATEREGISTRY = 0x00000001;
-pub const CDS_VIDEOPARAMETERS = 0x00000020;
-pub const CDS_ENABLE_UNSAFE_MODES = 0x00000100;
-pub const CDS_DISABLE_UNSAFE_MODES = 0x00000200;
+pub const CDS_FULLSCREEN: DWORD = 0x00000004;
+pub const CDS_GLOBAL: DWORD = 0x00000008;
+pub const CDS_NORESET: DWORD = 0x10000000;
+pub const CDS_RESET: DWORD = 0x40000000;
+pub const CDS_SET_PRIMARY: DWORD = 0x00000010;
+pub const CDS_TEST: DWORD = 0x00000002;
+pub const CDS_UPDATEREGISTRY: DWORD = 0x00000001;
+pub const CDS_VIDEOPARAMETERS: DWORD = 0x00000020;
+pub const CDS_ENABLE_UNSAFE_MODES: DWORD = 0x00000100;
+pub const CDS_DISABLE_UNSAFE_MODES: DWORD = 0x00000200;
 
 pub extern fn ChangeDisplaySettingsExA(lpszDeviceName: ?[*:0]const u8, lpDevMode: ?*DEVMODEA, hwnd: HWND, dwflags: DWORD, lParam: ?*anyopaque) LONG;
 pub extern fn ChangeDisplaySettingsExW(lpszDeviceName: ?[*:0]const u16, lpDevMode: ?*DEVMODEW, hwnd: HWND, dwflags: DWORD, lParam: ?*anyopaque) LONG;
 
 pub const ENUM_DISPLAY_SETTINGS_MODE = UINT;
-pub const ENUM_CURRENT_SETTINGS = 4294967295;
-pub const ENUM_REGISTRY_SETTINGS = 4294967294;
+pub const ENUM_CURRENT_SETTINGS: UINT = 4294967295;
+pub const ENUM_REGISTRY_SETTINGS: UINT = 4294967294;
 pub extern fn EnumDisplaySettingsA(lpszDeviceName: ?[*:0]const u8, iModeNum: ENUM_DISPLAY_SETTINGS_MODE, lpDevMode: ?*DEVMODEA) BOOL;
 pub extern fn EnumDisplaySettingsW(lpszDeviceName: ?[*:0]const u16, iModeNum: ENUM_DISPLAY_SETTINGS_MODE, lpDevMode: ?*DEVMODEW) BOOL;
 
@@ -3267,12 +3198,12 @@ pub const REASON_CONTEXT = extern struct {
     Flags: POWER_REQUEST_CONTEXT_FLAGS,
     Reason: extern union {
         Detailed: extern struct {
-            LocalizedReasonModule: ?HINSTANCE,
+            LocalizedReasonModule: HINSTANCE,
             LocalizedReasonId: u32,
             ReasonStringCount: u32,
-            ReasonStrings: ?*?PWSTR,
+            ReasonStrings: ?*PWSTR,
         },
-        SimpleReasonString: ?PWSTR,
+        SimpleReasonString: PWSTR,
     },
 };
 
@@ -3291,9 +3222,9 @@ pub const RAWINPUTHEADER = extern struct {
 
 pub const RAWMOUSE = extern struct {
     usFlags: u16,
-    Anonymous: extern union {
+    u: extern union {
         ulButtons: u32,
-        Anonymous: extern struct {
+        u: extern struct {
             usButtonFlags: u16,
             usButtonData: u16,
         },
@@ -3328,14 +3259,14 @@ pub const RAWINPUT = extern struct {
     },
 };
 
-pub const RID_HEADER = 0x10000005;
-pub const RID_INPUT = 0x10000003;
+pub const RID_HEADER: UINT = 0x10000005;
+pub const RID_INPUT: UINT = 0x10000003;
 pub extern fn GetRawInputData(hRawInput: HRAWINPUT, uiCommand: UINT, pData: ?*anyopaque, pcbSize: ?*UINT, cbSizeHeader: UINT) UINT;
-pub const TME_CANCEL = 0x80000000;
-pub const TME_HOVER = 0x00000001;
-pub const TME_LEAVE = 0x00000002;
-pub const TME_NONCLIENT = 0x00000010;
-pub const TME_QUERY = 0x40000000;
+pub const TME_CANCEL: DWORD = 0x80000000;
+pub const TME_HOVER: DWORD = 0x00000001;
+pub const TME_LEAVE: DWORD = 0x00000002;
+pub const TME_NONCLIENT: DWORD = 0x00000010;
+pub const TME_QUERY: DWORD = 0x40000000;
 
 pub const TRACKMOUSEEVENT = extern struct {
     cbSize: DWORD,
@@ -3344,4 +3275,778 @@ pub const TRACKMOUSEEVENT = extern struct {
     dwHoverTime: DWORD,
 };
 
+pub const TOUCHINPUT = extern struct {
+    x: LONG = @import("std").mem.zeroes(LONG),
+    y: LONG = @import("std").mem.zeroes(LONG),
+    hSource: HANDLE = @import("std").mem.zeroes(HANDLE),
+    dwID: DWORD = @import("std").mem.zeroes(DWORD),
+    dwFlags: DWORD = @import("std").mem.zeroes(DWORD),
+    dwMask: DWORD = @import("std").mem.zeroes(DWORD),
+    dwTime: DWORD = @import("std").mem.zeroes(DWORD),
+    dwExtraInfo: ULONG_PTR = @import("std").mem.zeroes(ULONG_PTR),
+    cxContact: DWORD = @import("std").mem.zeroes(DWORD),
+    cyContact: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const HTOUCHINPUT = [*c]TOUCHINPUT;
+pub const PTOUCHINPUT = [*c]TOUCHINPUT;
+pub const PCTOUCHINPUT = [*c]const TOUCHINPUT;
+pub const POINTER_BUTTON_CHANGE_TYPE = enum(i32) {
+    POINTER_CHANGE_NONE,
+    POINTER_CHANGE_FIRSTBUTTON_DOWN,
+    POINTER_CHANGE_FIRSTBUTTON_UP,
+    POINTER_CHANGE_SECONDBUTTON_DOWN,
+    POINTER_CHANGE_SECONDBUTTON_UP,
+    POINTER_CHANGE_THIRDBUTTON_DOWN,
+    POINTER_CHANGE_THIRDBUTTON_UP,
+    POINTER_CHANGE_FOURTHBUTTON_DOWN,
+    POINTER_CHANGE_FOURTHBUTTON_UP,
+    POINTER_CHANGE_FIFTHBUTTON_DOWN,
+    POINTER_CHANGE_FIFTHBUTTON_UP,
+};
+
+pub const POINTER_INPUT_TYPE = enum(i32) { PT_POINTER = 1, PT_TOUCH = 2, PT_PEN = 3, PT_MOUSE = 4, PT_TOUCHPAD = 5 };
+pub const POINTER_FLAGS = INT;
+
+pub const POINTER_FLAG_NONE: c_int = 0x00000000;
+pub const POINTER_FLAG_NEW: c_int = 0x00000001;
+pub const POINTER_FLAG_INRANGE: c_int = 0x00000002;
+pub const POINTER_FLAG_INCONTACT: c_int = 0x00000004;
+pub const POINTER_FLAG_FIRSTBUTTON: c_int = 0x00000010;
+pub const POINTER_FLAG_SECONDBUTTON: c_int = 0x00000020;
+pub const POINTER_FLAG_THIRDBUTTON: c_int = 0x00000040;
+pub const POINTER_FLAG_OTHERBUTTON: c_int = 0x00000080;
+pub const POINTER_FLAG_PRIMARY: c_int = 0x00000100;
+pub const POINTER_FLAG_CONFIDENCE: c_int = 0x00000200;
+pub const POINTER_FLAG_CANCELLED: c_int = 0x00000400;
+pub const POINTER_FLAG_DOWN: c_int = 0x00010000;
+pub const POINTER_FLAG_UPDATE: c_int = 0x00020000;
+pub const POINTER_FLAG_UP: c_int = 0x00040000;
+pub const POINTER_FLAG_WHEEL: c_int = 0x00080000;
+pub const POINTER_FLAG_HWHEEL: c_int = 0x00100000;
+
+pub const POINTER_INFO = extern struct {
+    pointerType: POINTER_INPUT_TYPE,
+    pointerId: UINT32 = @import("std").mem.zeroes(UINT32),
+    frameId: UINT32 = @import("std").mem.zeroes(UINT32),
+    pointerFlags: POINTER_FLAGS = @import("std").mem.zeroes(POINTER_FLAGS),
+    sourceDevice: HANDLE = @import("std").mem.zeroes(HANDLE),
+    hwndTarget: HWND = @import("std").mem.zeroes(HWND),
+    ptPixelLocation: POINT = @import("std").mem.zeroes(POINT),
+    ptHimetricLocation: POINT = @import("std").mem.zeroes(POINT),
+    ptPixelLocationRaw: POINT = @import("std").mem.zeroes(POINT),
+    ptHimetricLocationRaw: POINT = @import("std").mem.zeroes(POINT),
+    dwTime: DWORD = @import("std").mem.zeroes(DWORD),
+    historyCount: UINT32 = @import("std").mem.zeroes(UINT32),
+    InputData: INT32 = @import("std").mem.zeroes(INT32),
+    dwKeyStates: DWORD = @import("std").mem.zeroes(DWORD),
+    PerformanceCount: UINT64 = @import("std").mem.zeroes(UINT64),
+    ButtonChangeType: POINTER_BUTTON_CHANGE_TYPE = @import("std").mem.zeroes(POINTER_BUTTON_CHANGE_TYPE),
+};
+
 pub extern fn TrackMouseEvent(lpEventTrack: ?*TRACKMOUSEEVENT) BOOL;
+pub extern fn GetTouchInputInfo(hTouchInput: HTOUCHINPUT, cInputs: UINT, pInputs: PTOUCHINPUT, cbSize: c_int) BOOL;
+pub extern fn CloseTouchInputHandle(hTouchInput: HTOUCHINPUT) BOOL;
+pub extern fn RegisterTouchWindow(hwnd: HWND, ulFlags: ULONG) BOOL;
+pub extern fn UnregisterTouchWindow(hwnd: HWND) BOOL;
+pub extern fn IsTouchWindow(hwnd: HWND, pulFlags: PULONG) BOOL;
+
+pub const TOUCH_FLAGS = UINT32;
+pub const TOUCH_MASK = UINT32;
+
+pub const TOUCH_FLAG_NONE: UINT32 = 0x00000000;
+pub const TOUCH_MASK_NONE: UINT32 = 0x00000000;
+pub const TOUCH_MASK_CONTACTAREA: UINT32 = 0x00000001;
+pub const TOUCH_MASK_ORIENTATION: UINT32 = 0x00000002;
+pub const TOUCH_MASK_PRESSURE: UINT32 = 0x00000004;
+
+pub const POINTER_TOUCH_INFO = extern struct {
+    pointerInfo: POINTER_INFO = @import("std").mem.zeroes(POINTER_INFO),
+    touchFlags: TOUCH_FLAGS = @import("std").mem.zeroes(TOUCH_FLAGS),
+    touchMask: TOUCH_MASK = @import("std").mem.zeroes(TOUCH_MASK),
+    rcContact: RECT = @import("std").mem.zeroes(RECT),
+    rcContactRaw: RECT = @import("std").mem.zeroes(RECT),
+    orientation: UINT32 = @import("std").mem.zeroes(UINT32),
+    pressure: UINT32 = @import("std").mem.zeroes(UINT32),
+};
+pub const PEN_FLAGS = UINT32;
+pub const PEN_MASK = UINT32;
+
+pub const PEN_FLAG_NONE: UINT32 = 0x00000000;
+pub const PEN_FLAG_BARREL: UINT32 = 0x00000001;
+pub const PEN_FLAG_INVERTED: UINT32 = 0x00000002;
+pub const PEN_FLAG_ERASER: UINT32 = 0x00000004;
+
+pub const PEN_MASK_NONE: UINT32 = 0x00000000;
+pub const PEN_MASK_PRESSURE: UINT32 = 0x00000001;
+pub const PEN_MASK_ROTATION: UINT32 = 0x00000002;
+pub const PEN_MASK_TILT_X: UINT32 = 0x00000004;
+pub const PEN_MASK_TILT_Y: UINT32 = 0x00000008;
+
+pub const POINTER_PEN_INFO = extern struct {
+    pointerInfo: POINTER_INFO = @import("std").mem.zeroes(POINTER_INFO),
+    penFlags: PEN_FLAGS = @import("std").mem.zeroes(PEN_FLAGS),
+    penMask: PEN_MASK = @import("std").mem.zeroes(PEN_MASK),
+    pressure: UINT32 = @import("std").mem.zeroes(UINT32),
+    rotation: UINT32 = @import("std").mem.zeroes(UINT32),
+    tiltX: INT32 = @import("std").mem.zeroes(INT32),
+    tiltY: INT32 = @import("std").mem.zeroes(INT32),
+};
+pub extern fn InitializeTouchInjection(maxCount: UINT32, dwMode: DWORD) BOOL;
+pub extern fn InjectTouchInput(count: UINT32, contacts: [*c]const POINTER_TOUCH_INFO) BOOL;
+pub const struct_tagUSAGE_PROPERTIES = extern struct {
+    level: USHORT = @import("std").mem.zeroes(USHORT),
+    page: USHORT = @import("std").mem.zeroes(USHORT),
+    usage: USHORT = @import("std").mem.zeroes(USHORT),
+    logicalMinimum: INT32 = @import("std").mem.zeroes(INT32),
+    logicalMaximum: INT32 = @import("std").mem.zeroes(INT32),
+    unit: USHORT = @import("std").mem.zeroes(USHORT),
+    exponent: USHORT = @import("std").mem.zeroes(USHORT),
+    count: BYTE = @import("std").mem.zeroes(BYTE),
+    physicalMinimum: INT32 = @import("std").mem.zeroes(INT32),
+    physicalMaximum: INT32 = @import("std").mem.zeroes(INT32),
+};
+pub const USAGE_PROPERTIES = struct_tagUSAGE_PROPERTIES;
+pub const PUSAGE_PROPERTIES = [*c]struct_tagUSAGE_PROPERTIES;
+pub const struct_tagPOINTER_TYPE_INFO = extern struct {
+    type: POINTER_INPUT_TYPE,
+    u: extern union {
+        touchInfo: POINTER_TOUCH_INFO,
+        penInfo: POINTER_PEN_INFO,
+    },
+};
+pub const POINTER_TYPE_INFO = struct_tagPOINTER_TYPE_INFO;
+pub const PPOINTER_TYPE_INFO = [*c]struct_tagPOINTER_TYPE_INFO;
+pub const struct_tagINPUT_INJECTION_VALUE = extern struct {
+    page: USHORT = @import("std").mem.zeroes(USHORT),
+    usage: USHORT = @import("std").mem.zeroes(USHORT),
+    value: INT32 = @import("std").mem.zeroes(INT32),
+    index: USHORT = @import("std").mem.zeroes(USHORT),
+};
+pub const INPUT_INJECTION_VALUE = struct_tagINPUT_INJECTION_VALUE;
+pub const PINPUT_INJECTION_VALUE = [*c]struct_tagINPUT_INJECTION_VALUE;
+pub extern fn GetPointerType(pointerId: UINT32, pointerType: [*c]POINTER_INPUT_TYPE) BOOL;
+pub extern fn GetPointerCursorId(pointerId: UINT32, cursorId: [*c]UINT32) BOOL;
+pub extern fn GetPointerInfo(pointerId: UINT32, pointerInfo: [*c]POINTER_INFO) BOOL;
+pub extern fn GetPointerInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, pointerInfo: [*c]POINTER_INFO) BOOL;
+pub extern fn GetPointerFrameInfo(pointerId: UINT32, pointerCount: [*c]UINT32, pointerInfo: [*c]POINTER_INFO) BOOL;
+pub extern fn GetPointerFrameInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, pointerCount: [*c]UINT32, pointerInfo: [*c]POINTER_INFO) BOOL;
+pub extern fn GetPointerTouchInfo(pointerId: UINT32, touchInfo: [*c]POINTER_TOUCH_INFO) BOOL;
+pub extern fn GetPointerTouchInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, touchInfo: [*c]POINTER_TOUCH_INFO) BOOL;
+pub extern fn GetPointerFrameTouchInfo(pointerId: UINT32, pointerCount: [*c]UINT32, touchInfo: [*c]POINTER_TOUCH_INFO) BOOL;
+pub extern fn GetPointerFrameTouchInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, pointerCount: [*c]UINT32, touchInfo: [*c]POINTER_TOUCH_INFO) BOOL;
+pub extern fn GetPointerPenInfo(pointerId: UINT32, penInfo: [*c]POINTER_PEN_INFO) BOOL;
+pub extern fn GetPointerPenInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, penInfo: [*c]POINTER_PEN_INFO) BOOL;
+pub extern fn GetPointerFramePenInfo(pointerId: UINT32, pointerCount: [*c]UINT32, penInfo: [*c]POINTER_PEN_INFO) BOOL;
+pub extern fn GetPointerFramePenInfoHistory(pointerId: UINT32, entriesCount: [*c]UINT32, pointerCount: [*c]UINT32, penInfo: [*c]POINTER_PEN_INFO) BOOL;
+pub extern fn SkipPointerFrameMessages(pointerId: UINT32) BOOL;
+pub extern fn RegisterPointerInputTarget(hwnd: HWND, pointerType: POINTER_INPUT_TYPE) BOOL;
+pub extern fn UnregisterPointerInputTarget(hwnd: HWND, pointerType: POINTER_INPUT_TYPE) BOOL;
+pub extern fn EnableMouseInPointer(fEnable: BOOL) BOOL;
+pub extern fn IsMouseInPointerEnabled() BOOL;
+pub extern fn RegisterTouchHitTestingWindow(hwnd: HWND, value: ULONG) BOOL;
+pub const struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION = extern struct {
+    score: UINT16 = @import("std").mem.zeroes(UINT16),
+    adjustedPoint: POINT = @import("std").mem.zeroes(POINT),
+};
+pub const TOUCH_HIT_TESTING_PROXIMITY_EVALUATION = struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION;
+pub const PTOUCH_HIT_TESTING_PROXIMITY_EVALUATION = [*c]struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION;
+pub const struct_tagTOUCH_HIT_TESTING_INPUT = extern struct {
+    pointerId: UINT32 = @import("std").mem.zeroes(UINT32),
+    point: POINT = @import("std").mem.zeroes(POINT),
+    boundingBox: RECT = @import("std").mem.zeroes(RECT),
+    nonOccludedBoundingBox: RECT = @import("std").mem.zeroes(RECT),
+    orientation: UINT32 = @import("std").mem.zeroes(UINT32),
+};
+pub const TOUCH_HIT_TESTING_INPUT = struct_tagTOUCH_HIT_TESTING_INPUT;
+pub const PTOUCH_HIT_TESTING_INPUT = [*c]struct_tagTOUCH_HIT_TESTING_INPUT;
+pub extern fn EvaluateProximityToRect(controlBoundingBox: [*c]const RECT, pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) BOOL;
+pub extern fn EvaluateProximityToPolygon(numVertices: UINT32, controlPolygon: [*c]const POINT, pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) BOOL;
+pub extern fn PackTouchHitTestingProximityEvaluation(pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]const TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) LRESULT;
+pub const FEEDBACK_TYPE = enum(c_int) {
+    FEEDBACK_TOUCH_CONTACTVISUALIZATION = 1,
+    FEEDBACK_PEN_BARRELVISUALIZATION = 2,
+    FEEDBACK_PEN_TAP = 3,
+    FEEDBACK_PEN_DOUBLETAP = 4,
+    FEEDBACK_PEN_PRESSANDHOLD = 5,
+    FEEDBACK_PEN_RIGHTTAP = 6,
+    FEEDBACK_TOUCH_TAP = 7,
+    FEEDBACK_TOUCH_DOUBLETAP = 8,
+    FEEDBACK_TOUCH_PRESSANDHOLD = 9,
+    FEEDBACK_TOUCH_RIGHTTAP = 10,
+    FEEDBACK_GESTURE_PRESSANDTAP = 11,
+    FEEDBACK_MAX = 0xFFFFFFFF,
+};
+pub extern fn GetWindowFeedbackSetting(hwnd: HWND, feedback: FEEDBACK_TYPE, dwFlags: DWORD, pSize: [*c]UINT32, config: ?*anyopaque) BOOL;
+pub extern fn SetWindowFeedbackSetting(hwnd: HWND, feedback: FEEDBACK_TYPE, dwFlags: DWORD, size: UINT32, configuration: ?*const anyopaque) BOOL;
+pub const INPUT_TRANSFORM = extern struct {
+    u: extern union {
+        s: extern struct {
+            _11: f32 = @import("std").mem.zeroes(f32),
+            _12: f32 = @import("std").mem.zeroes(f32),
+            _13: f32 = @import("std").mem.zeroes(f32),
+            _14: f32 = @import("std").mem.zeroes(f32),
+            _21: f32 = @import("std").mem.zeroes(f32),
+            _22: f32 = @import("std").mem.zeroes(f32),
+            _23: f32 = @import("std").mem.zeroes(f32),
+            _24: f32 = @import("std").mem.zeroes(f32),
+            _31: f32 = @import("std").mem.zeroes(f32),
+            _32: f32 = @import("std").mem.zeroes(f32),
+            _33: f32 = @import("std").mem.zeroes(f32),
+            _34: f32 = @import("std").mem.zeroes(f32),
+            _41: f32 = @import("std").mem.zeroes(f32),
+            _42: f32 = @import("std").mem.zeroes(f32),
+            _43: f32 = @import("std").mem.zeroes(f32),
+            _44: f32 = @import("std").mem.zeroes(f32),
+        },
+        m: [4][4]f32,
+    },
+};
+pub extern fn GetPointerInputTransform(pointerId: UINT32, historyCount: UINT32, inputTransform: [*c]INPUT_TRANSFORM) BOOL;
+pub const LASTINPUTINFO = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    dwTime: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const PLASTINPUTINFO = [*c]LASTINPUTINFO;
+pub extern fn GetLastInputInfo(plii: PLASTINPUTINFO) BOOL;
+
+pub const struct_HKL__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HKL = [*c]struct_HKL__;
+pub const TIMERPROC = ?*const fn (HWND, UINT, UINT_PTR, DWORD) callconv(.C) void;
+pub const struct_HACCEL__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HACCEL = [*c]struct_HACCEL__;
+pub const struct_HBITMAP__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HBITMAP = [*c]struct_HBITMAP__;
+pub const ACCEL = extern struct {
+    fVirt: BYTE = @import("std").mem.zeroes(BYTE),
+    key: WORD = @import("std").mem.zeroes(WORD),
+    cmd: WORD = @import("std").mem.zeroes(WORD),
+};
+pub const SIZE = extern struct {
+    cx: LONG = @import("std").mem.zeroes(LONG),
+    cy: LONG = @import("std").mem.zeroes(LONG),
+};
+pub const PSIZE = [*c]SIZE;
+pub const LPSIZE = [*c]SIZE;
+pub const SIZEL = SIZE;
+pub const PSIZEL = [*c]SIZE;
+pub const LPSIZEL = [*c]SIZE;
+pub const LPACCEL = [*c]ACCEL;
+pub const MENUTEMPLATEA = anyopaque;
+pub const MENUTEMPLATEW = anyopaque;
+pub const GRAYSTRINGPROC = ?*const fn (HDC, LPARAM, c_int) callconv(.C) BOOL;
+pub const WNDENUMPROC = ?*const fn (HWND, LPARAM) callconv(.C) BOOL;
+pub const DRAWSTATEPROC = ?*const fn (HDC, LPARAM, WPARAM, c_int, c_int) callconv(.C) BOOL;
+pub const HOOKPROC = ?*const fn (c_int, WPARAM, LPARAM) callconv(.C) LRESULT;
+pub const struct_HRGN__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HRGN = [*c]struct_HRGN__;
+pub const struct_HRSRC__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HRSRC = [*c]struct_HRSRC__;
+
+pub extern fn MapVirtualKeyA(uCode: UINT, uMapType: UINT) UINT;
+pub extern fn MapVirtualKeyW(uCode: UINT, uMapType: UINT) UINT;
+pub extern fn MapVirtualKeyExA(uCode: UINT, uMapType: UINT, dwhkl: HKL) UINT;
+pub extern fn MapVirtualKeyExW(uCode: UINT, uMapType: UINT, dwhkl: HKL) UINT;
+pub extern fn GetInputState() BOOL;
+pub extern fn GetQueueStatus(flags: UINT) DWORD;
+pub extern fn GetCapture() HWND;
+pub extern fn SetCapture(hWnd: HWND) HWND;
+pub extern fn ReleaseCapture() BOOL;
+pub extern fn MsgWaitForMultipleObjects(nCount: DWORD, pHandles: [*c]const HANDLE, fWaitAll: BOOL, dwMilliseconds: DWORD, dwWakeMask: DWORD) DWORD;
+pub extern fn MsgWaitForMultipleObjectsEx(nCount: DWORD, pHandles: [*c]const HANDLE, dwMilliseconds: DWORD, dwWakeMask: DWORD, dwFlags: DWORD) DWORD;
+pub extern fn SetTimer(hWnd: HWND, nIDEvent: UINT_PTR, uElapse: UINT, lpTimerFunc: TIMERPROC) UINT_PTR;
+pub extern fn SetCoalescableTimer(hWnd: HWND, nIDEvent: UINT_PTR, uElapse: UINT, lpTimerFunc: TIMERPROC, uToleranceDelay: ULONG) UINT_PTR;
+pub extern fn KillTimer(hWnd: HWND, uIDEvent: UINT_PTR) BOOL;
+pub extern fn IsWindowUnicode(hWnd: HWND) BOOL;
+pub extern fn EnableWindow(hWnd: HWND, bEnable: BOOL) BOOL;
+pub extern fn IsWindowEnabled(hWnd: HWND) BOOL;
+pub extern fn LoadAcceleratorsA(hInstance: HINSTANCE, lpTableName: LPCSTR) HACCEL;
+pub extern fn LoadAcceleratorsW(hInstance: HINSTANCE, lpTableName: LPCWSTR) HACCEL;
+pub extern fn CreateAcceleratorTableA(paccel: LPACCEL, cAccel: c_int) HACCEL;
+pub extern fn CreateAcceleratorTableW(paccel: LPACCEL, cAccel: c_int) HACCEL;
+pub extern fn DestroyAcceleratorTable(hAccel: HACCEL) BOOL;
+pub extern fn CopyAcceleratorTableA(hAccelSrc: HACCEL, lpAccelDst: LPACCEL, cAccelEntries: c_int) c_int;
+pub extern fn CopyAcceleratorTableW(hAccelSrc: HACCEL, lpAccelDst: LPACCEL, cAccelEntries: c_int) c_int;
+pub extern fn TranslateAcceleratorA(hWnd: HWND, hAccTable: HACCEL, lpMsg: LPMSG) c_int;
+pub extern fn TranslateAcceleratorW(hWnd: HWND, hAccTable: HACCEL, lpMsg: LPMSG) c_int;
+pub extern fn LoadMenuA(hInstance: HINSTANCE, lpMenuName: LPCSTR) HMENU;
+pub extern fn LoadMenuW(hInstance: HINSTANCE, lpMenuName: LPCWSTR) HMENU;
+pub extern fn LoadMenuIndirectA(lpMenuTemplate: ?*const MENUTEMPLATEA) HMENU;
+pub extern fn LoadMenuIndirectW(lpMenuTemplate: ?*const MENUTEMPLATEW) HMENU;
+pub extern fn GetMenu(hWnd: HWND) HMENU;
+pub extern fn SetMenu(hWnd: HWND, hMenu: HMENU) BOOL;
+pub extern fn ChangeMenuA(hMenu: HMENU, cmd: UINT, lpszNewItem: LPCSTR, cmdInsert: UINT, flags: UINT) BOOL;
+pub extern fn ChangeMenuW(hMenu: HMENU, cmd: UINT, lpszNewItem: LPCWSTR, cmdInsert: UINT, flags: UINT) BOOL;
+pub extern fn HiliteMenuItem(hWnd: HWND, hMenu: HMENU, uIDHiliteItem: UINT, uHilite: UINT) BOOL;
+pub extern fn GetMenuStringA(hMenu: HMENU, uIDItem: UINT, lpString: LPSTR, cchMax: c_int, flags: UINT) c_int;
+pub extern fn GetMenuStringW(hMenu: HMENU, uIDItem: UINT, lpString: LPWSTR, cchMax: c_int, flags: UINT) c_int;
+pub extern fn GetMenuState(hMenu: HMENU, uId: UINT, uFlags: UINT) UINT;
+pub extern fn DrawMenuBar(hWnd: HWND) BOOL;
+pub extern fn GetSystemMenu(hWnd: HWND, bRevert: BOOL) HMENU;
+pub extern fn CreateMenu() HMENU;
+pub extern fn CreatePopupMenu() HMENU;
+pub extern fn DestroyMenu(hMenu: HMENU) BOOL;
+pub extern fn CheckMenuItem(hMenu: HMENU, uIDCheckItem: UINT, uCheck: UINT) DWORD;
+pub extern fn EnableMenuItem(hMenu: HMENU, uIDEnableItem: UINT, uEnable: UINT) BOOL;
+pub extern fn GetSubMenu(hMenu: HMENU, nPos: c_int) HMENU;
+pub extern fn GetMenuItemID(hMenu: HMENU, nPos: c_int) UINT;
+pub extern fn GetMenuItemCount(hMenu: HMENU) c_int;
+pub extern fn InsertMenuA(hMenu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCSTR) BOOL;
+pub extern fn InsertMenuW(hMenu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCWSTR) BOOL;
+pub extern fn AppendMenuA(hMenu: HMENU, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCSTR) BOOL;
+pub extern fn AppendMenuW(hMenu: HMENU, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCWSTR) BOOL;
+pub extern fn ModifyMenuA(hMnu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCSTR) BOOL;
+pub extern fn ModifyMenuW(hMnu: HMENU, uPosition: UINT, uFlags: UINT, uIDNewItem: UINT_PTR, lpNewItem: LPCWSTR) BOOL;
+pub extern fn RemoveMenu(hMenu: HMENU, uPosition: UINT, uFlags: UINT) BOOL;
+pub extern fn DeleteMenu(hMenu: HMENU, uPosition: UINT, uFlags: UINT) BOOL;
+pub extern fn SetMenuItemBitmaps(hMenu: HMENU, uPosition: UINT, uFlags: UINT, hBitmapUnchecked: HBITMAP, hBitmapChecked: HBITMAP) BOOL;
+pub extern fn GetMenuCheckMarkDimensions() LONG;
+pub extern fn TrackPopupMenu(hMenu: HMENU, uFlags: UINT, x: c_int, y: c_int, nReserved: c_int, hWnd: HWND, prcRect: [*c]const RECT) BOOL;
+pub const struct_tagTPMPARAMS = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    rcExclude: RECT = @import("std").mem.zeroes(RECT),
+};
+pub const TPMPARAMS = struct_tagTPMPARAMS;
+pub const LPTPMPARAMS = [*c]TPMPARAMS;
+pub extern fn TrackPopupMenuEx(hMenu: HMENU, uFlags: UINT, x: c_int, y: c_int, hwnd: HWND, lptpm: LPTPMPARAMS) BOOL;
+pub extern fn CalculatePopupWindowPosition(anchorPoint: [*c]const POINT, windowSize: [*c]const SIZE, flags: UINT, excludeRect: [*c]RECT, popupWindowPosition: [*c]RECT) BOOL;
+pub const struct_tagMENUINFO = extern struct {
+    cbSize: DWORD = @import("std").mem.zeroes(DWORD),
+    fMask: DWORD = @import("std").mem.zeroes(DWORD),
+    dwStyle: DWORD = @import("std").mem.zeroes(DWORD),
+    cyMax: UINT = @import("std").mem.zeroes(UINT),
+    hbrBack: HBRUSH = @import("std").mem.zeroes(HBRUSH),
+    dwContextHelpID: DWORD = @import("std").mem.zeroes(DWORD),
+    dwMenuData: ULONG_PTR = @import("std").mem.zeroes(ULONG_PTR),
+};
+pub const MENUINFO = struct_tagMENUINFO;
+pub const LPMENUINFO = [*c]struct_tagMENUINFO;
+pub const LPCMENUINFO = [*c]const MENUINFO;
+pub extern fn GetMenuInfo(HMENU, LPMENUINFO) BOOL;
+pub extern fn SetMenuInfo(HMENU, LPCMENUINFO) BOOL;
+pub extern fn EndMenu() BOOL;
+pub const struct_tagMENUGETOBJECTINFO = extern struct {
+    dwFlags: DWORD = @import("std").mem.zeroes(DWORD),
+    uPos: UINT = @import("std").mem.zeroes(UINT),
+    hmenu: HMENU = @import("std").mem.zeroes(HMENU),
+    riid: PVOID = @import("std").mem.zeroes(PVOID),
+    pvObj: PVOID = @import("std").mem.zeroes(PVOID),
+};
+pub const MENUGETOBJECTINFO = struct_tagMENUGETOBJECTINFO;
+pub const PMENUGETOBJECTINFO = [*c]struct_tagMENUGETOBJECTINFO;
+pub const struct_tagMENUITEMINFOA = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    fMask: UINT = @import("std").mem.zeroes(UINT),
+    fType: UINT = @import("std").mem.zeroes(UINT),
+    fState: UINT = @import("std").mem.zeroes(UINT),
+    wID: UINT = @import("std").mem.zeroes(UINT),
+    hSubMenu: HMENU = @import("std").mem.zeroes(HMENU),
+    hbmpChecked: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+    hbmpUnchecked: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+    dwItemData: ULONG_PTR = @import("std").mem.zeroes(ULONG_PTR),
+    dwTypeData: LPSTR = @import("std").mem.zeroes(LPSTR),
+    cch: UINT = @import("std").mem.zeroes(UINT),
+    hbmpItem: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+};
+pub const MENUITEMINFOA = struct_tagMENUITEMINFOA;
+pub const LPMENUITEMINFOA = [*c]struct_tagMENUITEMINFOA;
+pub const struct_tagMENUITEMINFOW = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    fMask: UINT = @import("std").mem.zeroes(UINT),
+    fType: UINT = @import("std").mem.zeroes(UINT),
+    fState: UINT = @import("std").mem.zeroes(UINT),
+    wID: UINT = @import("std").mem.zeroes(UINT),
+    hSubMenu: HMENU = @import("std").mem.zeroes(HMENU),
+    hbmpChecked: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+    hbmpUnchecked: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+    dwItemData: ULONG_PTR = @import("std").mem.zeroes(ULONG_PTR),
+    dwTypeData: LPWSTR = @import("std").mem.zeroes(LPWSTR),
+    cch: UINT = @import("std").mem.zeroes(UINT),
+    hbmpItem: HBITMAP = @import("std").mem.zeroes(HBITMAP),
+};
+pub const MENUITEMINFOW = struct_tagMENUITEMINFOW;
+pub const LPMENUITEMINFOW = [*c]struct_tagMENUITEMINFOW;
+pub const MENUITEMINFO = MENUITEMINFOA;
+pub const LPMENUITEMINFO = LPMENUITEMINFOA;
+pub const LPCMENUITEMINFOA = [*c]const MENUITEMINFOA;
+pub const LPCMENUITEMINFOW = [*c]const MENUITEMINFOW;
+pub const LPCMENUITEMINFO = LPCMENUITEMINFOA;
+pub extern fn InsertMenuItemA(hmenu: HMENU, item: UINT, fByPosition: BOOL, lpmi: LPCMENUITEMINFOA) BOOL;
+pub extern fn InsertMenuItemW(hmenu: HMENU, item: UINT, fByPosition: BOOL, lpmi: LPCMENUITEMINFOW) BOOL;
+pub extern fn GetMenuItemInfoA(hmenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: LPMENUITEMINFOA) BOOL;
+pub extern fn GetMenuItemInfoW(hmenu: HMENU, item: UINT, fByPosition: BOOL, lpmii: LPMENUITEMINFOW) BOOL;
+pub extern fn SetMenuItemInfoA(hmenu: HMENU, item: UINT, fByPositon: BOOL, lpmii: LPCMENUITEMINFOA) BOOL;
+pub extern fn SetMenuItemInfoW(hmenu: HMENU, item: UINT, fByPositon: BOOL, lpmii: LPCMENUITEMINFOW) BOOL;
+pub extern fn GetMenuDefaultItem(hMenu: HMENU, fByPos: UINT, gmdiFlags: UINT) UINT;
+pub extern fn SetMenuDefaultItem(hMenu: HMENU, uItem: UINT, fByPos: UINT) BOOL;
+pub extern fn GetMenuItemRect(hWnd: HWND, hMenu: HMENU, uItem: UINT, lprcItem: LPRECT) BOOL;
+pub extern fn MenuItemFromPoint(hWnd: HWND, hMenu: HMENU, ptScreen: POINT) c_int;
+pub const struct_tagDROPSTRUCT = extern struct {
+    hwndSource: HWND = @import("std").mem.zeroes(HWND),
+    hwndSink: HWND = @import("std").mem.zeroes(HWND),
+    wFmt: DWORD = @import("std").mem.zeroes(DWORD),
+    dwData: ULONG_PTR = @import("std").mem.zeroes(ULONG_PTR),
+    ptDrop: POINT = @import("std").mem.zeroes(POINT),
+    dwControlData: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const DROPSTRUCT = struct_tagDROPSTRUCT;
+pub const PDROPSTRUCT = [*c]struct_tagDROPSTRUCT;
+pub const LPDROPSTRUCT = [*c]struct_tagDROPSTRUCT;
+pub extern fn DragObject(hwndParent: HWND, hwndFrom: HWND, fmt: UINT, data: ULONG_PTR, hcur: HCURSOR) DWORD;
+pub extern fn DragDetect(hwnd: HWND, pt: POINT) BOOL;
+pub extern fn DrawIcon(hDC: HDC, X: c_int, Y: c_int, hIcon: HICON) BOOL;
+pub const DRAWTEXTPARAMS = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    iTabLength: c_int = @import("std").mem.zeroes(c_int),
+    iLeftMargin: c_int = @import("std").mem.zeroes(c_int),
+    iRightMargin: c_int = @import("std").mem.zeroes(c_int),
+    uiLengthDrawn: UINT = @import("std").mem.zeroes(UINT),
+};
+pub const LPDRAWTEXTPARAMS = [*c]DRAWTEXTPARAMS;
+pub const PAINTSTRUCT = extern struct {
+    hdc: HDC = @import("std").mem.zeroes(HDC),
+    fErase: BOOL = @import("std").mem.zeroes(BOOL),
+    rcPaint: RECT = @import("std").mem.zeroes(RECT),
+    fRestore: BOOL = @import("std").mem.zeroes(BOOL),
+    fIncUpdate: BOOL = @import("std").mem.zeroes(BOOL),
+    rgbReserved: [32]BYTE = @import("std").mem.zeroes([32]BYTE),
+};
+pub const PPAINTSTRUCT = [*c]PAINTSTRUCT;
+pub const NPPAINTSTRUCT = [*c]PAINTSTRUCT;
+pub const LPPAINTSTRUCT = [*c]PAINTSTRUCT;
+
+pub extern fn DrawTextA(hdc: HDC, lpchText: LPCSTR, cchText: c_int, lprc: LPRECT, format: UINT) c_int;
+pub extern fn DrawTextW(hdc: HDC, lpchText: LPCWSTR, cchText: c_int, lprc: LPRECT, format: UINT) c_int;
+pub extern fn DrawTextExA(hdc: HDC, lpchText: LPSTR, cchText: c_int, lprc: LPRECT, format: UINT, lpdtp: LPDRAWTEXTPARAMS) c_int;
+pub extern fn DrawTextExW(hdc: HDC, lpchText: LPWSTR, cchText: c_int, lprc: LPRECT, format: UINT, lpdtp: LPDRAWTEXTPARAMS) c_int;
+pub extern fn GrayStringA(hDC: HDC, hBrush: HBRUSH, lpOutputFunc: GRAYSTRINGPROC, lpData: LPARAM, nCount: c_int, X: c_int, Y: c_int, nWidth: c_int, nHeight: c_int) BOOL;
+pub extern fn GrayStringW(hDC: HDC, hBrush: HBRUSH, lpOutputFunc: GRAYSTRINGPROC, lpData: LPARAM, nCount: c_int, X: c_int, Y: c_int, nWidth: c_int, nHeight: c_int) BOOL;
+pub extern fn DrawStateA(hdc: HDC, hbrFore: HBRUSH, qfnCallBack: DRAWSTATEPROC, lData: LPARAM, wData: WPARAM, x: c_int, y: c_int, cx: c_int, cy: c_int, uFlags: UINT) BOOL;
+pub extern fn DrawStateW(hdc: HDC, hbrFore: HBRUSH, qfnCallBack: DRAWSTATEPROC, lData: LPARAM, wData: WPARAM, x: c_int, y: c_int, cx: c_int, cy: c_int, uFlags: UINT) BOOL;
+pub extern fn TabbedTextOutA(hdc: HDC, x: c_int, y: c_int, lpString: LPCSTR, chCount: c_int, nTabPositions: c_int, lpnTabStopPositions: [*c]const INT, nTabOrigin: c_int) LONG;
+pub extern fn TabbedTextOutW(hdc: HDC, x: c_int, y: c_int, lpString: LPCWSTR, chCount: c_int, nTabPositions: c_int, lpnTabStopPositions: [*c]const INT, nTabOrigin: c_int) LONG;
+pub extern fn GetTabbedTextExtentA(hdc: HDC, lpString: LPCSTR, chCount: c_int, nTabPositions: c_int, lpnTabStopPositions: [*c]const INT) DWORD;
+pub extern fn GetTabbedTextExtentW(hdc: HDC, lpString: LPCWSTR, chCount: c_int, nTabPositions: c_int, lpnTabStopPositions: [*c]const INT) DWORD;
+pub extern fn SetActiveWindow(hWnd: HWND) HWND;
+pub extern fn GetForegroundWindow() HWND;
+pub extern fn PaintDesktop(hdc: HDC) BOOL;
+pub extern fn SwitchToThisWindow(hwnd: HWND, fUnknown: BOOL) void;
+pub extern fn SetForegroundWindow(hWnd: HWND) BOOL;
+pub extern fn AllowSetForegroundWindow(dwProcessId: DWORD) BOOL;
+pub extern fn LockSetForegroundWindow(uLockCode: UINT) BOOL;
+pub extern fn WindowFromDC(hDC: HDC) HWND;
+pub extern fn GetDC(hWnd: HWND) HDC;
+pub extern fn GetDCEx(hWnd: HWND, hrgnClip: HRGN, flags: DWORD) HDC;
+pub extern fn GetWindowDC(hWnd: HWND) HDC;
+pub extern fn ReleaseDC(hWnd: HWND, hDC: HDC) c_int;
+pub extern fn BeginPaint(hWnd: HWND, lpPaint: LPPAINTSTRUCT) HDC;
+pub extern fn EndPaint(hWnd: HWND, lpPaint: [*c]const PAINTSTRUCT) BOOL;
+pub extern fn GetUpdateRect(hWnd: HWND, lpRect: LPRECT, bErase: BOOL) BOOL;
+pub extern fn GetUpdateRgn(hWnd: HWND, hRgn: HRGN, bErase: BOOL) c_int;
+pub extern fn SetWindowRgn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL) c_int;
+pub extern fn GetWindowRgn(hWnd: HWND, hRgn: HRGN) c_int;
+pub extern fn GetWindowRgnBox(hWnd: HWND, lprc: LPRECT) c_int;
+pub extern fn ExcludeUpdateRgn(hDC: HDC, hWnd: HWND) c_int;
+pub extern fn InvalidateRect(hWnd: HWND, lpRect: [*c]const RECT, bErase: BOOL) BOOL;
+pub extern fn ValidateRect(hWnd: HWND, lpRect: [*c]const RECT) BOOL;
+pub extern fn InvalidateRgn(hWnd: HWND, hRgn: HRGN, bErase: BOOL) BOOL;
+pub extern fn ValidateRgn(hWnd: HWND, hRgn: HRGN) BOOL;
+pub extern fn RedrawWindow(hWnd: HWND, lprcUpdate: [*c]const RECT, hrgnUpdate: HRGN, flags: UINT) BOOL;
+pub extern fn LockWindowUpdate(hWndLock: HWND) BOOL;
+pub extern fn ScrollWindow(hWnd: HWND, XAmount: c_int, YAmount: c_int, lpRect: [*c]const RECT, lpClipRect: [*c]const RECT) BOOL;
+pub extern fn ScrollDC(hDC: HDC, dx: c_int, dy: c_int, lprcScroll: [*c]const RECT, lprcClip: [*c]const RECT, hrgnUpdate: HRGN, lprcUpdate: LPRECT) BOOL;
+pub extern fn ScrollWindowEx(hWnd: HWND, dx: c_int, dy: c_int, prcScroll: [*c]const RECT, prcClip: [*c]const RECT, hrgnUpdate: HRGN, prcUpdate: LPRECT, flags: UINT) c_int;
+pub extern fn SetScrollPos(hWnd: HWND, nBar: c_int, nPos: c_int, bRedraw: BOOL) c_int;
+pub extern fn GetScrollPos(hWnd: HWND, nBar: c_int) c_int;
+pub extern fn SetScrollRange(hWnd: HWND, nBar: c_int, nMinPos: c_int, nMaxPos: c_int, bRedraw: BOOL) BOOL;
+pub extern fn GetScrollRange(hWnd: HWND, nBar: c_int, lpMinPos: LPINT, lpMaxPos: LPINT) BOOL;
+pub extern fn ShowScrollBar(hWnd: HWND, wBar: c_int, bShow: BOOL) BOOL;
+pub extern fn EnableScrollBar(hWnd: HWND, wSBflags: UINT, wArrows: UINT) BOOL;
+pub extern fn SetPropA(hWnd: HWND, lpString: LPCSTR, hData: HANDLE) BOOL;
+pub extern fn SetPropW(hWnd: HWND, lpString: LPCWSTR, hData: HANDLE) BOOL;
+pub extern fn GetPropA(hWnd: HWND, lpString: LPCSTR) HANDLE;
+pub extern fn GetPropW(hWnd: HWND, lpString: LPCWSTR) HANDLE;
+pub extern fn RemovePropA(hWnd: HWND, lpString: LPCSTR) HANDLE;
+pub extern fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) HANDLE;
+
+pub const PROPENUMPROCEXA = ?*const fn (HWND, LPSTR, HANDLE, ULONG_PTR) callconv(.C) BOOL;
+pub const PROPENUMPROCEXW = ?*const fn (HWND, LPWSTR, HANDLE, ULONG_PTR) callconv(.C) BOOL;
+pub const PROPENUMPROCA = ?*const fn (HWND, LPCSTR, HANDLE) callconv(.C) BOOL;
+pub const PROPENUMPROCW = ?*const fn (HWND, LPCWSTR, HANDLE) callconv(.C) BOOL;
+
+pub extern fn EnumPropsExA(hWnd: HWND, lpEnumFunc: PROPENUMPROCEXA, lParam: LPARAM) c_int;
+pub extern fn EnumPropsExW(hWnd: HWND, lpEnumFunc: PROPENUMPROCEXW, lParam: LPARAM) c_int;
+pub extern fn EnumPropsA(hWnd: HWND, lpEnumFunc: PROPENUMPROCA) c_int;
+pub extern fn EnumPropsW(hWnd: HWND, lpEnumFunc: PROPENUMPROCW) c_int;
+pub extern fn SetWindowTextA(hWnd: HWND, lpString: LPCSTR) BOOL;
+pub extern fn SetWindowTextW(hWnd: HWND, lpString: LPCWSTR) BOOL;
+pub extern fn GetWindowTextA(hWnd: HWND, lpString: LPSTR, nMaxCount: c_int) c_int;
+pub extern fn GetWindowTextW(hWnd: HWND, lpString: LPWSTR, nMaxCount: c_int) c_int;
+pub extern fn GetWindowTextLengthA(hWnd: HWND) c_int;
+pub extern fn GetWindowTextLengthW(hWnd: HWND) c_int;
+pub extern fn GetWindowRect(hWnd: HWND, lpRect: LPRECT) BOOL;
+pub extern fn AdjustWindowRect(lpRect: LPRECT, dwStyle: DWORD, bMenu: BOOL) BOOL;
+pub const HELPINFO = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    iContextType: c_int = @import("std").mem.zeroes(c_int),
+    iCtrlId: c_int = @import("std").mem.zeroes(c_int),
+    hItemHandle: HANDLE = @import("std").mem.zeroes(HANDLE),
+    dwContextId: DWORD_PTR = @import("std").mem.zeroes(DWORD_PTR),
+    MousePos: POINT = @import("std").mem.zeroes(POINT),
+};
+pub const LPHELPINFO = [*c]HELPINFO;
+pub extern fn SetWindowContextHelpId(HWND, DWORD) BOOL;
+pub extern fn GetWindowContextHelpId(HWND) DWORD;
+pub extern fn SetMenuContextHelpId(HMENU, DWORD) BOOL;
+pub extern fn GetMenuContextHelpId(HMENU) DWORD;
+pub extern fn MessageBoxExA(hWnd: HWND, lpText: LPCSTR, lpCaption: LPCSTR, uType: UINT, wLanguageId: WORD) c_int;
+pub extern fn MessageBoxExW(hWnd: HWND, lpText: LPCWSTR, lpCaption: LPCWSTR, uType: UINT, wLanguageId: WORD) c_int;
+pub const MSGBOXCALLBACK = ?*const fn (LPHELPINFO) callconv(.C) void;
+pub const MSGBOXPARAMSA = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    hwndOwner: HWND = @import("std").mem.zeroes(HWND),
+    hInstance: HINSTANCE = @import("std").mem.zeroes(HINSTANCE),
+    lpszText: LPCSTR = @import("std").mem.zeroes(LPCSTR),
+    lpszCaption: LPCSTR = @import("std").mem.zeroes(LPCSTR),
+    dwStyle: DWORD = @import("std").mem.zeroes(DWORD),
+    lpszIcon: LPCSTR = @import("std").mem.zeroes(LPCSTR),
+    dwContextHelpId: DWORD_PTR = @import("std").mem.zeroes(DWORD_PTR),
+    lpfnMsgBoxCallback: MSGBOXCALLBACK = @import("std").mem.zeroes(MSGBOXCALLBACK),
+    dwLanguageId: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const PMSGBOXPARAMSA = [*c]MSGBOXPARAMSA;
+pub const LPMSGBOXPARAMSA = [*c]MSGBOXPARAMSA;
+pub const MSGBOXPARAMSW = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    hwndOwner: HWND = @import("std").mem.zeroes(HWND),
+    hInstance: HINSTANCE = @import("std").mem.zeroes(HINSTANCE),
+    lpszText: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    lpszCaption: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    dwStyle: DWORD = @import("std").mem.zeroes(DWORD),
+    lpszIcon: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    dwContextHelpId: DWORD_PTR = @import("std").mem.zeroes(DWORD_PTR),
+    lpfnMsgBoxCallback: MSGBOXCALLBACK = @import("std").mem.zeroes(MSGBOXCALLBACK),
+    dwLanguageId: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const PMSGBOXPARAMSW = [*c]MSGBOXPARAMSW;
+pub const LPMSGBOXPARAMSW = [*c]MSGBOXPARAMSW;
+pub const MSGBOXPARAMS = MSGBOXPARAMSA;
+pub const PMSGBOXPARAMS = PMSGBOXPARAMSA;
+pub const LPMSGBOXPARAMS = LPMSGBOXPARAMSA;
+pub extern fn MessageBoxIndirectA(lpmbp: [*c]const MSGBOXPARAMSA) c_int;
+pub extern fn MessageBoxIndirectW(lpmbp: [*c]const MSGBOXPARAMSW) c_int;
+pub extern fn MessageBeep(uType: UINT) BOOL;
+pub extern fn ShowCursor(bShow: BOOL) c_int;
+pub extern fn SetCursorPos(X: c_int, Y: c_int) BOOL;
+pub extern fn SetPhysicalCursorPos(X: c_int, Y: c_int) BOOL;
+pub extern fn GetCursorPos(lpPoint: LPPOINT) BOOL;
+pub extern fn GetPhysicalCursorPos(lpPoint: LPPOINT) BOOL;
+pub extern fn ClipCursor(lpRect: [*c]const RECT) BOOL;
+pub extern fn GetClipCursor(lpRect: LPRECT) BOOL;
+pub extern fn GetCursor() HCURSOR;
+pub extern fn CreateCaret(hWnd: HWND, hBitmap: HBITMAP, nWidth: c_int, nHeight: c_int) BOOL;
+pub extern fn GetCaretBlinkTime() UINT;
+pub extern fn SetCaretBlinkTime(uMSeconds: UINT) BOOL;
+pub extern fn DestroyCaret() BOOL;
+pub extern fn HideCaret(hWnd: HWND) BOOL;
+pub extern fn ShowCaret(hWnd: HWND) BOOL;
+pub extern fn SetCaretPos(X: c_int, Y: c_int) BOOL;
+pub extern fn GetCaretPos(lpPoint: LPPOINT) BOOL;
+pub extern fn ClientToScreen(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn ScreenToClient(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn LogicalToPhysicalPoint(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn PhysicalToLogicalPoint(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn LogicalToPhysicalPointForPerMonitorDPI(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn PhysicalToLogicalPointForPerMonitorDPI(hWnd: HWND, lpPoint: LPPOINT) BOOL;
+pub extern fn MapWindowPoints(hWndFrom: HWND, hWndTo: HWND, lpPoints: LPPOINT, cPoints: UINT) c_int;
+pub extern fn WindowFromPoint(Point: POINT) HWND;
+pub extern fn WindowFromPhysicalPoint(Point: POINT) HWND;
+pub extern fn ChildWindowFromPoint(hWndParent: HWND, Point: POINT) HWND;
+pub extern fn ChildWindowFromPointEx(hwnd: HWND, pt: POINT, flags: UINT) HWND;
+pub extern fn GetSysColor(nIndex: c_int) DWORD;
+pub extern fn GetSysColorBrush(nIndex: c_int) HBRUSH;
+pub const COLORREF = DWORD;
+pub const LPCOLORREF = [*c]DWORD;
+pub extern fn SetSysColors(cElements: c_int, lpaElements: [*c]const INT, lpaRgbValues: [*c]const COLORREF) BOOL;
+pub extern fn DrawFocusRect(hDC: HDC, lprc: [*c]const RECT) BOOL;
+pub extern fn FillRect(hDC: HDC, lprc: [*c]const RECT, hbr: HBRUSH) c_int;
+pub extern fn FrameRect(hDC: HDC, lprc: [*c]const RECT, hbr: HBRUSH) c_int;
+pub extern fn InvertRect(hDC: HDC, lprc: [*c]const RECT) BOOL;
+pub extern fn SetRect(lprc: LPRECT, xLeft: c_int, yTop: c_int, xRight: c_int, yBottom: c_int) BOOL;
+pub extern fn SetRectEmpty(lprc: LPRECT) BOOL;
+pub extern fn CopyRect(lprcDst: LPRECT, lprcSrc: [*c]const RECT) BOOL;
+pub extern fn InflateRect(lprc: LPRECT, dx: c_int, dy: c_int) BOOL;
+pub extern fn IntersectRect(lprcDst: LPRECT, lprcSrc1: [*c]const RECT, lprcSrc2: [*c]const RECT) BOOL;
+pub extern fn UnionRect(lprcDst: LPRECT, lprcSrc1: [*c]const RECT, lprcSrc2: [*c]const RECT) BOOL;
+pub extern fn SubtractRect(lprcDst: LPRECT, lprcSrc1: [*c]const RECT, lprcSrc2: [*c]const RECT) BOOL;
+pub extern fn OffsetRect(lprc: LPRECT, dx: c_int, dy: c_int) BOOL;
+pub extern fn IsRectEmpty(lprc: [*c]const RECT) BOOL;
+pub extern fn EqualRect(lprc1: [*c]const RECT, lprc2: [*c]const RECT) BOOL;
+pub extern fn PtInRect(lprc: [*c]const RECT, pt: POINT) BOOL;
+pub extern fn GetWindowWord(hWnd: HWND, nIndex: c_int) WORD;
+pub extern fn SetWindowWord(hWnd: HWND, nIndex: c_int, wNewWord: WORD) WORD;
+pub extern fn GetWindowLongA(hWnd: HWND, nIndex: c_int) LONG;
+pub extern fn GetWindowLongW(hWnd: HWND, nIndex: c_int) LONG;
+pub extern fn SetWindowLongA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) LONG;
+pub extern fn SetWindowLongW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) LONG;
+pub extern fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) LONG_PTR;
+pub extern fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) LONG_PTR;
+pub extern fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) LONG_PTR;
+pub extern fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) LONG_PTR;
+pub extern fn GetClassWord(hWnd: HWND, nIndex: c_int) WORD;
+pub extern fn SetClassWord(hWnd: HWND, nIndex: c_int, wNewWord: WORD) WORD;
+pub extern fn GetClassLongA(hWnd: HWND, nIndex: c_int) DWORD;
+pub extern fn GetClassLongW(hWnd: HWND, nIndex: c_int) DWORD;
+pub extern fn SetClassLongA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) DWORD;
+pub extern fn SetClassLongW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) DWORD;
+pub extern fn GetClassLongPtrA(hWnd: HWND, nIndex: c_int) ULONG_PTR;
+pub extern fn GetClassLongPtrW(hWnd: HWND, nIndex: c_int) ULONG_PTR;
+pub extern fn SetClassLongPtrA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) ULONG_PTR;
+pub extern fn SetClassLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) ULONG_PTR;
+pub extern fn GetProcessDefaultLayout(pdwDefaultLayout: [*c]DWORD) BOOL;
+pub extern fn SetProcessDefaultLayout(dwDefaultLayout: DWORD) BOOL;
+pub extern fn GetDesktopWindow() HWND;
+pub extern fn GetParent(hWnd: HWND) HWND;
+pub extern fn SetParent(hWndChild: HWND, hWndNewParent: HWND) HWND;
+pub extern fn EnumChildWindows(hWndParent: HWND, lpEnumFunc: WNDENUMPROC, lParam: LPARAM) BOOL;
+pub extern fn FindWindowA(lpClassName: LPCSTR, lpWindowName: LPCSTR) HWND;
+pub extern fn FindWindowW(lpClassName: LPCWSTR, lpWindowName: LPCWSTR) HWND;
+pub extern fn FindWindowExA(hWndParent: HWND, hWndChildAfter: HWND, lpszClass: LPCSTR, lpszWindow: LPCSTR) HWND;
+pub extern fn FindWindowExW(hWndParent: HWND, hWndChildAfter: HWND, lpszClass: LPCWSTR, lpszWindow: LPCWSTR) HWND;
+pub extern fn GetShellWindow() HWND;
+pub extern fn RegisterShellHookWindow(hwnd: HWND) BOOL;
+pub extern fn DeregisterShellHookWindow(hwnd: HWND) BOOL;
+pub extern fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) BOOL;
+pub extern fn EnumThreadWindows(dwThreadId: DWORD, lpfn: WNDENUMPROC, lParam: LPARAM) BOOL;
+pub extern fn GetClassNameA(hWnd: HWND, lpClassName: LPSTR, nMaxCount: c_int) c_int;
+pub extern fn GetClassNameW(hWnd: HWND, lpClassName: LPWSTR, nMaxCount: c_int) c_int;
+pub extern fn GetTopWindow(hWnd: HWND) HWND;
+pub extern fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: LPDWORD) DWORD;
+pub extern fn IsGUIThread(bConvert: BOOL) BOOL;
+pub extern fn GetLastActivePopup(hWnd: HWND) HWND;
+pub extern fn GetWindow(hWnd: HWND, uCmd: UINT) HWND;
+
+pub const struct_HHOOK__ = extern struct {
+    unused: c_int = @import("std").mem.zeroes(c_int),
+};
+pub const HHOOK = [*c]struct_HHOOK__;
+pub extern fn SetWindowsHookA(nFilterType: c_int, pfnFilterProc: HOOKPROC) HHOOK;
+pub extern fn SetWindowsHookW(nFilterType: c_int, pfnFilterProc: HOOKPROC) HHOOK;
+pub extern fn UnhookWindowsHook(nCode: c_int, pfnFilterProc: HOOKPROC) BOOL;
+pub extern fn SetWindowsHookExA(idHook: c_int, lpfn: HOOKPROC, hmod: HINSTANCE, dwThreadId: DWORD) HHOOK;
+pub extern fn SetWindowsHookExW(idHook: c_int, lpfn: HOOKPROC, hmod: HINSTANCE, dwThreadId: DWORD) HHOOK;
+pub extern fn UnhookWindowsHookEx(hhk: HHOOK) BOOL;
+pub extern fn CallNextHookEx(hhk: HHOOK, nCode: c_int, wParam: WPARAM, lParam: LPARAM) LRESULT;
+pub extern fn CheckMenuRadioItem(hmenu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) BOOL;
+
+pub const RECTL = extern struct {
+    left: LONG = @import("std").mem.zeroes(LONG),
+    top: LONG = @import("std").mem.zeroes(LONG),
+    right: LONG = @import("std").mem.zeroes(LONG),
+    bottom: LONG = @import("std").mem.zeroes(LONG),
+};
+
+pub extern fn wglCopyContext(HGLRC, HGLRC, UINT) BOOL;
+pub extern fn wglCreateContext(HDC) HGLRC;
+pub extern fn wglCreateLayerContext(HDC, c_int) HGLRC;
+pub extern fn wglDeleteContext(HGLRC) BOOL;
+pub extern fn wglGetCurrentContext() HGLRC;
+pub extern fn wglGetCurrentDC() HDC;
+pub extern fn wglMakeCurrent(HDC, HGLRC) BOOL;
+pub extern fn wglShareLists(HGLRC, HGLRC) BOOL;
+pub extern fn wglUseFontBitmapsA(HDC, DWORD, DWORD, DWORD) BOOL;
+pub extern fn wglUseFontBitmapsW(HDC, DWORD, DWORD, DWORD) BOOL;
+pub extern fn SwapBuffers(HDC) BOOL;
+pub const struct__POINTFLOAT = extern struct {
+    x: FLOAT = @import("std").mem.zeroes(FLOAT),
+    y: FLOAT = @import("std").mem.zeroes(FLOAT),
+};
+pub const POINTFLOAT = struct__POINTFLOAT;
+pub const PPOINTFLOAT = [*c]struct__POINTFLOAT;
+pub const struct__GLYPHMETRICSFLOAT = extern struct {
+    gmfBlackBoxX: FLOAT = @import("std").mem.zeroes(FLOAT),
+    gmfBlackBoxY: FLOAT = @import("std").mem.zeroes(FLOAT),
+    gmfptGlyphOrigin: POINTFLOAT = @import("std").mem.zeroes(POINTFLOAT),
+    gmfCellIncX: FLOAT = @import("std").mem.zeroes(FLOAT),
+    gmfCellIncY: FLOAT = @import("std").mem.zeroes(FLOAT),
+};
+pub const GLYPHMETRICSFLOAT = struct__GLYPHMETRICSFLOAT;
+pub const PGLYPHMETRICSFLOAT = [*c]struct__GLYPHMETRICSFLOAT;
+pub const LPGLYPHMETRICSFLOAT = [*c]struct__GLYPHMETRICSFLOAT;
+pub extern fn wglUseFontOutlinesA(HDC, DWORD, DWORD, DWORD, FLOAT, FLOAT, c_int, LPGLYPHMETRICSFLOAT) BOOL;
+pub extern fn wglUseFontOutlinesW(HDC, DWORD, DWORD, DWORD, FLOAT, FLOAT, c_int, LPGLYPHMETRICSFLOAT) BOOL;
+pub const struct_tagLAYERPLANEDESCRIPTOR = extern struct {
+    nSize: WORD = @import("std").mem.zeroes(WORD),
+    nVersion: WORD = @import("std").mem.zeroes(WORD),
+    dwFlags: DWORD = @import("std").mem.zeroes(DWORD),
+    iPixelType: BYTE = @import("std").mem.zeroes(BYTE),
+    cColorBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cRedBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cRedShift: BYTE = @import("std").mem.zeroes(BYTE),
+    cGreenBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cGreenShift: BYTE = @import("std").mem.zeroes(BYTE),
+    cBlueBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cBlueShift: BYTE = @import("std").mem.zeroes(BYTE),
+    cAlphaBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAlphaShift: BYTE = @import("std").mem.zeroes(BYTE),
+    cAccumBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAccumRedBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAccumGreenBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAccumBlueBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAccumAlphaBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cDepthBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cStencilBits: BYTE = @import("std").mem.zeroes(BYTE),
+    cAuxBuffers: BYTE = @import("std").mem.zeroes(BYTE),
+    iLayerPlane: BYTE = @import("std").mem.zeroes(BYTE),
+    bReserved: BYTE = @import("std").mem.zeroes(BYTE),
+    crTransparent: COLORREF = @import("std").mem.zeroes(COLORREF),
+};
+pub const LAYERPLANEDESCRIPTOR = struct_tagLAYERPLANEDESCRIPTOR;
+pub const PLAYERPLANEDESCRIPTOR = [*c]struct_tagLAYERPLANEDESCRIPTOR;
+pub const LPLAYERPLANEDESCRIPTOR = [*c]struct_tagLAYERPLANEDESCRIPTOR;
+pub extern fn wglDescribeLayerPlane(HDC, c_int, c_int, UINT, LPLAYERPLANEDESCRIPTOR) BOOL;
+pub extern fn wglSetLayerPaletteEntries(HDC, c_int, c_int, c_int, [*c]const COLORREF) c_int;
+pub extern fn wglGetLayerPaletteEntries(HDC, c_int, c_int, c_int, [*c]COLORREF) c_int;
+pub extern fn wglRealizeLayerPalette(HDC, c_int, BOOL) BOOL;
+pub extern fn wglSwapLayerBuffers(HDC, UINT) BOOL;
+pub const struct__WGLSWAP = extern struct {
+    hdc: HDC = @import("std").mem.zeroes(HDC),
+    uiFlags: UINT = @import("std").mem.zeroes(UINT),
+};
+pub const WGLSWAP = struct__WGLSWAP;
+pub const PWGLSWAP = [*c]struct__WGLSWAP;
+pub const LPWGLSWAP = [*c]struct__WGLSWAP;
+pub extern fn wglSwapMultipleBuffers(UINT, [*c]const WGLSWAP) DWORD;
+pub const PALETTEENTRY = extern struct {
+    peRed: BYTE = @import("std").mem.zeroes(BYTE),
+    peGreen: BYTE = @import("std").mem.zeroes(BYTE),
+    peBlue: BYTE = @import("std").mem.zeroes(BYTE),
+    peFlags: BYTE = @import("std").mem.zeroes(BYTE),
+};
+pub const PPALETTEENTRY = [*c]PALETTEENTRY;
+pub const LPPALETTEENTRY = [*c]PALETTEENTRY;
+pub const COLORADJUSTMENT = extern struct {
+    caSize: WORD = @import("std").mem.zeroes(WORD),
+    caFlags: WORD = @import("std").mem.zeroes(WORD),
+    caIlluminantIndex: WORD = @import("std").mem.zeroes(WORD),
+    caRedGamma: WORD = @import("std").mem.zeroes(WORD),
+    caGreenGamma: WORD = @import("std").mem.zeroes(WORD),
+    caBlueGamma: WORD = @import("std").mem.zeroes(WORD),
+    caReferenceBlack: WORD = @import("std").mem.zeroes(WORD),
+    caReferenceWhite: WORD = @import("std").mem.zeroes(WORD),
+    caContrast: SHORT = @import("std").mem.zeroes(SHORT),
+    caBrightness: SHORT = @import("std").mem.zeroes(SHORT),
+    caColorfulness: SHORT = @import("std").mem.zeroes(SHORT),
+    caRedGreenTint: SHORT = @import("std").mem.zeroes(SHORT),
+};
+pub const PCOLORADJUSTMENT = [*c]COLORADJUSTMENT;
+pub const LPCOLORADJUSTMENT = [*c]COLORADJUSTMENT;
