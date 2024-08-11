@@ -13,22 +13,7 @@ const allocator = __system.allocator;
 
 const root = @import("root");
 
-pub const win32 = struct {
-    pub usingnamespace @import("include/win32.zig").zig;
-    pub usingnamespace @import("include/win32.zig").foundation;
-    pub usingnamespace @import("include/win32.zig").system.system_services;
-    pub usingnamespace @import("include/win32.zig").system.console;
-    pub usingnamespace @import("include/win32.zig").system.library_loader;
-    pub usingnamespace @import("include/win32.zig").system.system_information;
-    pub usingnamespace @import("include/win32.zig").system.windows_programming;
-    pub usingnamespace @import("include/win32.zig").system.threading;
-    pub usingnamespace @import("include/win32.zig").ui.windows_and_messaging;
-    pub usingnamespace @import("include/win32.zig").ui.controls;
-    pub usingnamespace @import("include/win32.zig").ui.input;
-    pub usingnamespace @import("include/win32.zig").ui.input.touch;
-    pub usingnamespace @import("include/win32.zig").ui.input.keyboard_and_mouse;
-    pub usingnamespace @import("include/win32.zig").graphics.gdi;
-};
+pub const win32 = @import("include/windows.zig");
 
 const WINAPI = @import("std").os.windows.WINAPI;
 const HINSTANCE = win32.HINSTANCE;
@@ -57,21 +42,6 @@ pub var timer: win32.HANDLE = undefined;
 
 var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
-pub inline fn HIWORD(l: anytype) WORD {
-    return @as(WORD, @intCast((l >> 16) & 0xffff));
-}
-pub inline fn LOWORD(l: anytype) WORD {
-    return @as(WORD, @intCast(l & 0xffff));
-}
-inline fn GET_WHEEL_DELTA_WPARAM(l: anytype) SHORT {
-    return @intCast(HIWORD(l));
-}
-inline fn GET_X_LPARAM(l: anytype) INT {
-    return @intCast(LOWORD(l));
-}
-inline fn GET_Y_LPARAM(l: anytype) INT {
-    return @intCast(HIWORD(l));
-}
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
     const win32SurfaceCreateInfo: __vulkan.vk.VkWin32SurfaceCreateInfoKHR = .{
         .hwnd = hWnd,
@@ -132,14 +102,14 @@ pub fn windows_start() void {
 
     const CLASS_NAME = "Xfit Window Class";
 
-    const wc = win32.WNDCLASSA{
-        .style = .{},
+    var wc = win32.WNDCLASSA{
+        .style = 0,
         .lpfnWndProc = WindowProc,
         .cbClsExtra = 0,
         .cbWndExtra = 0,
         .hInstance = hInstance,
-        .hIcon = if (__system.init_set.icon == null) win32.LoadIconA(null, @ptrCast(win32.IDI_APPLICATION)) else win32.LoadIconA(hInstance, @ptrCast(__system.init_set.icon)),
-        .hCursor = if (__system.init_set.cursor == null) win32.LoadCursorA(null, @ptrCast(win32.IDC_ARROW)) else win32.LoadCursorA(hInstance, @ptrCast(__system.init_set.cursor)),
+        .hIcon = if (__system.init_set.icon == null) win32.LoadIconA(null, @ptrFromInt(win32.IDI_APPLICATION)) else win32.LoadIconA(hInstance, @ptrCast(__system.init_set.icon)),
+        .hCursor = if (__system.init_set.cursor == null) win32.LoadCursorA(null, @ptrFromInt(win32.IDC_ARROW)) else win32.LoadCursorA(hInstance, @ptrCast(__system.init_set.cursor)),
         .hbrBackground = null,
         .lpszMenuName = null,
         .lpszClassName = CLASS_NAME,
@@ -147,14 +117,14 @@ pub fn windows_start() void {
 
     _ = win32.RegisterClassA(&wc);
 
-    const window_style: DWORD = if (__system.init_set.screen_mode == system.screen_mode.WINDOW) (((((@as(DWORD, @bitCast(win32.WS_OVERLAPPED)) |
-        @as(DWORD, @bitCast(win32.WS_CAPTION)) |
-        @as(DWORD, @bitCast(win32.WS_SYSMENU)) |
-        if (__system.init_set.can_resizewindow) @as(DWORD, @bitCast(win32.WS_THICKFRAME)) else 0) |
-        if (__system.init_set.can_minimize) @as(DWORD, @bitCast(win32.WS_MINIMIZEBOX)) else 0) |
-        if (__system.init_set.can_maximize) @as(DWORD, @bitCast(win32.WS_MAXIMIZEBOX)) else 0))) else @as(DWORD, @bitCast(win32.WS_POPUP));
+    const window_style: DWORD = if (__system.init_set.screen_mode == system.screen_mode.WINDOW) (win32.WS_OVERLAPPED |
+        win32.WS_CAPTION |
+        win32.WS_SYSMENU |
+        if (__system.init_set.can_resizewindow) win32.WS_THICKFRAME else 0 |
+        if (__system.init_set.can_minimize) win32.WS_MINIMIZEBOX else 0 |
+        if (__system.init_set.can_maximize) win32.WS_MAXIMIZEBOX else 0) else win32.WS_POPUP;
 
-    const ex_style: DWORD = if (__system.init_set.screen_mode != system.screen_mode.WINDOW) (@as(DWORD, @bitCast(win32.WS_EX_APPWINDOW)) | if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) @as(DWORD, @bitCast(win32.WS_EX_TOPMOST)) else 0) else 0;
+    const ex_style: DWORD = if (__system.init_set.screen_mode != system.screen_mode.WINDOW) (win32.WS_EX_APPWINDOW | if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) win32.WS_EX_TOPMOST else 0) else 0;
 
     var window_x: i32 = __system.init_set.window_x;
     var window_y: i32 = __system.init_set.window_y;
@@ -182,7 +152,7 @@ pub fn windows_start() void {
         }
     }
 
-    hWnd = win32.CreateWindowExA(@bitCast(ex_style), CLASS_NAME, @ptrCast(__system.init_set.window_title), @bitCast(window_style), window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse {
+    hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse {
         system.print_error("ERR windows_start.CreateWindowEx hWnd is null. code : {}\n", .{win32.GetLastError()});
         unreachable;
     };
@@ -209,9 +179,9 @@ pub fn windows_start() void {
     // }
     // TODO JoyStick Needed
 
-    _ = win32.ShowWindow(hWnd, if (__system.init_set.screen_mode == system.screen_mode.WINDOW) @bitCast(@intFromEnum(__system.init_set.window_show)) else win32.SW_MAXIMIZE);
+    _ = win32.ShowWindow(hWnd, if (__system.init_set.screen_mode == system.screen_mode.WINDOW) @intFromEnum(__system.init_set.window_show) else win32.SW_MAXIMIZE);
 
-    _ = win32.RegisterTouchWindow(hWnd, @enumFromInt(0));
+    _ = win32.RegisterTouchWindow(hWnd, 0);
 
     _ = std.Thread.spawn(.{}, render_thread, .{}) catch |err| {
         system.print_error("ERR windows_start.std.Thread.spawn(render_thread) Failed. msg : {}\n", .{err});
@@ -321,7 +291,7 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
     mode.dmPelsHeight = resolution.size[1];
     mode.dmDisplayFrequency = resolution.refleshrate;
 
-    const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, .{ .FULLSCREEN = 1, .RESET = 1 }, null);
+    const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, win32.CDS_FULLSCREEN | win32.CDS_RESET, null);
     _ = res;
 
     current_monitor = monitor;
@@ -345,7 +315,7 @@ pub fn nanosleep(ns: u64) void {
         std.time.sleep(ns);
         return;
     }
-    if (@intFromEnum(win32.WAIT_FAILED) == win32.WaitForSingleObject(timer, win32.INFINITE)) {
+    if (win32.WAIT_FAILED == win32.WaitForSingleObject(timer, win32.INFINITE)) {
         system.print("WARN nanosleep.WaitForSingleObject FAILED Code {}\n", .{win32.GetLastError()});
         std.time.sleep(ns);
         return;
@@ -429,8 +399,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
         },
         win32.WM_ACTIVATE => {
             if (S.activateInited) {
-                const pause = (HIWORD(wParam) != 0);
-                const activated = (LOWORD(wParam) != win32.WA_INACTIVE);
+                const pause = (win32.HIWORD(wParam) != 0);
+                const activated = (win32.LOWORD(wParam) != win32.WA_INACTIVE);
                 __system.pause.store(pause, std.builtin.AtomicOrder.monotonic);
                 __system.activated.store(activated, std.builtin.AtomicOrder.monotonic);
 
@@ -442,8 +412,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
         win32.WM_SIZE => {
             if (wParam != win32.SIZE_MINIMIZED) {
                 if (S.sizeInited) {
-                    @atomicStore(i32, &__system.init_set.window_width, @intCast(LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
-                    @atomicStore(i32, &__system.init_set.window_height, @intCast(HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+                    @atomicStore(i32, &__system.init_set.window_width, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+                    @atomicStore(i32, &__system.init_set.window_height, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
                     __system.size_update_sem.post();
                     root.xfit_size();
@@ -454,19 +424,19 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             return 0;
         },
         win32.WM_MOVE => {
-            @atomicStore(i32, &__system.init_set.window_x, @intCast(LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.init_set.window_y, @intCast(HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
             if (__system.window_move_func != null) __system.window_move_func.?();
             return 0;
         },
         win32.WM_MOUSEMOVE => {
-            var mouse_event: win32.TRACKMOUSEEVENT = .{ .cbSize = @sizeOf(win32.TRACKMOUSEEVENT), .dwFlags = .{ .HOVER = 1, .LEAVE = 1 }, .hwndTrack = hWnd, .dwHoverTime = 10 };
+            var mouse_event: win32.TRACKMOUSEEVENT = .{ .cbSize = @sizeOf(win32.TRACKMOUSEEVENT), .dwFlags = win32.TME_HOVER | win32.TME_LEAVE, .hwndTrack = hWnd, .dwHoverTime = 10 };
             if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
                 system.print("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
             }
-            @atomicStore(i32, &__system.cursor_pos[0], GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.cursor_pos[1], GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
             return 0;
         },
         // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
@@ -479,7 +449,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             return 0;
         },
         win32.WM_MOUSEWHEEL => {
-            __system.mouse_scroll_dt.store(GET_WHEEL_DELTA_WPARAM(wParam), std.builtin.AtomicOrder.monotonic);
+            __system.mouse_scroll_dt.store(win32.GET_WHEEL_DELTA_WPARAM(wParam), std.builtin.AtomicOrder.monotonic);
         },
         win32.WM_CLOSE => {
             if (!root.xfit_closing()) return 0;
@@ -496,7 +466,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
     return win32.DefWindowProcA(hwnd, uMsg, wParam, lParam);
 }
 
-fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonitor: [*c]win32.RECT, dwData: win32.LPARAM) callconv(WINAPI) BOOL {
+fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor: win32.LPRECT, dwData: win32.LPARAM) callconv(WINAPI) BOOL {
     _ = hdcMonitor;
     _ = lprcMonitor;
     _ = dwData;
@@ -518,7 +488,7 @@ fn MonitorEnumProc(hMonitor: ?win32.HMONITOR, hdcMonitor: ?win32.HDC, lprcMonito
     var i: u32 = 0;
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
     dm.dmSize = @sizeOf(win32.DEVMODEA);
-    while (win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), @enumFromInt(i), &dm) != FALSE) : (i += 1) {
+    while (win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), i, &dm) != FALSE) : (i += 1) {
         last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ dm.dmPelsWidth, dm.dmPelsHeight } }) catch {
             system.print_error("ERR MonitorEnumProc.last.*.resolutions.append\n", .{});
             unreachable;

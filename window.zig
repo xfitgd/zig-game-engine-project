@@ -16,11 +16,11 @@ pub const window_state = enum {
     Minimized,
 };
 
-pub const window_show = enum(u32) {
-    NORMAL = @bitCast(__windows.win32.SW_NORMAL),
-    DEFAULT = @bitCast(__windows.win32.SW_SHOWDEFAULT),
-    MAXIMIZE = @bitCast(__windows.win32.SW_MAXIMIZE),
-    MINIMIZE = @bitCast(__windows.win32.SW_MINIMIZE),
+pub const window_show = enum(i32) {
+    NORMAL = __windows.win32.SW_NORMAL,
+    DEFAULT = __windows.win32.SW_SHOWDEFAULT,
+    MAXIMIZE = __windows.win32.SW_MAXIMIZE,
+    MINIMIZE = __windows.win32.SW_MINIMIZE,
 };
 
 pub fn window_width() i32 {
