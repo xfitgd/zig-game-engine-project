@@ -4050,3 +4050,128 @@ pub const COLORADJUSTMENT = extern struct {
 };
 pub const PCOLORADJUSTMENT = [*c]COLORADJUSTMENT;
 pub const LPCOLORADJUSTMENT = [*c]COLORADJUSTMENT;
+
+pub const struct_tagWINDOWPLACEMENT = extern struct {
+    length: UINT = @import("std").mem.zeroes(UINT),
+    flags: UINT = @import("std").mem.zeroes(UINT),
+    showCmd: UINT = @import("std").mem.zeroes(UINT),
+    ptMinPosition: POINT = @import("std").mem.zeroes(POINT),
+    ptMaxPosition: POINT = @import("std").mem.zeroes(POINT),
+    rcNormalPosition: RECT = @import("std").mem.zeroes(RECT),
+};
+pub const WINDOWPLACEMENT = struct_tagWINDOWPLACEMENT;
+pub const PWINDOWPLACEMENT = [*c]WINDOWPLACEMENT;
+pub const LPWINDOWPLACEMENT = [*c]WINDOWPLACEMENT;
+
+pub const NPWNDCLASSA = [*c]WNDCLASSA;
+pub const LPWNDCLASSA = [*c]WNDCLASSA;
+pub const WNDCLASSW = extern struct {
+    style: UINT = @import("std").mem.zeroes(UINT),
+    lpfnWndProc: WNDPROC = @import("std").mem.zeroes(WNDPROC),
+    cbClsExtra: c_int = @import("std").mem.zeroes(c_int),
+    cbWndExtra: c_int = @import("std").mem.zeroes(c_int),
+    hInstance: HINSTANCE = @import("std").mem.zeroes(HINSTANCE),
+    hIcon: HICON = @import("std").mem.zeroes(HICON),
+    hCursor: HCURSOR = @import("std").mem.zeroes(HCURSOR),
+    hbrBackground: HBRUSH = @import("std").mem.zeroes(HBRUSH),
+    lpszMenuName: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    lpszClassName: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+};
+pub const NPWNDCLASSW = [*c]WNDCLASSW;
+pub const LPWNDCLASSW = [*c]WNDCLASSW;
+pub const PWNDCLASSW = [*c]WNDCLASSW;
+
+pub const WNDCLASSEXA = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    style: UINT = @import("std").mem.zeroes(UINT),
+    lpfnWndProc: WNDPROC = @import("std").mem.zeroes(WNDPROC),
+    cbClsExtra: c_int = @import("std").mem.zeroes(c_int),
+    cbWndExtra: c_int = @import("std").mem.zeroes(c_int),
+    hInstance: HINSTANCE = @import("std").mem.zeroes(HINSTANCE),
+    hIcon: HICON = @import("std").mem.zeroes(HICON),
+    hCursor: HCURSOR = @import("std").mem.zeroes(HCURSOR),
+    hbrBackground: HBRUSH = @import("std").mem.zeroes(HBRUSH),
+    lpszMenuName: LPCSTR = @import("std").mem.zeroes(LPCSTR),
+    lpszClassName: LPCSTR = @import("std").mem.zeroes(LPCSTR),
+    hIconSm: HICON = @import("std").mem.zeroes(HICON),
+};
+pub const PWNDCLASSEXA = [*c]WNDCLASSEXA;
+pub const NPWNDCLASSEXA = [*c]WNDCLASSEXA;
+pub const LPWNDCLASSEXA = [*c]WNDCLASSEXA;
+pub const WNDCLASSEXW = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    style: UINT = @import("std").mem.zeroes(UINT),
+    lpfnWndProc: WNDPROC = @import("std").mem.zeroes(WNDPROC),
+    cbClsExtra: c_int = @import("std").mem.zeroes(c_int),
+    cbWndExtra: c_int = @import("std").mem.zeroes(c_int),
+    hInstance: HINSTANCE = @import("std").mem.zeroes(HINSTANCE),
+    hIcon: HICON = @import("std").mem.zeroes(HICON),
+    hCursor: HCURSOR = @import("std").mem.zeroes(HCURSOR),
+    hbrBackground: HBRUSH = @import("std").mem.zeroes(HBRUSH),
+    lpszMenuName: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    lpszClassName: LPCWSTR = @import("std").mem.zeroes(LPCWSTR),
+    hIconSm: HICON = @import("std").mem.zeroes(HICON),
+};
+pub const PWNDCLASSEXW = [*c]WNDCLASSEXW;
+pub const NPWNDCLASSEXW = [*c]WNDCLASSEXW;
+pub const LPWNDCLASSEXW = [*c]WNDCLASSEXW;
+pub const HDWP = HANDLE;
+
+pub const AW_HOR_POSITIVE = @as(DWORD, 0x00000001);
+pub const AW_HOR_NEGATIVE = @as(DWORD, 0x00000002);
+pub const AW_VER_POSITIVE = @as(DWORD, 0x00000004);
+pub const AW_VER_NEGATIVE = @as(DWORD, 0x00000008);
+pub const AW_CENTER = @as(DWORD, 0x00000010);
+pub const AW_HIDE = @import("std").zig.c_translation.promoteIntLiteral(DWORD, 0x00010000, .hex);
+pub const AW_ACTIVATE = @import("std").zig.c_translation.promoteIntLiteral(DWORD, 0x00020000, .hex);
+pub const AW_SLIDE = @import("std").zig.c_translation.promoteIntLiteral(DWORD, 0x00040000, .hex);
+pub const AW_BLEND = @import("std").zig.c_translation.promoteIntLiteral(DWORD, 0x00080000, .hex);
+
+pub extern fn CallWindowProcA(lpPrevWndFunc: WNDPROC, hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) LRESULT;
+pub extern fn CallWindowProcW(lpPrevWndFunc: WNDPROC, hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) LRESULT;
+pub extern fn InSendMessage() BOOL;
+pub extern fn InSendMessageEx(lpReserved: LPVOID) DWORD;
+pub extern fn GetDoubleClickTime() UINT;
+pub extern fn SetDoubleClickTime(UINT) BOOL;
+pub extern fn GetClassInfoA(hInstance: HINSTANCE, lpClassName: LPCSTR, lpWndClass: LPWNDCLASSA) BOOL;
+pub extern fn GetClassInfoW(hInstance: HINSTANCE, lpClassName: LPCWSTR, lpWndClass: LPWNDCLASSW) BOOL;
+pub extern fn RegisterClassExA([*c]const WNDCLASSEXA) ATOM;
+pub extern fn RegisterClassExW([*c]const WNDCLASSEXW) ATOM;
+pub extern fn GetClassInfoExA(hInstance: HINSTANCE, lpszClass: LPCSTR, lpwcx: LPWNDCLASSEXA) BOOL;
+pub extern fn GetClassInfoExW(hInstance: HINSTANCE, lpszClass: LPCWSTR, lpwcx: LPWNDCLASSEXW) BOOL;
+pub const PREGISTERCLASSNAMEW = ?*const fn (LPCWSTR) callconv(.C) BOOL;
+pub extern fn IsWindow(hWnd: HWND) BOOL;
+pub extern fn IsMenu(hMenu: HMENU) BOOL;
+pub extern fn IsChild(hWndParent: HWND, hWnd: HWND) BOOL;
+pub extern fn AnimateWindow(hWnd: HWND, dwTime: DWORD, dwFlags: DWORD) BOOL;
+pub extern fn GetLayeredWindowAttributes(hwnd: HWND, pcrKey: [*c]COLORREF, pbAlpha: [*c]BYTE, pdwFlags: [*c]DWORD) BOOL;
+pub extern fn PrintWindow(hwnd: HWND, hdcBlt: HDC, nFlags: UINT) BOOL;
+pub extern fn SetLayeredWindowAttributes(hwnd: HWND, crKey: COLORREF, bAlpha: BYTE, dwFlags: DWORD) BOOL;
+pub extern fn ShowWindowAsync(hWnd: HWND, nCmdShow: c_int) BOOL;
+pub extern fn FlashWindow(hWnd: HWND, bInvert: BOOL) BOOL;
+pub const FLASHWINFO = extern struct {
+    cbSize: UINT = @import("std").mem.zeroes(UINT),
+    hwnd: HWND = @import("std").mem.zeroes(HWND),
+    dwFlags: DWORD = @import("std").mem.zeroes(DWORD),
+    uCount: UINT = @import("std").mem.zeroes(UINT),
+    dwTimeout: DWORD = @import("std").mem.zeroes(DWORD),
+};
+pub const PFLASHWINFO = [*c]FLASHWINFO;
+pub extern fn FlashWindowEx(pfwi: PFLASHWINFO) BOOL;
+pub extern fn ShowOwnedPopups(hWnd: HWND, fShow: BOOL) BOOL;
+pub extern fn OpenIcon(hWnd: HWND) BOOL;
+pub extern fn CloseWindow(hWnd: HWND) BOOL;
+pub extern fn MoveWindow(hWnd: HWND, X: c_int, Y: c_int, nWidth: c_int, nHeight: c_int, bRepaint: BOOL) BOOL;
+pub extern fn SetWindowPos(hWnd: HWND, hWndInsertAfter: HWND, X: c_int, Y: c_int, cx: c_int, cy: c_int, uFlags: UINT) BOOL;
+pub extern fn GetWindowPlacement(hWnd: HWND, lpwndpl: [*c]WINDOWPLACEMENT) BOOL;
+pub extern fn SetWindowPlacement(hWnd: HWND, lpwndpl: [*c]const WINDOWPLACEMENT) BOOL;
+pub extern fn GetWindowDisplayAffinity(hWnd: HWND, pdwAffinity: [*c]DWORD) BOOL;
+pub extern fn SetWindowDisplayAffinity(hWnd: HWND, dwAffinity: DWORD) BOOL;
+pub extern fn BeginDeferWindowPos(nNumWindows: c_int) HDWP;
+pub extern fn DeferWindowPos(hWinPosInfo: HDWP, hWnd: HWND, hWndInsertAfter: HWND, x: c_int, y: c_int, cx: c_int, cy: c_int, uFlags: UINT) HDWP;
+pub extern fn EndDeferWindowPos(hWinPosInfo: HDWP) BOOL;
+pub extern fn IsWindowVisible(hWnd: HWND) BOOL;
+pub extern fn IsIconic(hWnd: HWND) BOOL;
+pub extern fn AnyPopup() BOOL;
+pub extern fn BringWindowToTop(hWnd: HWND) BOOL;
+pub extern fn IsZoomed(hWnd: HWND) BOOL;

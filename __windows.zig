@@ -226,8 +226,8 @@ pub fn set_window_mode() void {
     var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
     win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowLongPtr(hWnd, win32.GWL_STYLE, style);
-    win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, 0);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
     win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, switch (__system.prev_window.state) {
@@ -247,8 +247,8 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
     var rect: RECT = .{ .left = 0, .top = 0, .right = @intCast(size.x), .bottom = @intCast(size.y) };
     win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowLongPtr(hWnd, win32.GWL_STYLE, style);
-    win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, 0);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
     win32.SetWindowPos(hWnd, 0, pos.x, pos.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, switch (state) {
@@ -259,8 +259,8 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
 }
 
 pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
-    win32.SetWindowLongPtr(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
-    win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW);
 
     win32.SetWindowPos(hWnd, 0, monitor.*.rect.left, monitor.*.rect.top, monitor.*.rect.right - monitor.*.rect.left, monitor.*.rect.bottom - monitor.*.rect.top, win32.SWP_DRAWFRAME);
 
@@ -300,8 +300,8 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
 
 pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.screen_info) void {
     screen_mode = system.screen_mode.FULLSCREEN;
-    win32.SetWindowLongPtr(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
-    win32.SetWindowLongPtr(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW | win32.WS_EX_TOPMOST);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
+    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW | win32.WS_EX_TOPMOST);
 
     win32.SetWindowPos(hWnd, win32.HWND_TOPMOST, monitor.*.rect.left, monitor.*.rect.top, resolution.*.size.x, resolution.*.size.y, 0);
     win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
