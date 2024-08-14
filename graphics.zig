@@ -395,7 +395,7 @@ pub const texture = struct {
             .arrayLayers = 1,
             .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
             .flags = 0,
-            .format = vk.VK_FORMAT_R8G8B8A8_SRGB,
+            .format = vk.VK_FORMAT_R8G8B8A8_UNORM,
             .imageType = vk.VK_IMAGE_TYPE_2D,
             .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
             .mipLevels = 1,
