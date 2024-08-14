@@ -147,14 +147,14 @@ pub inline fn dt() f64 {
 
 ///nanosec
 pub inline fn get_maxframe_i64() i64 {
-    return __system.init_set.maxframe;
+    return @atomicLoad(i64, &__system.init_set.maxframe, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn get_maxframe() f64 {
-    return @as(f64, @floatFromInt(__system.init_set.maxframe)) / 1000000000;
+    return @as(f64, @floatFromInt(get_maxframe_i64())) / 1000000000;
 }
 ///nanosec
 pub inline fn set_maxframe_i64(_maxframe: i64) void {
-    __system.init_set.maxframe = _maxframe;
+    @atomicStore(i64, &__system.init_set.maxframe, _maxframe, std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn get_platform_version() *const platform_version {

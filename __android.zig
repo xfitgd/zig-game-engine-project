@@ -8,21 +8,9 @@ const system = @import("system.zig");
 const __system = @import("__system.zig");
 
 pub const allocator = __system.allocator;
+pub const c_allocator = std.heap.c_allocator;
 
-pub const android = @cImport({
-    @cUndef("_WIN32");
-    @cDefine("_GNU_SOURCE", {});
-    @cDefine("__ANDROID__", {});
-    @cInclude("malloc.h");
-    @cInclude("stdint.h");
-    @cInclude("android/asset_manager.h");
-    @cInclude("android/configuration.h");
-    @cInclude("android/log.h");
-    @cInclude("android/looper.h");
-    @cInclude("android/native_activity.h");
-    @cInclude("android/sensor.h");
-    @cInclude("jni.h");
-});
+pub const android = @import("include/android.zig");
 
 inline fn LOGI(fmt: [*c]const u8, args: anytype) c_int {
     return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_INFO, "threaded_app", fmt } ++ args);
@@ -394,7 +382,7 @@ fn android_app_post_exec_cmd(_cmd: u8) void {
 fn free_saved_state() void {
     app.mutex.lock();
     if (app.savedState != null) {
-        android.free(@ptrCast(app.savedState));
+        c_allocator.free(@as(?[]u8, @ptrCast(app.savedState)).?);
         app.savedState = null;
         app.savedStateSize = 0;
     }
@@ -427,7 +415,7 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
     switch (_cmd) {
         AppEvent.APP_CMD_SAVE_STATE => {
             app.savedStateSize = @sizeOf(saved_state);
-            app.savedState = @as([*]u8, @ptrCast(android.malloc(app.savedStateSize)))[0..app.savedStateSize];
+            app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch unreachable))[0..app.savedStateSize];
             if (app.savedState == null) unreachable;
             @memcpy(app.savedState.?, std.mem.asBytes(&app.savedata));
         },
@@ -602,7 +590,7 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
     if (_savedState != null) {
         app.savedStateSize = _savedStateSize;
 
-        app.savedState = @as([*]u8, @ptrCast(android.malloc(app.savedStateSize)))[0..app.savedStateSize];
+        app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch unreachable))[0..app.savedStateSize];
         if (app.savedState == null) unreachable;
 
         @memcpy(app.savedState.?, @as(?[*]u8, @ptrCast(_savedState)).?);

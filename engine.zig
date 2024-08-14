@@ -48,10 +48,10 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
     const out_arch_text = comptime [_][]const u8{
         "../lib/arm64-v8a",
         //"armeabi-v7a",
-        //"x86",
+        //"../lib/x86",
         "../lib/x86_64",
     };
-    const targets = [2]std.zig.CrossTarget{
+    const targets = [_]std.zig.CrossTarget{
         .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{.v8a}) },
         //.{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
         //.{ .os_tag = .linux, .cpu_arch = .x86, .abi = .android },
@@ -88,11 +88,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             result.setLibCFile(android_libc_step.files.items[0].getPath());
             install_step.dependOn(&android_libc_step.step);
 
-            result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/{s}", .{ ANDROID_NDK_PATH, arch_text[i] }) });
-            result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/18/include", .{ANDROID_NDK_PATH}) });
-            result.addSystemIncludePath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include", .{ANDROID_NDK_PATH}) });
-            result.addSystemIncludePath(b.path("."));
-
             result.addLibraryPath(.{ .cwd_relative = comptime std.fmt.comptimePrint("{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}/{d}", .{ ANDROID_NDK_PATH, arch_text[i], ANDROID_VER }) });
 
             result.linkSystemLibrary("android");
@@ -117,11 +112,11 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             });
             result.linkLibC();
 
-            result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/vulkan.lib"));
             result.subsystem = .Windows;
 
             result.root_module.addImport("build_options", build_options_module);
 
+            result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/windows/vulkan.lib"));
             switch (target.result.cpu.arch) {
                 .x86_64 => {
                     result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/windows/x86_64/libwebp.a"));
@@ -144,7 +139,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
     if (PLATFORM == XfitPlatform.android) {
         cmd = b.addSystemCommand(&.{ ENGINE_DIR ++ "/compile", ENGINE_DIR, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
     } else {
-        //std.debug.print("{s}\n", .{b.install_path});
         cmd = b.addSystemCommand(&.{ ENGINE_DIR ++ "/compile", ENGINE_DIR, b.install_path });
     }
     cmd.step.dependOn(install_step);

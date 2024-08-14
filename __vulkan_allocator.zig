@@ -44,7 +44,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
     return struct {
         const vulkan_res_node_Self = @This();
         res: ivulkan_res(_res_type) = null,
-        idx: u64 = undefined,
+        idx: usize = undefined,
         pvulkan_buffer: *vulkan_res = undefined,
         __image_view: if (_res_type == .image) vk.VkImageView else void = if (_res_type == .image) undefined,
 
@@ -72,12 +72,11 @@ pub fn vulkan_res_node(_res_type: res_type) type {
     };
 }
 
-/// Vulkan 메모리 체계가 u64이기 때문에 u64를 사용하겠습니다.
 const vulkan_res = struct {
     is_free: []bool,
-    cell_size: u64,
-    len: u64,
-    cur: u64,
+    cell_size: usize,
+    len: usize,
+    cur: usize,
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
 
@@ -92,7 +91,7 @@ const vulkan_res = struct {
         system.handle_error(result == vk.VK_SUCCESS, result);
     }
     /// ! 따로 vulkan_res.init를 호출하지 않는다.
-    fn init(_cell_size: u64, _len: u64, type_filter: u32, _prop: vk.VkMemoryPropertyFlags) vulkan_res {
+    fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags) vulkan_res {
         var res = vulkan_res{
             .cell_size = _cell_size,
             .len = _len,
@@ -133,7 +132,7 @@ const vulkan_res = struct {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
     ///_buf 크기는 따로 확인하지 않는다. 호출 쪽에서 확인해서 오류가 없게한다.
-    fn bind_any(self: *vulkan_res, _buf: anytype) u64 {
+    fn bind_any(self: *vulkan_res, _buf: anytype) usize {
         var count: u64 = 0;
         while (!self.*.is_free[self.*.cur]) {
             self.*.cur += 1;
@@ -150,7 +149,7 @@ const vulkan_res = struct {
         return res;
     }
     ///bind_buffer에서 반환된 idx를 사용.
-    fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: u64) void {
+    fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) void {
         self.*.is_free[_idx] = true;
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
@@ -170,7 +169,7 @@ pub fn init() Self {
 buffers: MemoryPool(vulkan_res),
 buffer_ids: ArrayList(*vulkan_res),
 
-fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *u64) *vulkan_res {
+fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *usize) *vulkan_res {
     var res: ?*vulkan_res = null;
     for (self.*.buffer_ids.items) |value| {
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
@@ -185,7 +184,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
             system.print_error("ERR : {s}\n", .{@errorName(err)});
             unreachable;
         };
-        res.?.* = vulkan_res.init(math.round_up(u64, _mem_require.*.size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
+        res.?.* = vulkan_res.init(math.round_up(usize, @intCast(_mem_require.*.size), @intCast(_mem_require.*.alignment)), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
 
         _out_idx.* = res.?.*.bind_any(_res);
         self.*.buffer_ids.append(res.?) catch |err| {
@@ -201,7 +200,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
     var mem_require: vk.VkMemoryRequirements = undefined;
     var staging_alloc: *vulkan_res = undefined;
     var staging_buf: vk.VkBuffer = undefined;
-    var staging_buf_idx: u64 = undefined;
+    var staging_buf_idx: usize = undefined;
     var buf_info = _buf_info.*;
 
     if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
@@ -242,7 +241,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     var mem_require: vk.VkMemoryRequirements = undefined;
     var staging_alloc: *vulkan_res = undefined;
     var staging_buf: vk.VkBuffer = undefined;
-    var staging_buf_idx: u64 = undefined;
+    var staging_buf_idx: usize = undefined;
     var img_info = _img_info.*;
 
     img_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;

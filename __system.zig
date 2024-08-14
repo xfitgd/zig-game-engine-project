@@ -24,6 +24,7 @@ pub var prev_window: struct {
 } = undefined;
 
 pub var init_set: system.init_setting = .{};
+
 pub var delta_time: i64 = 0;
 pub var processor_core_len: u32 = 0;
 pub var platform_ver: system.platform_version = undefined;
@@ -75,7 +76,8 @@ pub fn loop() void {
         const temp = S.now;
         S.now = std.time.nanoTimestamp();
         delta_time = @intCast(S.now - temp);
-        const maxframe = @atomicLoad(i64, &init_set.maxframe, std.builtin.AtomicOrder.monotonic);
+        const maxframe: i64 = system.get_maxframe_i64();
+
         if (maxframe > 0) {
             const maxf: i64 = @divTrunc((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
             const sleep: i64 = maxf - delta_time;
