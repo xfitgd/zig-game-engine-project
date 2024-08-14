@@ -30,7 +30,10 @@ inline fn get_arch_text(idx: comptime_int) []const u8 {
     };
 }
 
-pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
+pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
+    var pro = std.process.Child.init(&[_][]const u8{ ENGINE_DIR ++ "/shader_compile", ENGINE_DIR }, b.allocator);
+    _ = pro.spawnAndWait() catch unreachable;
+
     const target = b.standardTargetOptions(.{});
     const build_options = b.addOptions();
 
@@ -67,7 +70,7 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
             result = b.addSharedLibrary(.{
                 .target = b.resolveTargetQuery(targets[i]),
                 .name = "XfitTest",
-                .root_source_file = b.path("main.zig"),
+                .root_source_file = root_source_file,
                 .optimize = OPTIMIZE,
                 .pic = true,
             });
@@ -109,7 +112,7 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
             result = b.addExecutable(.{
                 .target = target,
                 .name = "XfitTest",
-                .root_source_file = b.path("main.zig"),
+                .root_source_file = root_source_file,
                 .optimize = OPTIMIZE,
             });
             result.linkLibC();
@@ -136,7 +139,6 @@ pub fn init(b: *std.Build, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.Optimiz
         result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include"));
         if (PLATFORM != XfitPlatform.android) break;
     }
-    install_step.dependOn(&b.addSystemCommand(&.{ ENGINE_DIR ++ "/shader_compile", ENGINE_DIR }).step);
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {

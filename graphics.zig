@@ -27,6 +27,7 @@ const matrix_error = math.matrix_error;
 const vulkan_res_node = __vulkan_allocator.vulkan_res_node;
 
 pub const color_vertex_2d = color_vertex_2d_(f32);
+pub const tex_vertex_2d = tex_vertex_2d_(f32);
 pub const indices16 = indices_(.U16);
 pub const indices32 = indices_(.U32);
 pub const indices = indices_(DEF_IDX_TYPE);
@@ -46,8 +47,18 @@ pub fn color_vertex_2d_(comptime T: type) type {
         pos: point(T) align(1),
         color: vector(T) align(1),
 
-        pub inline fn get_pipeline() vk.VkPipeline {
-            return __vulkan.color_2d_pipeline;
+        pub inline fn get_pipeline() *__vulkan.pipeline_set {
+            return &__vulkan.color_2d_pipeline_set;
+        }
+    };
+}
+pub fn tex_vertex_2d_(comptime T: type) type {
+    return extern struct {
+        pos: point(T) align(1),
+        uv: point(T) align(1),
+
+        pub inline fn get_pipeline() *__vulkan.pipeline_set {
+            return &__vulkan.tex_2d_pipeline_set;
         }
     };
 }
@@ -78,7 +89,7 @@ pub const ivertices = struct {
     deinit: *const fn (self: *Self) void = undefined,
 
     node: vulkan_res_node(.buffer) = .{},
-    pipeline: vk.VkPipeline = undefined,
+    pipeline: *__vulkan.pipeline_set = undefined,
 
     pub inline fn clean(self: *Self) void {
         self.*.node.clean();
@@ -109,7 +120,7 @@ pub fn vertices(comptime vertexT: type) type {
         pub fn init(allocator: std.mem.Allocator) Self {
             var self: Self = .{};
             self.interface.pipeline = vertexT.get_pipeline();
-            system.handle_error_msg(self.interface.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+            system.handle_error_msg(self.interface.pipeline.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
             self.array = ArrayList(vertexT).init(allocator);
 
             self.interface.get_vertices_len = get_vertices_len;
@@ -168,7 +179,7 @@ pub fn indices_(comptime _type: index_type) type {
 
         ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터 호출 가능)
         pub fn init(allocator: std.mem.Allocator) Self {
-            system.handle_error_msg(__vulkan.color_2d_pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+            system.handle_error_msg(__vulkan.color_2d_pipeline_set.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
             var self: Self = .{};
             self.array = ArrayList(idxT).init(allocator);
             self.interface.get_indices_len = get_indices_len;
@@ -216,6 +227,7 @@ pub fn indices_(comptime _type: index_type) type {
 }
 
 pub const shape2d = object(color_vertex_2d);
+pub const image2d = object(tex_vertex_2d);
 
 pub const projection = struct {
     const Self = @This();
@@ -351,7 +363,6 @@ pub const transform = struct {
 
 pub const texture = struct {
     const Self = @This();
-    __sampler: vk.VkSampler = null,
     __image: vulkan_res_node(.image) = .{},
     width: u32 = undefined,
     height: u32 = undefined,
@@ -378,13 +389,13 @@ pub const texture = struct {
     pub inline fn clean(self: *Self) void {
         self.*.__image.clean();
     }
-    pub fn build(self: *Self, _flag: write_flag) void {
+    pub fn build(self: *Self) void {
         clean(self);
         const img_info: vk.VkImageCreateInfo = .{
             .arrayLayers = 1,
             .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
             .flags = 0,
-            .format = vk.VK_FORMAT_R8G8B8A8_UNORM,
+            .format = vk.VK_FORMAT_R8G8B8A8_SRGB,
             .imageType = vk.VK_IMAGE_TYPE_2D,
             .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
             .mipLevels = 1,
@@ -395,14 +406,7 @@ pub const texture = struct {
             .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
-
-        const prop: vk.VkMemoryPropertyFlags =
-            switch (_flag) {
-            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        };
-
-        __vulkan.vk_allocator.create_image(&img_info, prop, &self.*.__image, std.mem.sliceAsBytes(self.*.array.items));
+        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.items));
     }
 };
 
@@ -412,6 +416,7 @@ pub const iobject = struct {
 
     get_ivertices: *const fn (self: *iobject) ?*ivertices = undefined,
     get_iindices: *const fn (self: *iobject) ?*iindices = undefined,
+    get_texture: *const fn (self: *iobject) ?*texture = undefined,
     transform: transform = .{},
     __descriptor_set: vk.VkDescriptorSet = null,
     __descriptor_pool: vk.VkDescriptorPool = null,
@@ -443,18 +448,54 @@ pub const iobject = struct {
                 .range = @sizeOf(matrix),
             },
         };
-        const descriptorWrite: vk.VkWriteDescriptorSet = .{
-            .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = self.*.__descriptor_set,
-            .dstBinding = 0,
-            .dstArrayElement = 0,
-            .descriptorCount = buffer_info.len,
-            .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .pBufferInfo = &buffer_info,
-            .pImageInfo = null,
-            .pTexelBufferView = null,
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
+        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.color_2d_pipeline_set) {
+            const descriptorWrite = vk.VkWriteDescriptorSet{
+                .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = self.*.__descriptor_set,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = buffer_info.len,
+                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &buffer_info,
+                .pImageInfo = null,
+                .pTexelBufferView = null,
+            };
+            vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
+        } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
+            const imageInfo: vk.VkDescriptorImageInfo = .{
+                .imageLayout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                .imageView = self.*.get_texture(self).?.__image.__image_view,
+                .sampler = __vulkan.linear_sampler,
+            };
+            const descriptorWrite2 = [2]vk.VkWriteDescriptorSet{
+                .{
+                    .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = self.*.__descriptor_set,
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorCount = buffer_info.len,
+                    .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = &buffer_info,
+                    .pImageInfo = null,
+                    .pTexelBufferView = null,
+                },
+                .{
+                    .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = self.*.__descriptor_set,
+                    .dstBinding = 3,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .pBufferInfo = null,
+                    .pImageInfo = &imageInfo,
+                    .pTexelBufferView = null,
+                },
+            };
+            vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite2.len, &descriptorWrite2, 0, null);
+        } else {
+            system.print_error("ERR : invaild pipeline\n", .{});
+            unreachable;
+        }
     }
 
     pub fn init() Self {
@@ -469,34 +510,66 @@ pub const iobject = struct {
             system.print_error("ERR : need transform.camera, projection build(invaild)\n", .{});
             unreachable;
         }
-        clean(self);
+        if (self.*.get_ivertices(self) == null) {
+            system.print_error("ERR : need vertices\n", .{});
+            unreachable;
+        }
 
-        const pool_size: vk.VkDescriptorPoolSize = .{
-            .descriptorCount = 3,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        };
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = 1,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkCreateDescriptorPool");
+        var result: vk.VkResult = undefined;
+        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.color_2d_pipeline_set) {
+            clean(self);
 
+            const pool_size: vk.VkDescriptorPoolSize = .{
+                .descriptorCount = 3,
+                .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            };
+            const pool_info: vk.VkDescriptorPoolCreateInfo = .{
+                .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = 1,
+                .pPoolSizes = &pool_size,
+                .maxSets = 1,
+            };
+            result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
+            system.handle_error(result == vk.VK_SUCCESS, result);
+        } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
+            if (self.*.get_texture(self) == null) {
+                system.print_error("ERR : need texture\n", .{});
+                unreachable;
+            }
+            clean(self);
+
+            const pool_size = [2]vk.VkDescriptorPoolSize{ .{
+                .descriptorCount = 3,
+                .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            }, .{
+                .descriptorCount = 1,
+                .type = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            } };
+            const pool_info: vk.VkDescriptorPoolCreateInfo = .{
+                .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                .poolSizeCount = pool_size.len,
+                .pPoolSizes = &pool_size,
+                .maxSets = 1,
+            };
+            result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
+            system.handle_error(result == vk.VK_SUCCESS, result);
+        } else {
+            system.print_error("ERR : invaild pipeline\n", .{});
+            unreachable;
+        }
         const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool = self.*.__descriptor_pool,
             .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.vkDescriptorSetLayout,
+            .pSetLayouts = &self.*.get_ivertices(self).?.*.pipeline.*.descriptorSetLayout,
         };
         result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, result, "iobject.build.vkAllocateDescriptorSets");
+        system.handle_error(result == vk.VK_SUCCESS, result);
 
         self.*.transform.build();
 
-        update(self);
-        //update(self); 중복 업데이트 하면 값이 갱신된다.
+        self.*.update();
+        //self.*.update(); 중복 업데이트 하면 값이 갱신된다.
     }
     pub fn deinit(self: *Self) void {
         clean(self);
@@ -521,8 +594,9 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
     return struct {
         const Self = @This();
 
-        vertices: ?*vertices(vertexT),
-        indices: ?*indices_(_idx_type),
+        vertices: ?*vertices(vertexT) = null,
+        indices: ?*indices_(_idx_type) = null,
+        texture: ?*texture = null,
         interface: iobject,
 
         fn get_ivertices(_interface: *iobject) ?*ivertices {
@@ -533,16 +607,19 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
             return if (self.*.indices != null) &self.*.indices.?.*.interface else null;
         }
+        pub fn get_texture(_interface: *iobject) ?*texture {
+            const self = @as(*Self, @fieldParentPtr("interface", _interface));
+            return self.*.texture;
+        }
 
         pub fn init() Self {
             var self = Self{
-                .vertices = null,
-                .indices = null,
                 .interface = .{},
             };
             self.interface = iobject.init();
             self.interface.get_ivertices = get_ivertices;
             self.interface.get_iindices = get_iindices;
+            self.interface.get_texture = get_texture;
 
             return self;
         }

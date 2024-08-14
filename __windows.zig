@@ -117,11 +117,11 @@ pub fn windows_start() void {
 
     _ = win32.RegisterClassA(&wc);
 
-    const window_style: DWORD = if (__system.init_set.screen_mode == system.screen_mode.WINDOW) (win32.WS_OVERLAPPED |
-        win32.WS_CAPTION |
-        win32.WS_SYSMENU |
-        if (__system.init_set.can_resizewindow) win32.WS_THICKFRAME else 0 |
-        if (__system.init_set.can_minimize) win32.WS_MINIMIZEBOX else 0 |
+    const window_style: DWORD = if (__system.init_set.screen_mode == system.screen_mode.WINDOW) (((((win32.WS_OVERLAPPED |
+        win32.WS_CAPTION) |
+        win32.WS_SYSMENU) |
+        if (__system.init_set.can_resizewindow) win32.WS_THICKFRAME else 0) |
+        if (__system.init_set.can_minimize) win32.WS_MINIMIZEBOX else 0) |
         if (__system.init_set.can_maximize) win32.WS_MAXIMIZEBOX else 0) else win32.WS_POPUP;
 
     const ex_style: DWORD = if (__system.init_set.screen_mode != system.screen_mode.WINDOW) (win32.WS_EX_APPWINDOW | if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) win32.WS_EX_TOPMOST else 0) else 0;

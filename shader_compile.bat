@@ -1,4 +1,10 @@
+@echo off
+
 set ENGINE_DIR=%1
 
-glslc %ENGINE_DIR%/shaders/shader.vert -o %ENGINE_DIR%/shaders/out/vert.spv
-glslc %ENGINE_DIR%/shaders/shader.frag -o %ENGINE_DIR%/shaders/out/frag.spv
+set shader_list=shape tex
+
+for %%a in (%shader_list%) do ( 
+    glslc %ENGINE_DIR%/shaders/%%a.vert -o %ENGINE_DIR%/shaders/out/%%a_vert.spv
+    glslc %ENGINE_DIR%/shaders/%%a.frag -o %ENGINE_DIR%/shaders/out/%%a_frag.spv
+)

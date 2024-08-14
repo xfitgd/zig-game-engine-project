@@ -211,23 +211,23 @@ pub inline fn handle_error_msg(errtest: bool, msg: []const u8) void {
     }
 }
 
-pub inline fn handle_error(errtest: bool, code: i32, function: []const u8) void {
+pub inline fn handle_error(errtest: bool, code: i32) void {
     if (!errtest) {
-        print_error("ERR {s} Fail {d}\n", .{ function, code });
+        print_error("ERR Fail {d}\n", .{code});
         unreachable;
     }
 }
 
-pub inline fn handle_error2(errtest: bool, code: i32, function: []const u8, err: anyerror) void {
+pub inline fn handle_error2(errtest: bool, code: i32, err: anyerror) void {
     if (!errtest) {
-        print_error("ERR {s} Fail {d} {}\n", .{ function, code, err });
+        print_error("ERR Fail {d} {}\n", .{ code, err });
         unreachable;
     }
 }
 
-pub inline fn handle_try_error(errtest: bool, code: i32, function: []const u8, err: anyerror) !void {
+pub inline fn handle_try_error(errtest: bool, code: i32, err: anyerror) !void {
     if (!errtest) {
-        print_error("ERR {s} Fail {d} {}\n", .{ function, code, err });
+        print_error("ERR Fail {d} {}\n", .{ code, err });
         try err;
     }
 }

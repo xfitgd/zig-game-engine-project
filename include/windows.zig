@@ -1,18 +1,3 @@
-test {
-    const std = @import("std");
-    @setEvalBranchQuota(100000);
-    std.testing.refAllDeclsRecursive(@This());
-    inline for (comptime std.meta.declarations(@This())) |decl| {
-        switch (@typeInfo(@TypeOf(@field(@This(), decl.name)))) {
-            .Fn => |fn_info| {
-                _ = fn_info;
-                std.debug.print("{s}\n", .{decl.name});
-            },
-            else => {},
-        }
-    }
-}
-
 pub const BOOL = c_int;
 pub const CHAR = u8;
 pub const SHORT = c_short;
@@ -1838,7 +1823,7 @@ pub inline fn LOBYTE(l: anytype) BYTE {
 }
 
 pub inline fn GET_WHEEL_DELTA_WPARAM(l: anytype) SHORT {
-    return @intCast(HIWORD(l));
+    return @bitCast(HIWORD(l));
 }
 pub inline fn GET_X_LPARAM(l: anytype) INT {
     return @intCast(LOWORD(l));

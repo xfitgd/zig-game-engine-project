@@ -3223,7 +3223,7 @@ pub const struct_VkShaderModuleCreateInfo = extern struct {
     pNext: ?*const anyopaque = @import("std").mem.zeroes(?*const anyopaque),
     flags: VkShaderModuleCreateFlags = @import("std").mem.zeroes(VkShaderModuleCreateFlags),
     codeSize: usize = @import("std").mem.zeroes(usize),
-    pCode: [*c]const u32 = @import("std").mem.zeroes([*c]const u32),
+    pCode: [*c]const u8 = @import("std").mem.zeroes([*c]const u8),
 };
 pub const VkShaderModuleCreateInfo = struct_VkShaderModuleCreateInfo;
 pub const struct_VkPipelineCacheCreateInfo = extern struct {
