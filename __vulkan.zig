@@ -78,9 +78,10 @@ fn chooseSwapSurfaceFormat(availableFormats: []vk.VkSurfaceFormatKHR) vk.VkSurfa
     return availableFormats[0];
 }
 
-fn chooseSwapPresentMode(availablePresentModes: []vk.VkPresentModeKHR) vk.VkPresentModeKHR {
+fn chooseSwapPresentMode(availablePresentModes: []vk.VkPresentModeKHR, _vSync: bool) vk.VkPresentModeKHR {
+    if (_vSync) return vk.VK_PRESENT_MODE_FIFO_KHR;
     for (availablePresentModes) |value| {
-        if (value == vk.VK_PRESENT_MODE_MAILBOX_KHR) {
+        if (_vSync and value == vk.VK_PRESENT_MODE_MAILBOX_KHR) {
             return value;
         }
     }
@@ -872,7 +873,7 @@ fn create_swapchain_and_imageviews() void {
 
     vkExtent = chooseSwapExtent(surfaceCap);
     format = chooseSwapSurfaceFormat(formats);
-    const presentMode = chooseSwapPresentMode(presentModes);
+    const presentMode = chooseSwapPresentMode(presentModes, __system.init_set.vSync);
 
     var imageCount = surfaceCap.minImageCount + 1;
     if (surfaceCap.maxImageCount > 0 and imageCount > surfaceCap.maxImageCount) {
