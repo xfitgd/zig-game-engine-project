@@ -3,8 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
 
-pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-pub const allocator = gpa.allocator();
+pub var allocator: std.mem.Allocator = undefined;
 
 const system = @import("system.zig");
 const window = @import("window.zig");
@@ -47,7 +46,7 @@ pub var Rmouse_up_func: ?*const fn () void = null;
 pub var window_move_func: ?*const fn () void = null;
 pub var window_size_func: ?*const fn () void = null;
 
-pub var cursor_pos: math.point(i32) = undefined;
+pub var cursor_pos: math.pointi = undefined;
 
 pub var pause: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 pub var activated: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
@@ -58,11 +57,15 @@ pub const KEY_SIZE = 512;
 pub var key_down_func: ?*const fn (key_code: input.key()) void = null;
 pub var key_up_func: ?*const fn (key_code: input.key()) void = null;
 
-pub var monitors: ArrayList(system.monitor_info) = ArrayList(system.monitor_info).init(allocator);
+pub var monitors: ArrayList(system.monitor_info) = undefined;
 pub var primary_monitor: ?*system.monitor_info = null;
 pub var size_update_sem: std.Thread.Semaphore = .{};
 
-pub var dummy_allocator = mem.dummy_allocator.init(allocator);
+pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
+    allocator = _allocator;
+    monitors = ArrayList(system.monitor_info).init(allocator);
+    init_set = init_setting.*;
+}
 
 pub fn loop() void {
     const S = struct {
@@ -103,7 +106,4 @@ pub fn destroy() void {
         value.*.resolutions.deinit();
     }
     monitors.deinit();
-
-    if (builtin.mode == .Debug and dummy_allocator.deinit() != .ok) unreachable;
-    if (builtin.mode == .Debug and gpa.deinit() != .ok) unreachable;
 }

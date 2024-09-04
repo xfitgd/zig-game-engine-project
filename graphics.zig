@@ -17,6 +17,8 @@ const __vulkan = @import("__vulkan.zig");
 const vk = __vulkan.vk;
 
 const math = @import("math.zig");
+const geometry = @import("geometry.zig");
+const line = geometry.line;
 const mem = @import("mem.zig");
 const point = math.point;
 const point3d = math.point3d;
@@ -26,8 +28,7 @@ const matrix_error = math.matrix_error;
 
 const vulkan_res_node = __vulkan_allocator.vulkan_res_node;
 
-pub const color_vertex_2d = color_vertex_2d_(f32);
-pub const tex_vertex_2d = tex_vertex_2d_(f32);
+///use make_shape2d_data fn
 pub const indices16 = indices_(.U16);
 pub const indices32 = indices_(.U32);
 pub const indices = indices_(DEF_IDX_TYPE);
@@ -42,26 +43,29 @@ pub const take_object = mem.align_ptr_cast;
 
 pub const write_flag = enum { read_gpu, readwrite_cpu };
 
-pub fn color_vertex_2d_(comptime T: type) type {
-    return extern struct {
-        pos: point(T) align(1),
-        color: vector(T) align(1),
+///use make_shape2d_data fn
+pub const shape2d = object(color_vertex_2d);
+pub const image2d = object(tex_vertex_2d);
 
-        pub inline fn get_pipeline() *__vulkan.pipeline_set {
-            return &__vulkan.color_2d_pipeline_set;
-        }
-    };
-}
-pub fn tex_vertex_2d_(comptime T: type) type {
-    return extern struct {
-        pos: point(T) align(1),
-        uv: point(T) align(1),
+///use make_shape2d_data fn
+pub const color_vertex_2d = extern struct {
+    pos: point align(1),
+    color: vector align(1),
+    uvw: point3d align(1),
 
-        pub inline fn get_pipeline() *__vulkan.pipeline_set {
-            return &__vulkan.tex_2d_pipeline_set;
-        }
-    };
-}
+    pub inline fn get_pipeline() *__vulkan.pipeline_set {
+        return &__vulkan.color_2d_pipeline_set;
+    }
+};
+
+pub const tex_vertex_2d = extern struct {
+    pos: point align(1),
+    uv: point align(1),
+
+    pub inline fn get_pipeline() *__vulkan.pipeline_set {
+        return &__vulkan.tex_2d_pipeline_set;
+    }
+};
 
 pub var scene: ?*[]*iobject = null;
 
@@ -226,15 +230,12 @@ pub fn indices_(comptime _type: index_type) type {
     };
 }
 
-pub const shape2d = object(color_vertex_2d);
-pub const image2d = object(tex_vertex_2d);
-
 pub const projection = struct {
     const Self = @This();
     pub const view_type = enum { orthographic, perspective };
     proj: matrix = undefined,
     __uniform: vulkan_res_node(.buffer) = .{},
-    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
+    __check_alloc: if (dbg) []bool else void = if (dbg) undefined,
 
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출 perspective일 경우 near, far 기본값 각각 0.1, 100
     pub fn init(_view_type: view_type, fov: f32) matrix_error!Self {
@@ -242,7 +243,7 @@ pub const projection = struct {
         try res.init_matrix(_view_type, fov);
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
         return res;
     }
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출
@@ -251,19 +252,19 @@ pub const projection = struct {
         try res.init_matrix2(_view_type, fov, near, far);
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
         return res;
     }
     pub fn init_matrix(self: *Self, _view_type: view_type, fov: f32) matrix_error!void {
         self.*.proj = switch (_view_type) {
-            .orthographic => try matrix.orthographicLh(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), 0.1, 100),
-            .perspective => try matrix.perspectiveFovLh(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), 0.1, 100),
+            .orthographic => try matrix.orthographicLhVulkan(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), 0.1, 100),
+            .perspective => try matrix.perspectiveFovLhVulkan(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), 0.1, 100),
         };
     }
     pub fn init_matrix2(self: *Self, _view_type: view_type, fov: f32, near: f32, far: f32) matrix_error!void {
         self.*.proj = switch (_view_type) {
-            .orthographic => try matrix.orthographicLh(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), near, far),
-            .perspective => try matrix.perspectiveFovLh(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), near, far),
+            .orthographic => try matrix.orthographicLhVulkan(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), near, far),
+            .perspective => try matrix.perspectiveFovLhVulkan(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), near, far),
         };
     }
     pub inline fn is_inited(self: *Self) bool {
@@ -272,7 +273,7 @@ pub const projection = struct {
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
 
-        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
+        if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
     fn build(self: *Self, _flag: write_flag) void {
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
@@ -295,14 +296,14 @@ pub const camera = struct {
     const Self = @This();
     view: matrix = undefined,
     __uniform: vulkan_res_node(.buffer) = .{},
-    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
+    __check_alloc: if (dbg) []bool else void = if (dbg) undefined,
 
     /// w좌표는 신경 x, 시스템 초기화 후 호출
-    pub fn init(eyepos: vector(f32), focuspos: vector(f32), updir: vector(f32)) Self {
+    pub fn init(eyepos: vector, focuspos: vector, updir: vector) Self {
         var res = Self{ .view = matrix.lookAtLh(eyepos, focuspos, updir) };
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
         return res;
     }
     pub inline fn is_inited(self: *Self) bool {
@@ -311,7 +312,7 @@ pub const camera = struct {
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
 
-        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
+        if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
     fn build(self: *Self, _flag: write_flag) void {
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
@@ -420,7 +421,7 @@ pub const iobject = struct {
     transform: transform = .{},
     __descriptor_set: vk.VkDescriptorSet = null,
     __descriptor_pool: vk.VkDescriptorPool = null,
-    __check_alloc: if (dbg) ?*anyopaque else void = if (dbg) null,
+    __check_alloc: if (dbg) []bool else void = if (dbg) undefined,
 
     pub inline fn is_build(self: *Self) bool {
         return self.*.__descriptor_pool != null and self.*.transform.is_build();
@@ -500,7 +501,7 @@ pub const iobject = struct {
 
     pub fn init() Self {
         var res: Self = .{};
-        if (dbg) res.__check_alloc = __system.dummy_allocator.alloc();
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
         return res;
     }
 
@@ -574,7 +575,7 @@ pub const iobject = struct {
     pub fn deinit(self: *Self) void {
         clean(self);
 
-        if (dbg) __system.dummy_allocator.free(self.*.__check_alloc orelse unreachable);
+        if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
     pub fn clean(self: *Self) void {
         if (self.*.__descriptor_pool != null) {
@@ -634,4 +635,12 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
             self.*.interface.deinit();
         }
     };
+}
+
+pub fn make_shape2d_data(_inout_vertex: anytype, _inout_idx: anytype, _lines: []line) geometry.line_error!void {
+    _inout_vertex.*.array.resize(0) catch unreachable;
+    _inout_idx.*.array.resize(0) catch unreachable;
+    for (_lines) |*value| {
+        try value.*.compute_curve(&_inout_vertex.*.array, &_inout_idx.*.array);
+    }
 }

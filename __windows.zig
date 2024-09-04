@@ -9,8 +9,6 @@ const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
 const math = @import("math.zig");
 
-const allocator = __system.allocator;
-
 const root = @import("root");
 
 pub const win32 = @import("include/windows.zig");
@@ -476,14 +474,14 @@ fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor:
 
     _ = win32.GetMonitorInfoA(hMonitor, @ptrCast(&monitor_info));
 
-    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.rect(i32).init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(allocator) }) catch {
+    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.recti.init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(__system.allocator) }) catch {
         system.print_error("ERR MonitorEnumProc.monitors.append\n", .{});
         unreachable;
     };
     var last = &__system.monitors.items[__system.monitors.items.len - 1];
     last.*.is_primary = (monitor_info.monitorInfo.dwFlags & win32.MONITORINFOF_PRIMARY) != 0;
     if (last.*.is_primary) __system.primary_monitor = last;
-    last.*.rect = math.rect(i32).init(monitor_info.monitorInfo.rcMonitor.left, monitor_info.monitorInfo.rcMonitor.right, monitor_info.monitorInfo.rcMonitor.top, monitor_info.monitorInfo.rcMonitor.bottom);
+    last.*.rect = math.recti.init(monitor_info.monitorInfo.rcMonitor.left, monitor_info.monitorInfo.rcMonitor.right, monitor_info.monitorInfo.rcMonitor.top, monitor_info.monitorInfo.rcMonitor.bottom);
 
     var i: u32 = 0;
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);

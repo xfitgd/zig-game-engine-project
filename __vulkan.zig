@@ -10,12 +10,10 @@ const matrix = math.matrix;
 const graphics = @import("graphics.zig");
 const __system = @import("__system.zig");
 
-const allocator = __system.allocator;
-
 const root = @import("root");
 
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
-pub var vk_allocator: __vulkan_allocator = __vulkan_allocator.init();
+pub var vk_allocator: __vulkan_allocator = undefined;
 
 pub const vk = @import("include/vulkan.zig");
 
@@ -214,6 +212,7 @@ fn debug_callback(messageSeverity: vk.VkDebugUtilsMessageSeverityFlagBitsEXT, me
 }
 
 pub fn vulkan_start() void {
+    vk_allocator = __vulkan_allocator.init();
     const appInfo: vk.VkApplicationInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Hello Triangle",
@@ -228,7 +227,7 @@ pub fn vulkan_start() void {
     // const extensions = try allocator.alloc(vk.ExtensionProperties, property_count);
     // defer allocator.free(extensions);
     // _ = try vkb.enumerateInstanceExtensionProperties(null, &property_count, @ptrCast(extensions));
-    var extension_names = ArrayList([*:0]const u8).init(allocator);
+    var extension_names = ArrayList([*:0]const u8).init(__system.allocator);
     defer extension_names.deinit();
     // var j: u32 = 0;
     // while (j < property_count) : (j += 1) {
@@ -246,11 +245,11 @@ pub fn vulkan_start() void {
             result = vk.vkEnumerateInstanceLayerProperties(&layer_count, null);
             system.handle_error(result == vk.VK_SUCCESS, result);
 
-            const available_layers = allocator.alloc(vk.VkLayerProperties, layer_count) catch {
+            const available_layers = __system.allocator.alloc(vk.VkLayerProperties, layer_count) catch {
                 system.print_error("ERR vulkan_start.allocator.alloc(vk.VkLayerProperties) OutOfMemory\n", .{});
                 unreachable;
             };
-            defer allocator.free(available_layers);
+            defer __system.allocator.free(available_layers);
 
             result = vk.vkEnumerateInstanceLayerProperties(&layer_count, available_layers.ptr);
             system.handle_error(result == vk.VK_SUCCESS, result);
@@ -314,7 +313,7 @@ pub fn vulkan_start() void {
 
     //system.print("{d}\n", .{deviceCount});
     system.handle_error(deviceCount != 0, 0);
-    vk_physical_devices = allocator.alloc(vk.VkPhysicalDevice, deviceCount) catch {
+    vk_physical_devices = __system.allocator.alloc(vk.VkPhysicalDevice, deviceCount) catch {
         system.print_error("ERR vulkan_start.allocator.alloc(vk.VkPhysicalDevice) OutOfMemory\n", .{});
         unreachable;
     };
@@ -325,11 +324,11 @@ pub fn vulkan_start() void {
     vk.vkGetPhysicalDeviceQueueFamilyProperties(vk_physical_devices[0], &queueFamiliesCount, null);
     system.handle_error(queueFamiliesCount != 0, 0);
 
-    const queueFamilies = allocator.alloc(vk.VkQueueFamilyProperties, queueFamiliesCount) catch {
+    const queueFamilies = __system.allocator.alloc(vk.VkQueueFamilyProperties, queueFamiliesCount) catch {
         system.print_error("ERR vulkan_start.allocator.alloc(vk.VkQueueFamilyProperties) OutOfMemory\n", .{});
         unreachable;
     };
-    defer allocator.free(queueFamilies);
+    defer __system.allocator.free(queueFamilies);
 
     vk.vkGetPhysicalDeviceQueueFamilyProperties(vk_physical_devices[0], &queueFamiliesCount, queueFamilies.ptr);
 
@@ -450,7 +449,7 @@ pub fn vulkan_start() void {
         .rasterizerDiscardEnable = vk.VK_FALSE,
         .polygonMode = vk.VK_POLYGON_MODE_FILL,
         .lineWidth = 1,
-        .cullMode = vk.VK_CULL_MODE_BACK_BIT,
+        .cullMode = vk.VK_CULL_MODE_NONE,
         .frontFace = vk.VK_FRONT_FACE_CLOCKWISE,
         .depthBiasEnable = vk.VK_FALSE,
         .depthBiasConstantFactor = 0,
@@ -487,6 +486,27 @@ pub fn vulkan_start() void {
         .pAttachments = @ptrCast(&colorBlendAttachment),
         .blendConstants = .{ 0, 0, 0, 0 },
     };
+
+    const colorAlphaBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
+        .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
+        .blendEnable = vk.VK_TRUE,
+        .srcColorBlendFactor = vk.VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = vk.VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = vk.VK_BLEND_OP_ADD,
+    };
+
+    const colorAlphaBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = vk.VK_FALSE,
+        .logicOp = vk.VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = @ptrCast(&colorAlphaBlendAttachment),
+        .blendConstants = .{ 0, 0, 0, 0 },
+    };
+    _ = colorAlphaBlending;
 
     const colorAttachment: vk.VkAttachmentDescription = .{
         .format = format.format,
@@ -602,18 +622,19 @@ pub fn vulkan_start() void {
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
-            .stride = @sizeOf(f32) * (2 + 4),
+            .stride = @sizeOf(f32) * (2 + 3 + 4),
             .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{
+        const attributeDescriptions: [3]vk.VkVertexInputAttributeDescription = .{
             .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 },
             .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 },
+            .{ .binding = 0, .location = 2, .format = vk.VK_FORMAT_R32G32B32_SFLOAT, .offset = @sizeOf(f32) * (2 + 4) },
         };
 
         const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
             .vertexBindingDescriptionCount = 1,
-            .vertexAttributeDescriptionCount = 2,
+            .vertexAttributeDescriptionCount = attributeDescriptions.len,
             .pVertexBindingDescriptions = &bindingDescription,
             .pVertexAttributeDescriptions = &attributeDescriptions,
         };
@@ -795,7 +816,7 @@ pub fn vulkan_destroy() void {
     if (vkDebugMessenger != null) vkDestroyDebugUtilsMessengerEXT(vkInstance, vkDebugMessenger, null);
     vk.vkDestroyInstance(vkInstance, null);
 
-    allocator.free(vk_physical_devices);
+    __system.allocator.free(vk_physical_devices);
 }
 
 fn cleanup_swapchain() void {
@@ -803,19 +824,19 @@ fn cleanup_swapchain() void {
     while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
         vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
     }
-    allocator.free(vk_swapchain_frame_buffers);
+    __system.allocator.free(vk_swapchain_frame_buffers);
     i = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
         vk.vkDestroyImageView(vkDevice, vk_swapchain_image_views[i], null);
     }
-    allocator.free(vk_swapchain_image_views);
+    __system.allocator.free(vk_swapchain_image_views);
     vk.vkDestroySwapchainKHR(vkDevice, vkSwapchain, null);
 
-    allocator.free(formats);
+    __system.allocator.free(formats);
 }
 
 fn create_framebuffer() void {
-    vk_swapchain_frame_buffers = allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch {
+    vk_swapchain_frame_buffers = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch {
         system.print_error("ERR create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory\n", .{});
         unreachable;
     };
@@ -846,7 +867,7 @@ fn create_swapchain_and_imageviews() void {
     system.handle_error(result == vk.VK_SUCCESS, result);
     system.handle_error(formatCount != 0, 0);
 
-    formats = allocator.alloc(vk.VkSurfaceFormatKHR, formatCount) catch {
+    formats = __system.allocator.alloc(vk.VkSurfaceFormatKHR, formatCount) catch {
         system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkSurfaceFormatKHR) OutOfMemory\n", .{});
         unreachable;
     };
@@ -859,11 +880,11 @@ fn create_swapchain_and_imageviews() void {
     system.handle_error(result == vk.VK_SUCCESS, result);
     system.handle_error(presentModeCount != 0, 0);
 
-    const presentModes = allocator.alloc(vk.VkPresentModeKHR, presentModeCount) catch {
+    const presentModes = __system.allocator.alloc(vk.VkPresentModeKHR, presentModeCount) catch {
         system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkPresentModeKHR) OutOfMemory\n", .{});
         unreachable;
     };
-    defer allocator.free(presentModes);
+    defer __system.allocator.free(presentModes);
 
     result = vk.vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_devices[0], vkSurface, &presentModeCount, presentModes.ptr);
     system.handle_error(result == vk.VK_SUCCESS, result);
@@ -898,16 +919,16 @@ fn create_swapchain_and_imageviews() void {
     result = vk.vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &swapchain_image_count, null);
     system.handle_error(result == vk.VK_SUCCESS, result);
 
-    const swapchain_images = allocator.alloc(vk.VkImage, swapchain_image_count) catch {
+    const swapchain_images = __system.allocator.alloc(vk.VkImage, swapchain_image_count) catch {
         system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkImage) OutOfMemory\n", .{});
         unreachable;
     };
-    defer allocator.free(swapchain_images);
+    defer __system.allocator.free(swapchain_images);
 
     result = vk.vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &swapchain_image_count, swapchain_images.ptr);
     system.handle_error(result == vk.VK_SUCCESS, result);
 
-    vk_swapchain_image_views = allocator.alloc(vk.VkImageView, swapchain_image_count) catch {
+    vk_swapchain_image_views = __system.allocator.alloc(vk.VkImageView, swapchain_image_count) catch {
         system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkImageView) OutOfMemory\n", .{});
         unreachable;
     };

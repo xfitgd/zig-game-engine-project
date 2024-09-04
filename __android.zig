@@ -153,11 +153,11 @@ fn onConfigurationChanged(_activity: [*c]android.ANativeActivity) callconv(.C) v
 
 pub fn get_device_width() u32 {
     const width = android.ANativeWindow_getWidth(app.window);
-    return if (width < 0) 0 else @intCast(width);
+    return @max(0, width);
 }
 pub fn get_device_height() u32 {
     const height = android.ANativeWindow_getHeight(app.window);
-    return if (height < 0) 0 else @intCast(height);
+    return @max(0, height);
 }
 
 fn onSaveInstanceState(_activity: [*c]android.ANativeActivity, _out_len: [*c]usize) callconv(.C) ?*anyopaque {
@@ -607,4 +607,6 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
         app.cond.wait(&app.mutex);
     }
     app.mutex.unlock();
+
+    root.xfit_clean();
 }

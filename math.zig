@@ -34,7 +34,11 @@ pub inline fn test_float_type(comptime T: type) void {
     }
 }
 
-pub fn rect(comptime T: type) type {
+pub inline fn pow(v0: anytype, p: anytype) @TypeOf(v0) {
+    return std.math.pow(@TypeOf(v0), v0, p);
+}
+
+pub fn rect_(comptime T: type) type {
     test_number_type(T);
     return struct {
         const Self = @This();
@@ -60,52 +64,60 @@ pub fn rect(comptime T: type) type {
     };
 }
 
-pub fn point(comptime T: type) type {
-    test_number_type(T);
-    return [2]T;
+pub const rect = rect_(f32);
+pub const recti = rect_(i32);
+
+pub const point = [2]f32;
+pub const pointu = [2]u32;
+pub const pointi = [2]i32;
+pub const point3d = [3]f32;
+pub const vector = @Vector(4, f32);
+
+pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
+    comptime var i = 0;
+    var result: @TypeOf(p1[0]) = 0;
+    inline while (i < p1.len) : (i += 1) {
+        result += pow(p1[i] - p2[i], 2);
+    }
+    return result;
 }
 
-pub fn point3d(comptime T: type) type {
-    test_number_type(T);
-    return [3]T;
-}
-
-pub fn vector(comptime T: type) type {
-    test_number_type(T);
-    return @Vector(4, T);
-}
-
-pub inline fn dot3(comptime T: type, v0: vector(T), v1: vector(T)) T {
+pub inline fn dot3(v0: vector, v1: vector) f32 {
     const dot = v0 * v1;
     return dot[0] + dot[1] + dot[2];
 }
-pub inline fn normalize3(comptime T: type, v: vector(T)) vector(T) {
-    return v * (@as(vector(T), @splat(1)) / @as(vector(T), @splat(std.math.sqrt(dot3(T, v, v)))));
+pub inline fn normalize3(v: vector) vector {
+    return v * (@as(vector, @splat(1)) / @as(vector, @splat(std.math.sqrt(dot3(v, v)))));
 }
-pub inline fn cross3(comptime T: type, v0: vector(T), v1: vector(T)) vector(T) {
-    var xmm0 = @shuffle(T, v0, undefined, [4]i32{ 1, 2, 0, 3 });
-    var xmm1 = @shuffle(T, v1, undefined, [4]i32{ 2, 0, 1, 3 });
+pub inline fn cross3(v0: vector, v1: vector) vector {
+    var xmm0 = @shuffle(f32, v0, undefined, [4]i32{ 1, 2, 0, 3 });
+    var xmm1 = @shuffle(f32, v1, undefined, [4]i32{ 2, 0, 1, 3 });
     var result = xmm0 * xmm1;
-    xmm0 = @shuffle(T, xmm0, undefined, [4]i32{ 1, 2, 0, 3 });
-    xmm1 = @shuffle(T, xmm1, undefined, [4]i32{ 2, 0, 1, 3 });
+    xmm0 = @shuffle(f32, xmm0, undefined, [4]i32{ 1, 2, 0, 3 });
+    xmm1 = @shuffle(f32, xmm1, undefined, [4]i32{ 2, 0, 1, 3 });
     result = result - xmm0 * xmm1;
     result[3] = 0;
     return result;
 }
 
-//pub const matrix3x3 = matrix(f32, 3, 3);
+pub const matrix3x3 = matrix_(f32, 3, 3);
 
 pub const matrix_error = error{ not_exist_inverse_matrix, invaild_near_far, sfov_0, far_near_0, near_far_0, aspect_0, w_0, h_0 };
 
-fn compare_n(n: anytype, i: anytype) bool {
+pub fn compare_n(n: anytype, i: anytype) bool {
     switch (@typeInfo(@TypeOf(n, i))) {
         .Float, .ComptimeFloat => {
             return std.math.approxEqAbs(@TypeOf(n, i), n, i, std.math.floatEps(f32));
         },
-        .Int,
-        .ComptimeInt,
-        => {
+        .Int, .ComptimeInt => {
             return n == i;
+        },
+        .Array => {
+            var e: usize = 0;
+            while (e < n.len) : (e += 1) {
+                if (!compare_n(n[e], i[e])) return false;
+            }
+            return true;
         },
         else => {
             @compileError("not a number type");
@@ -127,7 +139,7 @@ pub fn matrix4x4(comptime T: type) type {
     test_number_type(T);
     return struct {
         const Self = @This();
-        e: [4]vector(T),
+        e: [4]vector,
 
         pub fn init() Self {
             return Self{
@@ -256,6 +268,11 @@ pub fn matrix4x4(comptime T: type) type {
             return translation(1 / x, 1 / y, 1 / z);
         }
         ///Vulkan 으로 테스트 완료
+        pub fn perspectiveFovLhVulkan(fovy: T, aspect: T, near: T, far: T) matrix_error!Self {
+            var res = try perspectiveFovLh(fovy, aspect, near, far);
+            res.e[1][1] *= -1;
+            return res;
+        }
         pub fn perspectiveFovLh(fovy: T, aspect: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
             const sfov = std.math.sin(0.5 * fovy);
@@ -327,6 +344,11 @@ pub fn matrix4x4(comptime T: type) type {
             } };
         }
         ///Vulkan 으로 테스트 완료
+        pub fn orthographicLhVulkan(w: T, h: T, near: T, far: T) matrix_error!Self {
+            var res = try orthographicLh(w, h, near, far);
+            res.e[1][1] *= -1;
+            return res;
+        }
         pub fn orthographicLh(w: T, h: T, near: T, far: T) matrix_error!Self {
             test_float_type(T);
             // assert(!approxEqAbs(f32, w, 0.0, 0.001));
@@ -366,30 +388,30 @@ pub fn matrix4x4(comptime T: type) type {
             };
         }
         ///w좌표는 신경 x
-        pub fn lookToLh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
+        pub fn lookToLh(eyepos: vector, eyedir: vector, updir: vector) Self {
             test_float_type(T);
-            const az = normalize3(T, eyedir);
-            const ax = normalize3(T, cross3(T, updir, az));
-            const ay = normalize3(T, cross3(T, az, ax));
+            const az = normalize3(eyedir);
+            const ax = normalize3(cross3(updir, az));
+            const ay = normalize3(cross3(az, ax));
             return .{
                 .e = .{
                     .{ ax[0], ay[0], az[0], 0 },
                     .{ ax[1], ay[1], az[1], 0 },
                     .{ ax[2], ay[2], az[2], 0 },
-                    .{ -dot3(T, ax, eyepos), -dot3(T, ay, eyepos), -dot3(T, az, eyepos), 1 },
+                    .{ -dot3(ax, eyepos), -dot3(ay, eyepos), -dot3(az, eyepos), 1 },
                 },
             };
         }
         ///w좌표는 신경 x
-        pub fn lookToRh(eyepos: vector(T), eyedir: vector(T), updir: vector(T)) Self {
+        pub fn lookToRh(eyepos: vector, eyedir: vector, updir: vector) Self {
             return lookToLh(eyepos, -eyedir, updir);
         }
         ///Vulkan 으로 테스트 완료, w좌표는 신경 x
-        pub fn lookAtLh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
+        pub fn lookAtLh(eyepos: vector, focuspos: vector, updir: vector) Self {
             return lookToLh(eyepos, focuspos - eyepos, updir);
         }
         ///w좌표는 신경 x
-        pub fn lookAtRh(eyepos: vector(T), focuspos: vector(T), updir: vector(T)) Self {
+        pub fn lookAtRh(eyepos: vector, focuspos: vector, updir: vector) Self {
             return lookToLh(eyepos, eyepos - focuspos, updir);
         }
 
@@ -403,7 +425,7 @@ pub fn matrix4x4(comptime T: type) type {
                 },
             };
         }
-        inline fn dot4(v0: vector(T), v1: vector(T)) T {
+        inline fn dot4(v0: vector, v1: vector) T {
             const xmm0 = v0 * v1; // | x0*x1 | y0*y1 | z0*z1 | w0*w1 |
             return xmm0[0] + xmm0[1] + xmm0[2] + xmm0[3];
         }
@@ -416,7 +438,7 @@ pub fn matrix4x4(comptime T: type) type {
                 const vy = @shuffle(T, self.*.e[row], undefined, [4]i32{ 1, 1, 1, 1 });
                 const vz = @shuffle(T, self.*.e[row], undefined, [4]i32{ 2, 2, 2, 2 });
                 const vw = @shuffle(T, self.*.e[row], undefined, [4]i32{ 3, 3, 3, 3 });
-                result.e[row] = mulAdd(vx, _matrix.*.e[0], vz * _matrix.*.e[2]) + mulAdd(vy, _matrix.*.e[1], vw * _matrix.*.e[3]);
+                result.e[row] = mulAdd(T, vx, _matrix.*.e[0], vz * _matrix.*.e[2]) + mulAdd(T, vy, _matrix.*.e[1], vw * _matrix.*.e[3]);
             }
             return result;
         }
@@ -487,7 +509,7 @@ pub fn matrix4x4(comptime T: type) type {
             v1 = @shuffle(T, self.*.e[1], undefined, [4]i32{ 2, 2, 1, 1 });
             v2 = @shuffle(T, self.*.e[1], undefined, [4]i32{ 1, 0, 0, 0 });
 
-            const s = self.e[0] * vector(T){ 1, -1, 1, -1 };
+            const s = self.e[0] * vector{ 1, -1, 1, -1 };
             var r = v0 * p0;
             r = mulAdd(-v1, p1, r);
             r = mulAdd(v2, p2, r);
@@ -495,8 +517,8 @@ pub fn matrix4x4(comptime T: type) type {
         }
         pub fn inverse(self: *const Self) !Self {
             const mt = transpose(self);
-            var v0: [4]vector(T) = undefined;
-            var v1: [4]vector(T) = undefined;
+            var v0: [4]vector = undefined;
+            var v1: [4]vector = undefined;
 
             v0[0] = @shuffle(T, mt.e[2], undefined, [4]i32{ 0, 0, 1, 1 });
             v1[0] = @shuffle(T, mt.e[3], undefined, [4]i32{ 2, 3, 2, 3 });
@@ -567,7 +589,7 @@ pub fn matrix4x4(comptime T: type) type {
             c4 = mulAdd(T, v0[2], v1[2], c4);
             c6 = mulAdd(T, -v0[3], v1[3], c6);
 
-            var mr = Self{ .e = [4]vector(T){
+            var mr = Self{ .e = [4]vector{
                 .{ c0[0], c1[1], c0[2], c1[3] },
                 .{ c2[0], c3[1], c2[2], c3[3] },
                 .{ c4[0], c5[1], c4[2], c5[3] },
@@ -580,7 +602,7 @@ pub fn matrix4x4(comptime T: type) type {
                 return matrix_error.not_exist_inverse_matrix;
             }
 
-            const scale = @as(vector(T), @splat(det));
+            const scale = @as(vector, @splat(det));
             mr.e[0] /= scale;
             mr.e[1] /= scale;
             mr.e[2] /= scale;
@@ -710,7 +732,7 @@ pub fn matrix_(comptime T: type, row: comptime_int, col: comptime_int) type {
             return sum;
         }
         ///https://nate9389.tistory.com/63
-        pub fn determinant(self: *Self) T {
+        pub fn determinant(self: *const Self) T {
             if (col != row) @compileError("determinant : not a identity matrix");
             return det(row, self.e);
         }

@@ -49,13 +49,13 @@ pub const platform_version = struct {
 
 pub const screen_info = struct {
     monitor: *monitor_info,
-    size: math.point(u32),
+    size: math.pointu,
     refleshrate: u32,
 };
 
 pub const monitor_info = struct {
     const Self = @This();
-    rect: math.rect(i32),
+    rect: math.recti,
 
     is_primary: bool,
     primary_resolution: ?*screen_info = null,

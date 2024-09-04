@@ -9,8 +9,8 @@ const __system = @import("__system.zig");
 const __windows = @import("__windows.zig");
 const __vulkan = @import("__vulkan.zig");
 
-pub fn xfit_main(init_setting: *const system.init_setting) void {
-    __system.init_set = init_setting.*;
+pub fn xfit_main(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
+    __system.init(_allocator, init_setting);
 
     if (root.platform == root.XfitPlatform.windows) {
         __windows.system_windows_start();
@@ -20,6 +20,8 @@ pub fn xfit_main(init_setting: *const system.init_setting) void {
         __windows.windows_loop();
 
         __system.destroy();
+
+        root.xfit_clean();
     } else if (root.platform == root.XfitPlatform.android) {
         __vulkan.vulkan_start();
 
