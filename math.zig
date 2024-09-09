@@ -1,12 +1,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+//https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
+
 ///_num에서 _multiple 배수 중 가까운 값을 구합니다.
-pub fn round_up(comptime T: type, _num: T, _multiple: T) T {
+pub fn round_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
     if (_multiple == 0)
         return _num;
 
-    const remainder: T = @abs(_num) % _multiple;
+    const remainder: @TypeOf(_num) = @abs(_num) % _multiple;
     if (remainder == 0)
         return _num;
 
@@ -67,28 +69,82 @@ pub fn rect_(comptime T: type) type {
 pub const rect = rect_(f32);
 pub const recti = rect_(i32);
 
-pub const point = [2]f32;
-pub const pointu = [2]u32;
-pub const pointi = [2]i32;
-pub const point3d = [3]f32;
+comptime {
+    if (@sizeOf(point) != @sizeOf([2]f32)) @compileError("\'point\' type size not equal [2]f32!");
+    if (@sizeOf(vector) != @sizeOf([4]f32)) @compileError("\'vector\' type size not equal [4]f32!");
+}
+
+pub const point = @Vector(2, f32);
+pub const pointu = @Vector(2, u32);
+pub const pointi = @Vector(2, i32);
 pub const vector = @Vector(4, f32);
 
 pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
-    comptime var i = 0;
-    var result: @TypeOf(p1[0]) = 0;
-    inline while (i < p1.len) : (i += 1) {
-        result += pow(p1[i] - p2[i], 2);
+    if (@typeInfo(@TypeOf(p1, p2)) == .Vector) {
+        test_float_type(@typeInfo(@TypeOf(p1, p2)).Vector.child);
+        if (@typeInfo(@TypeOf(p1, p2)).Vector.len < 2) @compileError("no 1 element vector");
+
+        return dot3(p1, p2);
+    } else if (@typeInfo(@TypeOf(p1, p2)) == .Array) {
+        test_float_type(@typeInfo(@TypeOf(p1, p2)).Array.child);
+        comptime var i = 0;
+        var result: @TypeOf(p1[0]) = 0;
+        inline while (i < p1.len) : (i += 1) {
+            result += pow(p1[i] - p2[i], 2);
+        }
+    } else {
+        @compileError("not a vector, float array type");
     }
-    return result;
+}
+pub fn length(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
+    return std.math.sqrt(length_sq(p1, p2));
 }
 
-pub inline fn dot3(v0: vector, v1: vector) f32 {
-    const dot = v0 * v1;
-    return dot[0] + dot[1] + dot[2];
+pub inline fn dot3(v0: anytype, v1: anytype) f32 {
+    if (@typeInfo(@TypeOf(v0, v1)) == .Vector) {
+        test_float_type(@typeInfo(@TypeOf(v0, v1)).Vector.child);
+        const dot = v0 * v1;
+
+        comptime var i = 0;
+        var res: f32 = 0;
+        const len = if (@typeInfo(@TypeOf(v0, v1)).Vector.len < 3) @typeInfo(@TypeOf(v0, v1)).Vector.len else 3;
+        inline while (i < len) : (i += 1) {
+            res += dot[i];
+        }
+        return res;
+    } else if (@typeInfo(@TypeOf(v0, v1)) == .Array) {
+        test_float_type(@typeInfo(@TypeOf(v0, v1)).Array.child);
+        comptime var i = 0;
+        var res: f32 = 0;
+        const len = if (@typeInfo(@TypeOf(v0, v1)).Array.len < 3) @typeInfo(@TypeOf(v0, v1)).Array.len else 3;
+        inline while (i < len) : (i += 1) {
+            res += v0[i] * v1[i];
+        }
+        return res;
+    } else {
+        @compileError("not a vector, float array type");
+    }
 }
-pub inline fn normalize3(v: vector) vector {
-    return v * (@as(vector, @splat(1)) / @as(vector, @splat(std.math.sqrt(dot3(v, v)))));
+pub inline fn normalize(v: anytype) @TypeOf(v) {
+    if (@typeInfo(@TypeOf(v)) == .Vector) {
+        return v * (@as(@TypeOf(v), @splat(1)) / @as(@TypeOf(v), @splat(std.math.sqrt(dot3(v, v)))));
+    } else if (@typeInfo(@TypeOf(v)) == .Array) {
+        test_float_type(@typeInfo(@TypeOf(v)).Array.child);
+        comptime var i = 0;
+        const l = std.math.sqrt(dot3(v, v));
+        var res = v;
+        inline while (i < @typeInfo(@TypeOf(v)).Array.len) : (i += 1) {
+            res[i] *= 1.0 / l;
+        }
+        return res;
+    } else {
+        @compileError("not a vector, float array type");
+    }
 }
+pub inline fn cross2(v0: point, v1: point) f32 {
+    return v0[0] * v1[1] - v0[1] * v1[0];
+}
+
 pub inline fn cross3(v0: vector, v1: vector) vector {
     var xmm0 = @shuffle(f32, v0, undefined, [4]i32{ 1, 2, 0, 3 });
     var xmm1 = @shuffle(f32, v1, undefined, [4]i32{ 2, 0, 1, 3 });
@@ -113,8 +169,15 @@ pub fn compare_n(n: anytype, i: anytype) bool {
             return n == i;
         },
         .Array => {
-            var e: usize = 0;
-            while (e < n.len) : (e += 1) {
+            comptime var e = 0;
+            inline while (e < n.len) : (e += 1) {
+                if (!compare_n(n[e], i[e])) return false;
+            }
+            return true;
+        },
+        .Vector => {
+            comptime var e = 0;
+            inline while (e < @typeInfo(@TypeOf(n, i)).Vector.len) : (e += 1) {
                 if (!compare_n(n[e], i[e])) return false;
             }
             return true;
@@ -124,17 +187,32 @@ pub fn compare_n(n: anytype, i: anytype) bool {
         },
     }
 }
-inline fn mulAdd(comptime T: type, v0: @Vector(4, T), v1: @Vector(4, T), v2: @Vector(4, T)) @Vector(4, T) {
-    if (@typeInfo(T) == .Float or @typeInfo(T) == .ComptimeFloat) {
-        return @mulAdd(@Vector(4, T), v0, v1, v2);
-    } else {
-        return v0 * v1 + v2;
+
+pub inline fn max_vector(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    return @select(@TypeOf(v0[0], v1[0]), v0 > v1, v0, v1);
+}
+pub inline fn min_vector(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    return @select(@TypeOf(v0[0], v1[0]), v0 < v1, v0, v1);
+}
+
+///v0 * v1 + v2
+inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) {
+    switch (@typeInfo(@TypeOf(v0, v1, v2))) {
+        .Vector => |info| {
+            if (@typeInfo(info.child) == .Float or @typeInfo(info.child) == .ComptimeFloat) {
+                return @mulAdd(@TypeOf(v0, v1, v2), v0, v1, v2);
+            } else {
+                return v0 * v1 + v2;
+            }
+        },
+        else => {
+            @compileError("not a vector type");
+        },
     }
 }
 
 pub const matrix = matrix4x4(f32);
 
-///https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
 pub fn matrix4x4(comptime T: type) type {
     test_number_type(T);
     return struct {
@@ -390,9 +468,9 @@ pub fn matrix4x4(comptime T: type) type {
         ///w좌표는 신경 x
         pub fn lookToLh(eyepos: vector, eyedir: vector, updir: vector) Self {
             test_float_type(T);
-            const az = normalize3(eyedir);
-            const ax = normalize3(cross3(updir, az));
-            const ay = normalize3(cross3(az, ax));
+            const az = normalize(eyedir);
+            const ax = normalize(cross3(updir, az));
+            const ay = normalize(cross3(az, ax));
             return .{
                 .e = .{
                     .{ ax[0], ay[0], az[0], 0 },

@@ -506,7 +506,7 @@ pub fn vulkan_start() void {
         .pAttachments = @ptrCast(&colorAlphaBlendAttachment),
         .blendConstants = .{ 0, 0, 0, 0 },
     };
-    _ = colorAlphaBlending;
+    //_ = colorAlphaBlending;
 
     const colorAttachment: vk.VkAttachmentDescription = .{
         .format = format.format,
@@ -649,7 +649,7 @@ pub fn vulkan_start() void {
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
             .pDepthStencilState = null,
-            .pColorBlendState = &colorBlending,
+            .pColorBlendState = &colorAlphaBlending,
             .pDynamicState = &dynamicState,
             .layout = color_2d_pipeline_set.pipelineLayout,
             .renderPass = vkRenderPass,

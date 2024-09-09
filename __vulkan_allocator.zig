@@ -184,7 +184,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
             system.print_error("ERR : {s}\n", .{@errorName(err)});
             unreachable;
         };
-        res.?.* = vulkan_res.init(math.round_up(usize, @intCast(_mem_require.*.size), @intCast(_mem_require.*.alignment)), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
+        res.?.* = vulkan_res.init(math.round_up(_mem_require.*.size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
 
         _out_idx.* = res.?.*.bind_any(_res);
         self.*.buffer_ids.append(res.?) catch |err| {

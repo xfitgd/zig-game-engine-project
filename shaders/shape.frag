@@ -13,8 +13,7 @@ void main() {
     // float sd = (pow(fragUv.x, 3) - fragUv.y * fragUv.z) / sqrt(fx * fx + fy * fy);
     // float alpha = 0.5 - sd;
 
-    if(((pow(fragUv.x, 3) - fragUv.y * fragUv.z)) <= 0.0) discard;
 
-    outColor = vec4(fragColor.xyz, fragColor.w * 1);
+    outColor = vec4(fragColor.xyz, fragColor.w * step(0, pow(fragUv.x, 3) - fragUv.y * fragUv.z));
 
 }

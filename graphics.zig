@@ -21,7 +21,6 @@ const geometry = @import("geometry.zig");
 const line = geometry.line;
 const mem = @import("mem.zig");
 const point = math.point;
-const point3d = math.point3d;
 const vector = math.vector;
 const matrix = math.matrix;
 const matrix_error = math.matrix_error;
@@ -51,7 +50,7 @@ pub const image2d = object(tex_vertex_2d);
 pub const color_vertex_2d = extern struct {
     pos: point align(1),
     color: vector align(1),
-    uvw: point3d align(1),
+    uvw: [3]f32 align(1),
 
     pub inline fn get_pipeline() *__vulkan.pipeline_set {
         return &__vulkan.color_2d_pipeline_set;
