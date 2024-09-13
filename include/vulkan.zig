@@ -16289,4 +16289,7 @@ pub const VkAndroidSurfaceCreateInfoKHR = extern struct {
 
 pub extern fn vkCreateAndroidSurfaceKHR(instance: VkInstance, pCreateInfo: [*c]const VkAndroidSurfaceCreateInfoKHR, pAllocator: [*c]const VkAllocationCallbacks, pSurface: [*c]VkSurfaceKHR) VkResult;
 
+pub const VK_KHR_ANDROID_SURFACE_EXTENSION_NAME = "VK_KHR_android_surface";
+pub const VK_KHR_WIN32_SURFACE_EXTENSION_NAME = "VK_KHR_win32_surface";
+
 //?나머지는 필요할때 추가

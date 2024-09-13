@@ -7,22 +7,24 @@ const __vulkan = @import("__vulkan.zig");
 const system = @import("system.zig");
 const __system = @import("__system.zig");
 
-pub const allocator = __system.allocator;
 pub const c_allocator = std.heap.c_allocator;
 
 pub const android = @import("include/android.zig");
 
 inline fn LOGI(fmt: [*c]const u8, args: anytype) c_int {
-    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_INFO, "threaded_app", fmt } ++ args);
+    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_INFO, "xfit", fmt } ++ args);
 }
 pub inline fn LOGE(fmt: [*c]const u8, args: anytype) c_int {
-    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_ERROR, "threaded_app", fmt } ++ args);
+    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_ERROR, "xfit", fmt } ++ args);
 }
 inline fn LOGW(fmt: [*c]const u8, args: anytype) c_int {
-    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_WARN, "threaded_app", fmt } ++ args);
+    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_WARN, "xfit", fmt } ++ args);
 }
 pub inline fn LOGV(fmt: [*c]const u8, args: anytype) c_int {
-    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_VERBOSE, "threaded_app", fmt } ++ args);
+    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_VERBOSE, "xfit", fmt } ++ args);
+}
+pub inline fn LOGD(fmt: [*c]const u8, args: anytype) c_int {
+    return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_DEBUG, "xfit", fmt } ++ args);
 }
 
 const LooperEvent = enum(i32) {
@@ -78,6 +80,8 @@ const android_app = struct {
     msgread: i32 = 0,
     msgwrite: i32 = 0,
 
+    cache_dir: ?[]u8 = null,
+
     cmd_poll_source: android_poll_source = std.mem.zeroes(android_poll_source),
     input_poll_source: android_poll_source = std.mem.zeroes(android_poll_source),
 
@@ -96,12 +100,12 @@ const android_app = struct {
     accelerometer_sensor: ?*const android.ASensor = null,
     sensor_event_queue: ?*android.ASensorEventQueue = null,
 
-    animating: bool = false,
     width: i32 = 0,
     height: i32 = 0,
     savedata: saved_state = std.mem.zeroes(saved_state),
 
     inited: bool = false,
+    paused: bool = false,
 };
 
 var app: android_app = .{};
@@ -114,7 +118,7 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
     const androidSurfaceCreateInfo: __vulkan.vk.VkAndroidSurfaceCreateInfoKHR = .{ .window = @ptrCast(app.window), .flags = 0 };
     const result = __vulkan.vk.vkCreateAndroidSurfaceKHR(@ptrCast(vkInstance), &androidSurfaceCreateInfo, null, @ptrCast(vkSurface));
 
-    system.handle_error(result == __vulkan.vk.VK_SUCCESS, result);
+    system.handle_error(result == __vulkan.vk.VK_SUCCESS, "vkCreateAndroidSurfaceKHR code : {d}", .{result});
 }
 
 pub fn vulkan_android_recreate_surface(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
@@ -141,9 +145,7 @@ fn destroy_android() void {
 
 fn android_app_write_cmd(cmd: AppEvent) void {
     const _cmd = [_]i8{@intFromEnum(cmd)};
-    if (std.posix.write(app.msgwrite, @ptrCast(&_cmd)) catch unreachable != 1) {
-        unreachable;
-    }
+    _ = std.posix.write(app.msgwrite, @ptrCast(&_cmd)) catch |e| system.handle_error3("android_app_write_cmd std.posix.write", e);
 }
 
 fn onConfigurationChanged(_activity: [*c]android.ANativeActivity) callconv(.C) void {
@@ -158,6 +160,13 @@ pub fn get_device_width() u32 {
 pub fn get_device_height() u32 {
     const height = android.ANativeWindow_getHeight(app.window);
     return @max(0, height);
+}
+pub fn get_cache_dir() []const u8 {
+    return app.cache_dir orelse system.handle_error_msg2("get_cache_dir null");
+}
+pub fn get_file_dir() []const u8 {
+    if (app.activity.?.*.internalDataPath == null) system.handle_error_msg2("get_file_dir null");
+    return app.activity.?.*.internalDataPath[0..std.mem.len(app.activity.?.*.internalDataPath)];
 }
 
 fn onSaveInstanceState(_activity: [*c]android.ANativeActivity, _out_len: [*c]usize) callconv(.C) ?*anyopaque {
@@ -401,7 +410,7 @@ fn process_input(_source: ?*android_poll_source) void {
     _ = _source;
     var event: ?*android.AInputEvent = null;
     while (android.AInputQueue_getEvent(app.input_queue, &event) >= 0) {
-        _ = LOGV("New input event: type=%d", .{android.AInputEvent_getType(event)});
+        //_ = LOGV("New input event: type=%d", .{android.AInputEvent_getType(event)});
         if (android.AInputQueue_preDispatchEvent(app.input_queue, event) != 0) {
             continue;
         }
@@ -415,8 +424,7 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
     switch (_cmd) {
         AppEvent.APP_CMD_SAVE_STATE => {
             app.savedStateSize = @sizeOf(saved_state);
-            app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch unreachable))[0..app.savedStateSize];
-            if (app.savedState == null) unreachable;
+            app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("engine_handle_cmd c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
             @memcpy(app.savedState.?, std.mem.asBytes(&app.savedata));
         },
         AppEvent.APP_CMD_INIT_WINDOW => {
@@ -434,18 +442,17 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
         },
         AppEvent.APP_CMD_TERM_WINDOW => {},
         AppEvent.APP_CMD_GAINED_FOCUS => {
-            app.animating = true;
             if (app.accelerometer_sensor != null) {
                 _ = android.ASensorEventQueue_enableSensor(app.sensor_event_queue, app.accelerometer_sensor);
                 _ = android.ASensorEventQueue_setEventRate(app.sensor_event_queue, app.accelerometer_sensor, (1000 / 60) * 1000);
             }
+            app.paused = false;
         },
         AppEvent.APP_CMD_LOST_FOCUS => {
             if (app.accelerometer_sensor != null) {
                 _ = android.ASensorEventQueue_disableSensor(app.sensor_event_queue, app.accelerometer_sensor);
             }
-
-            app.animating = false;
+            app.paused = true;
         },
         else => {},
     }
@@ -482,6 +489,43 @@ fn AcquireASensorManagerInstance() ?*android.ASensorManager {
     return android.ASensorManager_getInstance();
 }
 
+fn OnSensorEvent(fd: c_int, events: c_int, data: ?*anyopaque) callconv(.C) c_int {
+    _ = fd;
+    _ = events;
+    _ = data;
+
+    var event: android.ASensorEvent = undefined;
+    while (android.ASensorEventQueue_getEvents(app.sensor_event_queue, &event, 1) > 0) {
+        // _ = LOGI("accelerometer: x=%f y=%f z=%f", .{ event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.x, event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.y, event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.z });
+    }
+
+    // From the docs:
+    //
+    // Implementations should return 1 to continue receiving callbacks, or 0 to
+    // have this file descriptor and callback unregistered from the looper.
+    return 1;
+}
+
+fn set_cache_path() void {
+    var env: [*c]android.JNIEnv = null;
+    _ = app.activity.?.*.vm.*.*.AttachCurrentThread.?(app.activity.?.*.vm, &env, null);
+
+    const android_content_context = env.*.*.GetObjectClass.?(env, app.activity.?.*.clazz);
+    const getCacheDir = env.*.*.GetMethodID.?(env, android_content_context, "getCacheDir", "()Ljava/io/File;");
+    const cache_dir = env.*.*.CallObjectMethod.?(env, app.activity.?.*.clazz, getCacheDir);
+
+    const fileClass = env.*.*.FindClass.?(env, "java/io/File");
+    const getPath = env.*.*.GetMethodID.?(env, fileClass, "getPath", "()Ljava/lang/String;");
+    const cache_path_string: android.jstring = env.*.*.CallObjectMethod.?(env, cache_dir, getPath);
+
+    const cache_path_chars = env.*.*.GetStringUTFChars.?(env, cache_path_string, null);
+    app.cache_dir = c_allocator.alloc(u8, std.mem.len(cache_path_chars)) catch |e| system.handle_error3("anrdoid_app_entry c_allocator.alloc app.cache_dir", e);
+    @memcpy(app.cache_dir.?, cache_path_chars[0..app.cache_dir.?.len]);
+    env.*.*.ReleaseStringUTFChars.?(env, cache_path_string, cache_path_chars);
+
+    _ = app.activity.?.*.vm.*.*.DetachCurrentThread.?(app.activity.?.*.vm);
+}
+
 fn anrdoid_app_entry() void {
     app.config = android.AConfiguration_new();
 
@@ -505,51 +549,34 @@ fn anrdoid_app_entry() void {
     app.on_app_cmd = engine_handle_cmd;
     app.on_input_event = engine_handle_input;
 
+    set_cache_path();
+
     app.sensor_manager = AcquireASensorManagerInstance();
     app.accelerometer_sensor = android.ASensorManager_getDefaultSensor(app.sensor_manager, android.ASENSOR_TYPE_ACCELEROMETER);
 
-    app.sensor_event_queue = android.ASensorManager_createEventQueue(app.sensor_manager, app.looper, @intFromEnum(LooperEvent.LOOPER_ID_USER), null, null);
+    app.sensor_event_queue = android.ASensorManager_createEventQueue(app.sensor_manager, app.looper, @intFromEnum(LooperEvent.LOOPER_ID_USER), OnSensorEvent, null);
 
     if (app.savedState != null) {
         @memcpy(std.mem.asBytes(&app.savedata), app.savedState.?);
     }
 
-    while (true) out: {
+    while (true) {
         var ident: i32 = undefined;
-        var events: i32 = undefined;
         var source: ?*android_poll_source = null;
+        ident = android.ALooper_pollOnce(if (app.paused) -1 else 0, null, null, @ptrCast(&source));
+        if (ident == android.ALOOPER_POLL_ERROR) system.handle_error_msg2("ALooper_pollOnce");
 
-        while (true) {
-            ident = android.ALooper_pollAll(if (app.animating) 0 else -1, null, &events, @ptrCast(&source));
-            if (ident < 0) break;
-
-            if (source != null) {
-                source.?.*.process.?(source);
-            }
-
-            if (ident == @intFromEnum(LooperEvent.LOOPER_ID_USER)) {
-                if (app.accelerometer_sensor != null) {
-                    var event: android.ASensorEvent = undefined;
-                    while (android.ASensorEventQueue_getEvents(app.sensor_event_queue, &event, 1) > 0) {
-                        _ = LOGI("accelerometer: x=%f y=%f z=%f", .{ event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.x, event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.y, event.unnamed_0.unnamed_0.acceleration.unnamed_0.unnamed_0.z });
-                    }
-                }
-            }
-
-            if (app.destroryRequested) {
-                destroy_android();
-                break :out;
-            }
+        if (source != null) {
+            source.?.*.process.?(source);
         }
 
-        if (app.animating) {
-            app.savedata.angle += 0.1;
-            if (app.savedata.angle > 1) {
-                app.savedata.angle = 0;
-            }
+        if (app.destroryRequested) {
+            destroy_android();
+            break;
         }
-
-        engine_draw_frame();
+        if (app.inited) {
+            engine_draw_frame();
+        }
     }
 
     free_saved_state();
@@ -557,6 +584,7 @@ fn anrdoid_app_entry() void {
     if (app.input_queue != null) {
         android.AInputQueue_detachLooper(app.input_queue);
     }
+    c_allocator.free(app.cache_dir.?);
     android.AConfiguration_delete(app.config);
     app.destroyed = true;
     app.cond.broadcast();
@@ -587,20 +615,19 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
 
     app.activity = _activity;
 
-    if (_savedState != null) {
+    if (_savedState != null and _savedStateSize != 0) {
         app.savedStateSize = _savedStateSize;
 
-        app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch unreachable))[0..app.savedStateSize];
-        if (app.savedState == null) unreachable;
+        app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("ANativeActivity_onCreate c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
 
         @memcpy(app.savedState.?, @as(?[*]u8, @ptrCast(_savedState)).?);
     }
 
-    const pipe = std.posix.pipe() catch unreachable;
+    const pipe = std.posix.pipe() catch |e| system.handle_error3("ANativeActivity_onCreate std.posix.pipe", e);
     app.msgread = pipe[0];
     app.msgwrite = pipe[1];
 
-    app.thread = std.Thread.spawn(.{}, anrdoid_app_entry, .{}) catch unreachable;
+    app.thread = std.Thread.spawn(.{}, anrdoid_app_entry, .{}) catch |e| system.handle_error3("ANativeActivity_onCreate std.Thread.spawn", e);
 
     app.mutex.lock();
     while (!app.running) {

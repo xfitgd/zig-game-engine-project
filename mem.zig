@@ -31,16 +31,16 @@ pub inline fn cvtarr(comptime dest_type: type, src: anytype) *[@divFloor(@sizeOf
 //     pub fn alloc(self: *Self) *anyopaque {
 //         self.mutex.lock();
 //         defer self.mutex.unlock();
-//         const node: *stack = self.*.pool.create() catch unreachable;
+//         const node: *stack = self.*.pool.create() catch |e| system.handle_error3("dummy_allocator alloc.self.*.pool.create", e);
 //         node.*.trace.instruction_addresses = &node.*.addr;
 //         std.debug.captureStackTrace(null, &node.*.trace);
-//         self.*.list.put(@ptrCast(node), node) catch unreachable;
+//         self.*.list.put(@ptrCast(node), node) catch |e| system.handle_error3("dummy_allocator alloc.self.*.list.put(@ptrCast(node), node)", e);
 //         return @ptrCast(node);
 //     }
 //     pub fn free(self: *Self, alloc_code: *anyopaque) void {
 //         self.mutex.lock();
 //         defer self.mutex.unlock();
-//         _ = self.*.list.fetchRemove(alloc_code) orelse unreachable;
+//         _ = self.*.list.fetchRemove(alloc_code) orelse system.handle_error_msg2("dummy_allocator free.self.*.list.fetchRemove(alloc_code)");
 //         self.*.pool.destroy(align_ptr_cast(*stack, alloc_code));
 //     }
 //     pub fn init(allocator: std.mem.Allocator) Self {

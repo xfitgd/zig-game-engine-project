@@ -25,6 +25,7 @@ pub const line_error = error{
     ///직선에 대한 처리를 따로한다.
     is_not_curve,
     invaild_line,
+    out_of_idx,
 };
 
 pub const polygon_error = error{
@@ -60,6 +61,18 @@ pub fn point_in_triangle(p: point, a: point, b: point, c: point) bool {
     return (u > 0.0) and (v > 0.0) and (u + v < 1.0);
 }
 
+///반환 값이 result 0이고 is_in true면 정확히 선 위에 있다
+pub fn point_in_line(p: point, l0: point, l1: point) struct { result: f32, is_in: bool } {
+    const a = l1[1] - l0[1];
+    const b = l0[0] - l1[0];
+    const c = l1[0] * l0[1] - l0[0] * l1[1];
+    const result = a * p[0] + b * p[1] + c;
+    return .{
+        .result = result,
+        .is_in = p[0] >= @min(l0[0], l1[0]) and p[0] <= @max(l0[0], l1[0]) and p[1] >= @min(l0[1], l1[1]) and p[1] <= @max(l0[1], l1[1]),
+    };
+}
+
 inline fn __orientation(p1: point, p2: point, p3: point) i32 {
     const crossProduct = (p2[1] - p1[1]) * (p3[0] - p2[0]) - (p3[1] - p2[1]) * (p2[0] - p1[0]);
     return if (crossProduct < 0.0) -1 else (if (crossProduct > 0.0) 1 else 0);
@@ -80,12 +93,19 @@ pub fn point_distance_to_line(p: point, l0: point, l1: point) f32 {
 }
 
 pub const polygon = struct {
+    ///0번 폴리곤 이후는 전부 구멍(0번 폴리곤 내부에 있어야함)
     lines: ArrayList(line),
     polygon_line_counts: ArrayList(u32),
+    __points: ArrayList(point),
+    __polygon_point_counts: ArrayList(u32),
+    color: vector = .{ 1, 1, 1, 1 },
 
     pub fn init(allocator: std.mem.Allocator) polygon {
         return .{
             .lines = ArrayList(line).init(allocator),
+            .polygon_line_counts = ArrayList(u32).init(allocator),
+            .__points = ArrayList(point).init(allocator),
+            .__polygon_point_counts = ArrayList(u32).init(allocator),
         };
     }
     pub fn deinit(self: polygon) void {
@@ -100,11 +120,21 @@ pub const polygon = struct {
             if (self.lines.items[count].start != self.lines.items[count + value].end) return polygon_error.is_not_polygon;
             count += value;
         }
+        self.__points.resize(0);
+        self.__polygon_point_counts.resize(1);
+        self.__polygon_point_counts.items[0] = 0;
 
         for (self.lines.items) |*value| {
             value.*.compute_curve(out_vertices, out_indices) catch |e| {
                 if (e != line_error.is_not_curve) return e;
             };
+            self.__points.append(value.*.start);
+            if (0.0 > point_distance_to_line(value.*.control0, value.*.start, value.*.end)) {
+                self.__points.append(value.*.control0);
+            }
+            if (0.0 > point_distance_to_line(value.*.control1, value.*.start, value.*.end)) {
+                self.__points.append(value.*.control1);
+            }
         }
     }
 };
@@ -190,7 +220,7 @@ pub const line = struct {
                 mat.e[3][2] = -(mtMinusMs * mtMinusMs * mtMinusMs);
 
                 flip = d1 < 0;
-                system.print_debug("serpentine\n", .{});
+                system.print_debug("serpentine", .{});
             },
             .loop => {
                 const t1 = sqrt(4.0 * d1 * d3 - 3.0 * d2 * d2);
@@ -204,11 +234,11 @@ pub const line = struct {
                 if (repeat == -1 and 0.0 < ql and ql < 1.0) {
                     artifact = 1;
                     subdiv = ql;
-                    system.print_debug("loop(1)\n", .{});
+                    system.print_debug("loop(1)", .{});
                 } else if (repeat == -1 and 0.0 < qm and qm < 1.0) {
                     artifact = 2;
                     subdiv = qm;
-                    system.print_debug("loop(2)\n", .{});
+                    system.print_debug("loop(2)", .{});
                 } else {
                     const ltMinusLs = lt - ls;
                     const mtMinusMs = mt - ms;
@@ -230,7 +260,7 @@ pub const line = struct {
                     mat.e[3][2] = -ltMinusLs * mtMinusMs * mtMinusMs;
 
                     if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
-                    system.print_debug("loop\n", .{});
+                    system.print_debug("loop", .{});
                 }
             },
             .cusp => {
@@ -253,7 +283,7 @@ pub const line = struct {
                 mat.e[3][0] = lsMinusLt;
                 mat.e[3][1] = lsMinusLt * lsMinusLt * lsMinusLt;
                 mat.e[3][2] = 1;
-                system.print_debug("cusp\n", .{});
+                system.print_debug("cusp", .{});
             },
             .quadratic => {
                 mat.e[0][0] = 0;
@@ -273,7 +303,7 @@ pub const line = struct {
                 mat.e[3][2] = 1;
 
                 flip = d3 < 0;
-                system.print_debug("quadratic\n", .{});
+                system.print_debug("quadratic", .{});
             },
             .line => return,
             else => return line_error.is_not_curve,
@@ -302,11 +332,11 @@ pub const line = struct {
             try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, if (artifact == 1) 1 else 0);
 
             if (!((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0))) { //flip 상태가 아닐때만(안쪽 일때) 추가 삼각형 그리기
-                system.print_debug("additional triangle\n", .{});
+                system.print_debug("additional triangle", .{});
                 const n: usize = out_vertices.items.len;
-                if (n + 2 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) unreachable;
+                if (n + 2 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) return line_error.out_of_idx;
                 const nn: @TypeOf(out_idxs.items[0]) = @intCast(n);
-                out_vertices.*.resize(n + 3) catch unreachable;
+                out_vertices.*.resize(n + 3) catch |e| system.handle_error3("__compute_curve out_vertices.*.resize(n + 3)", e);
                 out_vertices.*.items[n].pos = _start;
                 out_vertices.*.items[n + 1].pos = .{ x0123, y0123 };
                 out_vertices.*.items[n + 2].pos = _end;
@@ -315,7 +345,7 @@ pub const line = struct {
                 out_vertices.*.items[n + 1].uvw = .{ 1, 0, 0 };
                 out_vertices.*.items[n + 2].uvw = .{ 1, 0, 0 };
 
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 }) catch unreachable;
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 })", e);
             }
             return;
         }
@@ -333,9 +363,9 @@ pub const line = struct {
         }
 
         const n: usize = out_vertices.items.len;
-        if (n + 3 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) unreachable;
+        if (n + 3 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) return line_error.out_of_idx;
         const nn: @TypeOf(out_idxs.items[0]) = @intCast(n);
-        out_vertices.*.resize(n + 4) catch unreachable;
+        out_vertices.*.resize(n + 4) catch |e| system.handle_error3("__compute_curve out_vertices.*.resize(n + 4)", e);
         out_vertices.*.items[n].pos = _start;
         out_vertices.*.items[n + 1].pos = _control0;
         out_vertices.*.items[n + 2].pos = _control1;
@@ -361,9 +391,9 @@ pub const line = struct {
                                 index += 1;
                             }
                         }
-                        //system.print_debug("1\n", .{});
+                        //system.print_debug("1", .{});
 
-                        out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] }) catch unreachable;
+                        out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] })", e);
                         return;
                     }
                 }
@@ -383,9 +413,9 @@ pub const line = struct {
                 }
                 if (point_in_triangle(out_vertices.*.items[n + i].pos, out_vertices.*.items[indices[0]].pos, out_vertices.*.items[indices[1]].pos, out_vertices.*.items[indices[2]].pos)) {
                     var k: usize = 0;
-                    //system.print_debug("2\n", .{});
+                    //system.print_debug("2", .{});
                     while (k < 3) : (k += 1) {
-                        out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) }) catch unreachable;
+                        out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) })", e);
                     }
                     return;
                 }
@@ -394,27 +424,27 @@ pub const line = struct {
 
         if (lines_intersect(_start, _control1, _control0, _end)) {
             if (math.length_sq(_control1, _start) < math.length_sq(_end, _control0)) {
-                //system.print_debug("3\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 }) catch unreachable;
+                //system.print_debug("3", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 })", e);
             } else {
-                //system.print_debug("4\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 }) catch unreachable;
+                //system.print_debug("4", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 })", e);
             }
         } else if (lines_intersect(_start, _end, _control0, _control1)) {
             if (math.length_sq(_end, _start) < math.length_sq(_control1, _control0)) {
-                //system.print_debug("5\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 }) catch unreachable;
+                //system.print_debug("5", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 }) catch |e| system.handle_error3("__compute_curve  out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 })", e);
             } else {
-                //system.print_debug("6\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 }) catch unreachable;
+                //system.print_debug("6", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 })", e);
             }
         } else {
             if (math.length_sq(_control0, _start) < math.length_sq(_end, _control1)) {
-                //system.print_debug("7\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 }) catch unreachable;
+                //system.print_debug("7", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 })", e);
             } else {
-                //system.print_debug("8\n", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 }) catch unreachable;
+                //system.print_debug("8", .{});
+                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 })", e);
             }
         }
     }

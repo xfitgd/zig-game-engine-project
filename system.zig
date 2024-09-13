@@ -11,10 +11,14 @@ const window = @import("window.zig");
 const __vulkan = @import("__vulkan.zig");
 const __system = @import("__system.zig");
 const math = @import("math.zig");
+const file = @import("file.zig");
+const datetime = @import("datetime.zig");
 
 pub const windows = __windows.win32;
 pub const android = __android.android;
 pub const vulkan = __vulkan.vk;
+
+pub const dbg = builtin.mode == .Debug;
 
 pub const vulkan_ext = struct {
     pub const vkCreateDebugUtilsMessengerEXT = __vulkan.vkCreateDebugUtilsMessengerEXT;
@@ -47,6 +51,9 @@ pub const platform_version = struct {
     },
 };
 
+pub const platform = root.platform;
+pub const error_handling_func: ?*const fn (text: []u8, stack_trace: []u8) void = null;
+
 pub const screen_info = struct {
     monitor: *monitor_info,
     size: math.pointu,
@@ -70,28 +77,28 @@ pub const monitor_info = struct {
                 .y = window.window_y(),
                 .width = window.window_width(),
                 .height = window.window_height(),
-                .state = if (root.platform == root.XfitPlatform.windows) __windows.get_window_state() else window.window_state.Restore,
+                .state = if (platform == .windows) __windows.get_window_state() else window.window_state.Restore,
             };
         }
     }
 
     pub fn set_fullscreen_mode(self: Self, resolution: *screen_info) void {
         save_prev_window_state();
-        if (root.platform == root.XfitPlatform.windows) {
+        if (platform == .windows) {
             __windows.set_fullscreen_mode(&self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print("WARN monitor_info.set_fullscreen_mode not support mobile platform.\n", .{});
+            print_error("WARN monitor_info.set_fullscreen_mode not support mobile platform.\n", .{});
             return;
         }
     }
     pub fn set_borderlessscreen_mode(self: Self) void {
         save_prev_window_state();
-        if (root.platform == root.XfitPlatform.windows) {
+        if (platform == .windows) {
             __windows.set_borderlessscreen_mode(&self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print("WARN monitor_info.set_borderlessscreen_mode not support mobile platform.\n", .{});
+            print_error("WARN monitor_info.set_borderlessscreen_mode not support mobile platform.\n", .{});
             return;
         }
     }
@@ -160,15 +167,31 @@ pub inline fn set_maxframe_i64(_maxframe: i64) void {
 pub inline fn get_platform_version() *const platform_version {
     return &__system.platform_ver;
 }
-pub inline fn print(comptime fmt: []const u8, args: anytype) void {
-    if (root.platform != root.XfitPlatform.android) {
+pub fn print(comptime fmt: []const u8, args: anytype) void {
+    if (platform != .android) {
         std.debug.print(fmt, args);
     } else {
-        //TODO _ = __android.LOGV(fmt.ptr, args); 직접 구현 필요
+        const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch unreachable2();
+        defer __system.allocator.free(str);
+
+        str[str.len - 1] = 0;
+        _ = __android.LOGV(str.ptr, .{});
     }
 }
+pub fn print_with_time(comptime fmt: []const u8, args: anytype) void {
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    defer __system.allocator.free(now_str);
+
+    print("{s} @ " ++ fmt, .{now_str} ++ args);
+}
+pub fn print_debug_with_time(comptime fmt: []const u8, args: anytype) void {
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    defer __system.allocator.free(now_str);
+
+    print_debug("{s} @ " ++ fmt, .{now_str} ++ args);
+}
 pub fn notify() void {
-    if (root.platform == root.XfitPlatform.windows) {
+    if (platform == .windows) {
         _ = __windows.win32.FlashWindow(__windows.hWnd, __windows.TRUE);
     } else {
         print("WARN notify not support mobile platform.\n", .{});
@@ -177,63 +200,129 @@ pub fn notify() void {
 }
 pub fn text_notify(text: []const u8) void {
     _ = text;
-    if (root.platform == root.XfitPlatform.windows) {
+    if (platform == .windows) {
         //TODO 윈도우즈 텍스트 알림 구현
-    } else if (root.platform == root.XfitPlatform.android) {
+    } else if (platform == .android) {
         //TODO 안드로이드 텍스트 알림 구현
     } else {
         @compileError("not support platform");
     }
 }
 
-pub inline fn print_debug(comptime fmt: []const u8, args: anytype) void {
-    if (builtin.mode == std.builtin.OptimizeMode.Debug) {
-        if (root.platform != root.XfitPlatform.android) {
-            std.debug.print(fmt, args);
+pub fn print_debug(comptime fmt: []const u8, args: anytype) void {
+    if (dbg) {
+        if (platform != .android) {
+            std.log.debug(fmt, args);
         } else {
-            //TODO _ = __android.LOGV(fmt.ptr, args); 직접 구현 필요
+            const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch {
+                unreachable2();
+            };
+            defer __system.allocator.free(str);
+
+            str[str.len - 1] = 0;
+            _ = __android.LOGD(str.ptr, .{});
         }
     }
 }
 
-pub inline fn print_error(comptime fmt: []const u8, args: anytype) void {
-    if (root.platform != root.XfitPlatform.android) {
-        std.debug.print(fmt, args);
+pub fn print_error(comptime fmt: []const u8, args: anytype) void {
+    @setCold(true);
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    defer __system.allocator.free(now_str);
+
+    // var fs: file = .{};
+    // defer fs.close();
+    const debug_info = std.debug.getSelfDebugInfo() catch unreachable2();
+    if (platform != .android) {
+        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt, .{now_str} ++ args) catch unreachable2();
+        defer __system.allocator.free(str);
+
+        var str2 = ArrayList(u8).init(__system.allocator);
+        defer str2.deinit();
+        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch unreachable2();
+        std.debug.print("{s}\n{s}", .{ str, str2.items });
+
+        if (error_handling_func != null) error_handling_func.?(str, str2.items);
+        // fs.open("xfit_err.log", .{ .truncate = false }) catch fs.open("xfit_err.log", .{ .exclusive = true }) catch unreachable2();
     } else {
-        //TODO _ = __android.LOGE(fmt.ptr, args); 직접 구현 필요
+        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt ++ " ", .{now_str} ++ args) catch unreachable2();
+        defer __system.allocator.free(str);
+
+        // const path = std.fmt.allocPrint(__system.allocator, "{s}/xfit_err.log" ++ fmt, .{__android.get_file_dir()} ++ args) catch unreachable2();
+        // defer __system.allocator.free(path);
+
+        // fs.open(path, .{ .truncate = false }) catch fs.open(path, .{ .exclusive = true }) catch unreachable2();
+
+        str[str.len - 1] = 0;
+        _ = __android.LOGE(str.ptr, .{});
+
+        var str2 = ArrayList(u8).init(__system.allocator);
+        defer str2.deinit();
+
+        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch unreachable2();
+        str2.append(0) catch unreachable2();
+        _ = __android.LOGE(str2.items.ptr, .{});
+
+        if (error_handling_func != null) error_handling_func.?(str, str2.items);
     }
+    // fs.seekFromEnd(0) catch unreachable2();
+    // _ = fs.write(str) catch unreachable2();
+
+    // std.debug.writeCurrentStackTrace(fs.writer(), debug_info, std.io.tty.detectConfig(fs.hFile), @returnAddress()) catch unreachable2();
+
+    // _ = fs.write("\n") catch unreachable2();
+}
+
+pub inline fn unreachable2() void {
+    if (platform == .android) {
+        std.c.abort();
+        return;
+    }
+    if (builtin.mode == std.builtin.OptimizeMode.Debug or builtin.mode == std.builtin.OptimizeMode.ReleaseSafe) {
+        unreachable;
+    } else {
+        std.process.abort();
+    }
+}
+
+pub inline fn break_or_exit() void {
+    if (platform == .android) {
+        std.c.abort();
+        return;
+    }
+    std.process.abort();
 }
 
 pub inline fn handle_error_msg(errtest: bool, msg: []const u8) void {
     if (!errtest) {
         print_error("ERR {s}\n", .{msg});
-        unreachable;
+        break_or_exit();
+    }
+}
+pub inline fn handle_error_msg2(msg: []const u8) void {
+    print_error("ERR {s}\n", .{msg});
+    break_or_exit();
+}
+
+pub inline fn handle_error2(comptime fmt: []const u8, args: anytype) void {
+    print_error("ERR " ++ fmt ++ "\n", args);
+    break_or_exit();
+}
+
+pub inline fn handle_error(errtest: bool, comptime fmt: []const u8, args: anytype) void {
+    if (!errtest) {
+        print_error("ERR " ++ fmt ++ "\n", args);
+        break_or_exit();
     }
 }
 
-pub inline fn handle_error(errtest: bool, code: i32) void {
-    if (!errtest) {
-        print_error("ERR Fail {d}\n", .{code});
-        unreachable;
-    }
-}
-
-pub inline fn handle_error2(errtest: bool, code: i32, err: anyerror) void {
-    if (!errtest) {
-        print_error("ERR Fail {d} {}\n", .{ code, err });
-        unreachable;
-    }
-}
-
-pub inline fn handle_try_error(errtest: bool, code: i32, err: anyerror) !void {
-    if (!errtest) {
-        print_error("ERR Fail {d} {}\n", .{ code, err });
-        try err;
-    }
+pub inline fn handle_error3(funcion_name: []const u8, err: anytype) void {
+    print_error("ERR {s} {s}\n", .{ funcion_name, @errorName(err) });
+    break_or_exit();
 }
 
 pub inline fn sleep(ns: u64) void {
-    if (root.platform == root.XfitPlatform.windows) {
+    if (platform == .windows) {
         __windows.nanosleep(ns);
     } else {
         std.time.sleep(ns);

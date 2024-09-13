@@ -28,7 +28,7 @@ fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
         }
     }
     system.print_error("ERR find_memory_type.memory_type_not_found\n", .{});
-    unreachable;
+    system.unreachable2();
 }
 
 pub const res_type = enum { buffer, image };
@@ -88,7 +88,7 @@ const vulkan_res = struct {
     fn allocate_memory(_info: *const vk.VkMemoryAllocateInfo, _mem: *vk.VkDeviceMemory) void {
         const result = vk.vkAllocateMemory(__vulkan.vkDevice, _info, null, _mem);
 
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.allocate_memory.vkAllocateMemory code : {d}", .{result});
     }
     /// ! 따로 vulkan_res.init를 호출하지 않는다.
     fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags) vulkan_res {
@@ -97,10 +97,8 @@ const vulkan_res = struct {
             .len = _len,
             .cur = 0,
             .mem = undefined,
-            .is_free = __system.allocator.alloc(bool, _len) catch |err| {
-                system.print_error("ERR : {s}\n", .{@errorName(err)});
-                unreachable;
-            },
+            .is_free = __system.allocator.alloc(bool, _len) catch |err|
+                system.handle_error3("vulkan_res.init.alloc is_free", err),
             .info = .{ .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = _len * _cell_size, .memoryTypeIndex = find_memory_type(type_filter, _prop) },
         };
         allocate_memory(&res.info, &res.mem);
@@ -115,18 +113,18 @@ const vulkan_res = struct {
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => {
                 const result = vk.vkBindBufferMemory(__vulkan.vkDevice, _buf, _mem, self.*.cell_size * _idx);
-                system.handle_error(result == vk.VK_SUCCESS, result);
+                system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.__bind_any.vkBindBufferMemory code : {d}", .{result});
             },
             vk.VkImage => {
                 const result = vk.vkBindImageMemory(__vulkan.vkDevice, _buf, _mem, self.*.cell_size * _idx);
-                system.handle_error(result == vk.VK_SUCCESS, result);
+                system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.__bind_any.vkBindImageMemory code : {d}", .{result});
             },
             else => @compileError("__bind_any invaild res type."),
         }
     }
     pub fn map(self: *vulkan_res, _buf_idx: u64, _out_data: *?*anyopaque) void {
         const result = vk.vkMapMemory(__vulkan.vkDevice, self.*.mem, _buf_idx * self.*.cell_size, self.*.cell_size, 0, _out_data);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.map.vkMapMemory code : {d}", .{result});
     }
     pub fn unmap(self: *vulkan_res) void {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
@@ -137,7 +135,7 @@ const vulkan_res = struct {
         while (!self.*.is_free[self.*.cur]) {
             self.*.cur += 1;
             count += 1;
-            if (count >= self.*.len) unreachable; //TODO 버퍼 꽉찰시 버퍼 확장 또는 새버퍼에 넣기
+            if (count >= self.*.len) system.unreachable2(); //TODO 버퍼 꽉찰시 버퍼 확장 또는 새버퍼에 넣기
             if (self.*.cur >= self.*.len) self.*.cur = 0;
         }
         __bind_any(self, self.*.mem, _buf, self.*.cur);
@@ -171,7 +169,7 @@ buffer_ids: ArrayList(*vulkan_res),
 
 fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *usize) *vulkan_res {
     var res: ?*vulkan_res = null;
-    for (self.*.buffer_ids.items) |value| {
+    for (self.buffer_ids.items) |value| {
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
         if (_mem_require.*.size > value.*.cell_size or (_mem_require.*.size > MINIMUM_SIZE and _mem_require.*.size < @as(u64, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
@@ -181,15 +179,15 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
     }
     if (res == null) {
         res = self.*.buffers.create() catch |err| {
-            system.print_error("ERR : {s}\n", .{@errorName(err)});
-            unreachable;
+            system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffers.create\n", .{@errorName(err)});
+            system.unreachable2();
         };
         res.?.* = vulkan_res.init(math.round_up(_mem_require.*.size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop);
 
         _out_idx.* = res.?.*.bind_any(_res);
         self.*.buffer_ids.append(res.?) catch |err| {
-            system.print_error("ERR : {s}\n", .{@errorName(err)});
-            unreachable;
+            system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
+            system.unreachable2();
         };
     }
     return res.?;
@@ -206,7 +204,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
     if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
         const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = buf_info.size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
         result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_buffer.vkCreateBuffer staging_buf code : {d}", .{result});
 
         vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
 
@@ -219,7 +217,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
         staging_alloc.*.unmap();
     }
     result = vk.vkCreateBuffer(__vulkan.vkDevice, &buf_info, null, &_out_vulkan_buffer_node.*.res);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_buffer.vkCreateBuffer _out_vulkan_buffer_node.*.res code : {d}", .{result});
 
     vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, _out_vulkan_buffer_node.*.res, &mem_require);
 
@@ -247,7 +245,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     img_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
     result = vk.vkCreateImage(__vulkan.vkDevice, &img_info, null, &_out_vulkan_image_node.*.res);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_buffer.vkCreateBuffer _out_vulkan_buffer_node.*.res code : {d}", .{result});
 
     vk.vkGetImageMemoryRequirements(__vulkan.vkDevice, _out_vulkan_image_node.*.res, &mem_require);
     const img_size = mem_require.size;
@@ -273,11 +271,11 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
         },
     };
     result = vk.vkCreateImageView(__vulkan.vkDevice, &image_view_create_info, null, &_out_vulkan_image_node.*.__image_view);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateImageView _out_vulkan_image_node.*.__image_view : {d}", .{result});
 
     const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = img_size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
     result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateBuffer staging_buf : {d}", .{result});
 
     vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
 

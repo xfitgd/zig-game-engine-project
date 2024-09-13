@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const root = @import("root");
-
 const __android = @import("__android.zig");
 const __windows = @import("__windows.zig");
 const window = @import("window.zig");
@@ -10,7 +8,7 @@ const system = @import("system.zig");
 const math = @import("math.zig");
 
 pub fn key() type {
-    if (root.platform == root.XfitPlatform.windows) {
+    if (system.platform == .windows) {
         return enum(u16) {
             A = 'A',
             B = 'B',
@@ -122,7 +120,7 @@ pub fn key() type {
             Alt = __windows.win32.VK_MENU,
             _,
         };
-    } else if (root.platform == root.XfitPlatform.android) {
+    } else if (system.platform == .android) {
         return enum(u16) {
             Unknown = __android.android.AKEYCODE_UNKNOWN,
 

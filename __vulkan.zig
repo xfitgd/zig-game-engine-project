@@ -10,8 +10,6 @@ const matrix = math.matrix;
 const graphics = @import("graphics.zig");
 const __system = @import("__system.zig");
 
-const root = @import("root");
-
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 pub var vk_allocator: __vulkan_allocator = undefined;
 
@@ -50,7 +48,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
     if (capabilities.currentExtent.width != std.math.maxInt(u32)) {
         return capabilities.currentExtent;
     } else {
-        if (root.platform == root.XfitPlatform.windows) {
+        if (system.platform == .windows) {
             var rect: __windows.RECT = undefined;
 
             _ = __windows.win32.GetClientRect(__windows.hWnd, &rect);
@@ -59,7 +57,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
             width = std.math.clamp(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
             height = std.math.clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
             return vk.VkExtent2D{ .width = width, .height = height };
-        } else if (root.platform == root.XfitPlatform.android) {
+        } else if (system.platform == .android) {
             return vk.VkExtent2D{ .width = __android.get_device_width(), .height = __android.get_device_height() };
         } else {
             @compileError("not support platform");
@@ -127,7 +125,7 @@ fn createShaderModule(code: []const u8) vk.VkShaderModule {
     var shaderModule: vk.VkShaderModule = undefined;
     const result = vk.vkCreateShaderModule(vkDevice, &createInfo, null, &shaderModule);
 
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.createShaderModule.vkCreateShaderModule : {d}", .{result});
 
     return shaderModule;
 }
@@ -136,7 +134,7 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
     const beginInfo: vk.VkCommandBufferBeginInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = 0, .pInheritanceInfo = null };
 
     var result = vk.vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
 
     const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
 
@@ -182,7 +180,7 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
     vk.vkCmdEndRenderPass(commandBuffer);
     result = vk.vkEndCommandBuffer(commandBuffer);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
 }
 
 pub fn vkCreateDebugUtilsMessengerEXT(instance: vk.VkInstance, pCreateInfo: ?*const vk.VkDebugUtilsMessengerCreateInfoEXT, pAllocator: ?*const vk.VkAllocationCallbacks, pDebugMessenger: ?*vk.VkDebugUtilsMessengerEXT) vk.VkResult {
@@ -234,25 +232,23 @@ pub fn vulkan_start() void {
     //     try extension_names.append(@ptrCast(&extensions[j].extension_name[0]));
     // }
 
-    extension_names.append("VK_KHR_surface") catch unreachable;
+    extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME)", e);
     var validation_layer_support = false;
     const validation_layer_name = "VK_LAYER_KHRONOS_validation";
     var result: c_int = undefined;
 
-    if (root.platform == root.XfitPlatform.windows) {
+    if (system.platform == .windows) {
         if (builtin.mode == std.builtin.OptimizeMode.Debug) {
             var layer_count: u32 = undefined;
             result = vk.vkEnumerateInstanceLayerProperties(&layer_count, null);
-            system.handle_error(result == vk.VK_SUCCESS, result);
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumerateInstanceLayerProperties null : {d}", .{result});
 
-            const available_layers = __system.allocator.alloc(vk.VkLayerProperties, layer_count) catch {
-                system.print_error("ERR vulkan_start.allocator.alloc(vk.VkLayerProperties) OutOfMemory\n", .{});
-                unreachable;
-            };
+            const available_layers = __system.allocator.alloc(vk.VkLayerProperties, layer_count) catch
+                system.handle_error_msg2("vulkan_start.allocator.alloc(vk.VkLayerProperties) OutOfMemory");
             defer __system.allocator.free(available_layers);
 
             result = vk.vkEnumerateInstanceLayerProperties(&layer_count, available_layers.ptr);
-            system.handle_error(result == vk.VK_SUCCESS, result);
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumerateInstanceLayerProperties available_layers.ptr : {d}", .{result});
             var layer_found = false;
 
             for (available_layers) |*value| {
@@ -262,15 +258,15 @@ pub fn vulkan_start() void {
                 }
             }
             if (!layer_found) {
-                system.print("WARN VK_LAYER_KHRONOS_validation not found disable vulkan Debug feature.\n", .{});
+                system.print_error("WARN VK_LAYER_KHRONOS_validation not found disable vulkan Debug feature.\n", .{});
             } else {
                 validation_layer_support = true;
-                extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME) catch unreachable;
+                extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME)", e);
             }
         }
-        extension_names.append("VK_KHR_win32_surface") catch unreachable;
-    } else if (root.platform == root.XfitPlatform.android) {
-        extension_names.append("VK_KHR_android_surface") catch unreachable;
+        extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME)", e);
+    } else if (system.platform == .android) {
+        extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)", e);
     } else {
         @compileError("not support platform");
     }
@@ -285,7 +281,7 @@ pub fn vulkan_start() void {
     };
 
     result = vk.vkCreateInstance(&createInfo, null, &vkInstance);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateInstance : {d}", .{result});
 
     if (validation_layer_support) {
         const create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{
@@ -296,12 +292,12 @@ pub fn vulkan_start() void {
             .pUserData = null,
         };
         result = vkCreateDebugUtilsMessengerEXT(vkInstance, &create_info, null, &vkDebugMessenger);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDebugUtilsMessengerEXT : {d}", .{result});
     }
 
-    if (root.platform == root.XfitPlatform.windows) {
+    if (system.platform == .windows) {
         __windows.vulkan_windows_start(vkInstance, &vkSurface);
-    } else if (root.platform == root.XfitPlatform.android) {
+    } else if (system.platform == .android) {
         __android.vulkan_android_start(vkInstance, &vkSurface);
     } else {
         @compileError("not support platform");
@@ -309,25 +305,21 @@ pub fn vulkan_start() void {
 
     var deviceCount: u32 = 0;
     result = vk.vkEnumeratePhysicalDevices(vkInstance, &deviceCount, null);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumeratePhysicalDevices : {d}", .{result});
 
-    //system.print("{d}\n", .{deviceCount});
-    system.handle_error(deviceCount != 0, 0);
-    vk_physical_devices = __system.allocator.alloc(vk.VkPhysicalDevice, deviceCount) catch {
-        system.print_error("ERR vulkan_start.allocator.alloc(vk.VkPhysicalDevice) OutOfMemory\n", .{});
-        unreachable;
-    };
+    //system.print_debug("deviceCount : {d}", .{deviceCount});
+    system.handle_error(deviceCount != 0, "__vulkan.vulkan_start.deviceCount 0", .{});
+    vk_physical_devices = __system.allocator.alloc(vk.VkPhysicalDevice, deviceCount) catch
+        system.handle_error_msg2("vulkan_start.allocator.alloc(vk.VkPhysicalDevice) OutOfMemory");
 
     result = vk.vkEnumeratePhysicalDevices(vkInstance, &deviceCount, vk_physical_devices.ptr);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumeratePhysicalDevices vk_physical_devices.ptr : {d}", .{result});
 
     vk.vkGetPhysicalDeviceQueueFamilyProperties(vk_physical_devices[0], &queueFamiliesCount, null);
-    system.handle_error(queueFamiliesCount != 0, 0);
+    system.handle_error(queueFamiliesCount != 0, "__vulkan.vulkan_start.queueFamiliesCount 0", .{});
 
-    const queueFamilies = __system.allocator.alloc(vk.VkQueueFamilyProperties, queueFamiliesCount) catch {
-        system.print_error("ERR vulkan_start.allocator.alloc(vk.VkQueueFamilyProperties) OutOfMemory\n", .{});
-        unreachable;
-    };
+    const queueFamilies = __system.allocator.alloc(vk.VkQueueFamilyProperties, queueFamiliesCount) catch
+        system.handle_error_msg2("vulkan_start.allocator.alloc(vk.VkQueueFamilyProperties) OutOfMemory");
     defer __system.allocator.free(queueFamilies);
 
     vk.vkGetPhysicalDeviceQueueFamilyProperties(vk_physical_devices[0], &queueFamiliesCount, queueFamilies.ptr);
@@ -339,7 +331,7 @@ pub fn vulkan_start() void {
         }
         var presentSupport: vk.VkBool32 = 0;
         result = vk.vkGetPhysicalDeviceSurfaceSupportKHR(vk_physical_devices[0], i, vkSurface, &presentSupport);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkGetPhysicalDeviceSurfaceSupportKHR : {d}", .{result});
 
         if (presentSupport != 0) {
             presentFamilyIndex = i;
@@ -378,7 +370,7 @@ pub fn vulkan_start() void {
         .enabledExtensionCount = 1,
     };
     result = vk.vkCreateDevice(vk_physical_devices[0], &deviceCreateInfo, null, &vkDevice);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDevice : {d}", .{result});
 
     if (graphicsFamilyIndex == presentFamilyIndex) {
         vk.vkGetDeviceQueue(vkDevice, graphicsFamilyIndex, 0, &vkGraphicsQueue);
@@ -411,11 +403,11 @@ pub fn vulkan_start() void {
         .borderColor = vk.VK_BORDER_COLOR_INT_OPAQUE_WHITE,
     };
     result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &linear_sampler);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler linear_sampler : {d}", .{result});
 
     sampler_info.mipmapMode = vk.VK_SAMPLER_MIPMAP_MODE_NEAREST;
     result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &nearest_sampler);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler nearest_sampler : {d}", .{result});
 
     const dynamicStates = [_]vk.VkDynamicState{ vk.VK_DYNAMIC_STATE_VIEWPORT, vk.VK_DYNAMIC_STATE_SCISSOR };
 
@@ -536,7 +528,7 @@ pub fn vulkan_start() void {
     };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPass : {d}", .{result});
 
     //create_shape_shader_stages
     shape_vert_shader = createShaderModule(shape_vert);
@@ -607,7 +599,7 @@ pub fn vulkan_start() void {
             .pBindings = &uboLayoutBinding,
         };
         result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &color_2d_pipeline_set.descriptorSetLayout);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout color_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
 
         const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -618,7 +610,7 @@ pub fn vulkan_start() void {
         };
 
         result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &color_2d_pipeline_set.pipelineLayout);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout color_2d_pipeline_set.pipelineLayout : {d}", .{result});
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
@@ -659,7 +651,7 @@ pub fn vulkan_start() void {
         };
 
         result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline_set.pipeline : {d}", .{result});
     }
     //create_tex_2d_pipeline
     {
@@ -699,7 +691,7 @@ pub fn vulkan_start() void {
             .pBindings = &uboLayoutBinding,
         };
         result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &tex_2d_pipeline_set.descriptorSetLayout);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout tex_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
 
         const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -710,7 +702,7 @@ pub fn vulkan_start() void {
         };
 
         result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &tex_2d_pipeline_set.pipelineLayout);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout tex_2d_pipeline_set.pipelineLayout : {d}", .{result});
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
@@ -750,7 +742,7 @@ pub fn vulkan_start() void {
         };
 
         result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &tex_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines tex_2d_pipeline_set.pipeline : {d}", .{result});
     }
 
     create_framebuffer();
@@ -762,7 +754,7 @@ pub fn vulkan_start() void {
     };
 
     result = vk.vkCreateCommandPool(vkDevice, &poolInfo, null, &vkCommandPool);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateCommandPool vkCommandPool : {d}", .{result});
 
     const allocInfo: vk.VkCommandBufferAllocateInfo = .{
         .commandPool = vkCommandPool,
@@ -772,18 +764,18 @@ pub fn vulkan_start() void {
     };
 
     result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, @ptrCast(&vkCommandBuffer));
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkAllocateCommandBuffers vkCommandPool : {d}", .{result});
 
     const semaphoreInfo: vk.VkSemaphoreCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
     const fenceInfo: vk.VkFenceCreateInfo = .{ .flags = vk.VK_FENCE_CREATE_SIGNALED_BIT, .sType = vk.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 
     result = vk.vkCreateSemaphore(vkDevice, &semaphoreInfo, null, &vkImageAvailableSemaphore);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSemaphore vkImageAvailableSemaphore : {d}", .{result});
     result = vk.vkCreateSemaphore(vkDevice, &semaphoreInfo, null, &vkRenderFinishedSemaphore);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSemaphore vkRenderFinishedSemaphore : {d}", .{result});
 
     result = vk.vkCreateFence(vkDevice, &fenceInfo, null, &vkInFlightFence);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateFence vkInFlightFence : {d}", .{result});
 }
 
 pub fn vulkan_destroy() void {
@@ -836,10 +828,8 @@ fn cleanup_swapchain() void {
 }
 
 fn create_framebuffer() void {
-    vk_swapchain_frame_buffers = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch {
-        system.print_error("ERR create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory\n", .{});
-        unreachable;
-    };
+    vk_swapchain_frame_buffers = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch
+        system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory");
 
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
@@ -855,7 +845,7 @@ fn create_framebuffer() void {
         };
 
         const result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer.vkCreateFence vkCreateFramebuffer : {d}", .{result});
     }
 }
 
@@ -864,33 +854,31 @@ fn create_swapchain_and_imageviews() void {
     var result: c_int = undefined;
     var formatCount: u32 = 0;
     result = vk.vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_devices[0], vkSurface, &formatCount, null);
-    system.handle_error(result == vk.VK_SUCCESS, result);
-    system.handle_error(formatCount != 0, 0);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceFormatsKHR : {d}", .{result});
+    system.handle_error_msg(formatCount != 0, "__vulkan.create_swapchain_and_imageviews.formatCount 0");
 
-    formats = __system.allocator.alloc(vk.VkSurfaceFormatKHR, formatCount) catch {
-        system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkSurfaceFormatKHR) OutOfMemory\n", .{});
-        unreachable;
-    };
+    formats = __system.allocator.alloc(vk.VkSurfaceFormatKHR, formatCount) catch
+        system.handle_error_msg2("create_swapchain_and_imageviews.allocator.alloc(vk.VkSurfaceFormatKHR) OutOfMemory");
+
     result = vk.vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_devices[0], vkSurface, &formatCount, formats.ptr);
-    system.handle_error(result == vk.VK_SUCCESS, result);
-    system.handle_error(formatCount != 0, 0);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceFormatsKHR formats.ptr : {d}", .{result});
+    system.handle_error_msg(formatCount != 0, "__vulkan.create_swapchain_and_imageviews.formatCount 0(2)");
 
     var presentModeCount: u32 = 0;
     result = vk.vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_devices[0], vkSurface, &presentModeCount, null);
-    system.handle_error(result == vk.VK_SUCCESS, result);
-    system.handle_error(presentModeCount != 0, 0);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfacePresentModesKHR : {d}", .{result});
+    system.handle_error_msg(presentModeCount != 0, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfacePresentModesKHR presentModeCount 0");
 
     const presentModes = __system.allocator.alloc(vk.VkPresentModeKHR, presentModeCount) catch {
-        system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkPresentModeKHR) OutOfMemory\n", .{});
-        unreachable;
+        system.handle_error_msg2("create_swapchain_and_imageviews.allocator.alloc(vk.VkPresentModeKHR) OutOfMemory");
     };
     defer __system.allocator.free(presentModes);
 
     result = vk.vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_devices[0], vkSurface, &presentModeCount, presentModes.ptr);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfacePresentModesKHR presentModes.ptr : {d}", .{result});
 
     result = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_physical_devices[0], vkSurface, @ptrCast(&surfaceCap));
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceCapabilitiesKHR : {d}", .{result});
 
     vkExtent = chooseSwapExtent(surfaceCap);
     format = chooseSwapSurfaceFormat(formats);
@@ -912,32 +900,27 @@ fn create_swapchain_and_imageviews() void {
     }
 
     result = vk.vkCreateSwapchainKHR(vkDevice, &swapChainCreateInfo, null, &vkSwapchain);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkCreateSwapchainKHR : {d}", .{result});
 
     var swapchain_image_count: u32 = 0;
 
     result = vk.vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &swapchain_image_count, null);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetSwapchainImagesKHR : {d}", .{result});
 
-    const swapchain_images = __system.allocator.alloc(vk.VkImage, swapchain_image_count) catch {
-        system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkImage) OutOfMemory\n", .{});
-        unreachable;
-    };
+    const swapchain_images = __system.allocator.alloc(vk.VkImage, swapchain_image_count) catch
+        system.handle_error_msg2("__vulkan.create_swapchain_and_imageviews.allocator.alloc(vk.VkImage) OutOfMemory");
     defer __system.allocator.free(swapchain_images);
 
     result = vk.vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &swapchain_image_count, swapchain_images.ptr);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetSwapchainImagesKHR swapchain_images.ptr : {d}", .{result});
 
-    vk_swapchain_image_views = __system.allocator.alloc(vk.VkImageView, swapchain_image_count) catch {
-        system.print_error("ERR create_swapchain_and_imageviews.allocator.alloc(vk.VkImageView) OutOfMemory\n", .{});
-        unreachable;
-    };
+    vk_swapchain_image_views = __system.allocator.alloc(vk.VkImageView, swapchain_image_count) catch |e| system.handle_error3("vulkan_start.vk_swapchain_image_views alloc", e);
 
     var i: usize = 0;
     while (i < swapchain_image_count) : (i += 1) {
         const image_view_createInfo: vk.VkImageViewCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = swapchain_images[i], .viewType = vk.VK_IMAGE_VIEW_TYPE_2D, .format = format.format, .components = .{ .r = vk.VK_COMPONENT_SWIZZLE_IDENTITY, .g = vk.VK_COMPONENT_SWIZZLE_IDENTITY, .b = vk.VK_COMPONENT_SWIZZLE_IDENTITY, .a = vk.VK_COMPONENT_SWIZZLE_IDENTITY }, .subresourceRange = .{ .aspectMask = vk.VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 } };
         result = vk.vkCreateImageView(vkDevice, &image_view_createInfo, null, &vk_swapchain_image_views[i]);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkCreateImageView({d}) : {d}", .{ i, result });
     }
 }
 
@@ -949,17 +932,17 @@ pub fn begin_single_time_commands() vk.VkCommandBuffer {
     };
     var buf: vk.VkCommandBuffer = undefined;
     var result = vk.vkAllocateCommandBuffers(vkDevice, &alloc_info, &buf);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.begin_single_time_commands.vkAllocateCommandBuffers : {d}", .{result});
 
     const begin: vk.VkCommandBufferBeginInfo = .{ .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
     result = vk.vkBeginCommandBuffer(buf, &begin);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.begin_single_time_commands.vkBeginCommandBuffer : {d}", .{result});
 
     return buf;
 }
 pub fn end_single_time_commands(buf: vk.VkCommandBuffer) void {
     const result = vk.vkEndCommandBuffer(buf);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.end_single_time_commands.vkEndCommandBuffer : {d}", .{result});
     queue_submit_and_wait(&[_]vk.VkCommandBuffer{buf});
 }
 
@@ -971,9 +954,9 @@ pub fn queue_submit_and_wait(bufs: []const vk.VkCommandBuffer) void {
     };
 
     var result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, null);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueSubmit : {d}", .{result});
     result = vk.vkQueueWaitIdle(vkGraphicsQueue);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueWaitIdle : {d}", .{result});
 }
 
 pub fn copy_buffer_to_image(src_buf: vk.VkBuffer, dst_img: vk.VkImage, width: c_uint, height: c_uint, depth: c_uint) void {
@@ -1011,11 +994,11 @@ pub fn copy_buffer(srcBuffer: vk.VkBuffer, dstBuffer: vk.VkBuffer, size: vk.VkDe
 }
 
 pub fn recreate_swapchain(_recreate_window: bool) void {
-    if (root.platform == root.XfitPlatform.android and _recreate_window) {
+    if (system.platform == .android and _recreate_window) {
         __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
     }
     const result = vk.vkDeviceWaitIdle(vkDevice);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recreate_swapchain.vkDeviceWaitIdle : {d}", .{result});
 
     cleanup_swapchain();
     create_swapchain_and_imageviews();
@@ -1024,7 +1007,7 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
 
 pub fn wait_for_fences() void {
     const result = vk.vkWaitForFences(vkDevice, 1, @ptrCast(&vkInFlightFence), vk.VK_TRUE, std.math.maxInt(u64));
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
 }
 
 pub fn drawFrame() void {
@@ -1037,13 +1020,13 @@ pub fn drawFrame() void {
         recreate_swapchain(false);
         return;
     }
-    system.handle_error(!(result != vk.VK_SUCCESS and result != vk.VK_SUBOPTIMAL_KHR), result);
+    system.handle_error(!(result != vk.VK_SUCCESS and result != vk.VK_SUBOPTIMAL_KHR), "__vulkan.drawFrame.vkAcquireNextImageKHR : {d}", .{result});
 
     result = vk.vkResetFences(vkDevice, 1, @ptrCast(&vkInFlightFence));
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});
 
     result = vk.vkResetCommandBuffer(vkCommandBuffer, 0);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetCommandBuffer : {d}", .{result});
     recordCommandBuffer(vkCommandBuffer, imageIndex);
 
     const waitSemaphores = [_]vk.VkSemaphore{vkImageAvailableSemaphore};
@@ -1052,7 +1035,7 @@ pub fn drawFrame() void {
 
     const submitInfo: vk.VkSubmitInfo = .{ .waitSemaphoreCount = 1, .commandBufferCount = 1, .signalSemaphoreCount = 1, .pWaitSemaphores = &waitSemaphores, .pWaitDstStageMask = &waitStages, .pCommandBuffers = &vkCommandBuffer, .pSignalSemaphores = &signalSemaphores };
     result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, vkInFlightFence);
-    system.handle_error(result == vk.VK_SUCCESS, result);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueueSubmit : {d}", .{result});
 
     const swapChains = [_]vk.VkSwapchainKHR{vkSwapchain};
 
@@ -1063,7 +1046,7 @@ pub fn drawFrame() void {
     if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
         recreate_swapchain(false);
     } else {
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
     }
 }
 
@@ -1101,7 +1084,7 @@ pub fn transition_image_layout(image: vk.VkImage, image_info: *vk.VkImageCreateI
         source_stage = vk.VK_PIPELINE_STAGE_TRANSFER_BIT;
         destination_stage = vk.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else {
-        system.print_error("ERR : unsupported layout transition!\n", .{});
+        system.handle_error_msg2("__vulkan.transition_image_layout unsupported layout transition!");
     }
 
     vk.vkCmdPipelineBarrier(buf, source_stage, destination_stage, 0, 0, null, 0, null, 1, &barrier);

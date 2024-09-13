@@ -98,7 +98,7 @@ pub fn loop() void {
     root.xfit_update();
     __vulkan.drawFrame();
 
-    //system.print_debug("rendering {d}\n", .{system.delta_time()});
+    //system.print_debug("rendering {d}", .{system.delta_time()});
 }
 
 pub fn destroy() void {

@@ -6,8 +6,7 @@ const system = @import("system.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
 
-const builtin = @import("builtin");
-const dbg = builtin.mode == .Debug;
+const dbg = system.dbg;
 
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
@@ -81,8 +80,7 @@ fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
             return i;
         }
     }
-    system.print_error("ERR find_memory_type.memory_type_not_found\n", .{});
-    unreachable;
+    system.handle_error_msg2("find_memory_type.memory_type_not_found");
 }
 
 pub const ivertices = struct {
@@ -242,7 +240,7 @@ pub const projection = struct {
         try res.init_matrix(_view_type, fov);
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("projection alloc __check_alloc", e);
         return res;
     }
     ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출
@@ -251,7 +249,7 @@ pub const projection = struct {
         try res.init_matrix2(_view_type, fov, near, far);
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("projection alloc __check_alloc 2", e);
         return res;
     }
     pub fn init_matrix(self: *Self, _view_type: view_type, fov: f32) matrix_error!void {
@@ -302,7 +300,7 @@ pub const camera = struct {
         var res = Self{ .view = matrix.lookAtLh(eyepos, focuspos, updir) };
         build(&res, .readwrite_cpu);
 
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("camera alloc __check_alloc", e);
         return res;
     }
     pub inline fn is_inited(self: *Self) bool {
@@ -428,8 +426,7 @@ pub const iobject = struct {
     ///transform에 포함된 버퍼 값이 변경될때마다 호출한다. 리소스만 변경시에는 대신 map_update 호출
     pub fn update(self: *Self) void {
         if (!self.*.is_build()) {
-            system.print_error("ERR : need transform build and need transform.camera, projection build(invaild)\n", .{});
-            unreachable;
+            system.handle_error_msg2("iobject update need transform build and need transform.camera, projection build(invaild)");
         }
         const buffer_info = [3]vk.VkDescriptorBufferInfo{
             vk.VkDescriptorBufferInfo{
@@ -493,26 +490,23 @@ pub const iobject = struct {
             };
             vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite2.len, &descriptorWrite2, 0, null);
         } else {
-            system.print_error("ERR : invaild pipeline\n", .{});
-            unreachable;
+            system.handle_error_msg2("iobject update invaild pipeline");
         }
     }
 
     pub fn init() Self {
         var res: Self = .{};
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch unreachable;
+        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("iobject alloc __check_alloc", e);
         return res;
     }
 
     pub fn build(self: *Self, _flag: write_flag) void {
         _ = _flag;
         if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.is_inited() or !self.*.transform.projection.?.*.is_inited()) {
-            system.print_error("ERR : need transform.camera, projection build(invaild)\n", .{});
-            unreachable;
+            system.handle_error_msg2("iobject build need transform.camera, projection build(invaild)");
         }
         if (self.*.get_ivertices(self) == null) {
-            system.print_error("ERR : need vertices\n", .{});
-            unreachable;
+            system.handle_error_msg2("iobject build need vertices");
         }
 
         var result: vk.VkResult = undefined;
@@ -530,11 +524,10 @@ pub const iobject = struct {
                 .maxSets = 1,
             };
             result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-            system.handle_error(result == vk.VK_SUCCESS, result);
+            system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkCreateDescriptorPool(color_2d_pipeline_set) : {d}", .{result});
         } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
             if (self.*.get_texture(self) == null) {
-                system.print_error("ERR : need texture\n", .{});
-                unreachable;
+                system.handle_error_msg2("iobject build need texture");
             }
             clean(self);
 
@@ -552,10 +545,9 @@ pub const iobject = struct {
                 .maxSets = 1,
             };
             result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-            system.handle_error(result == vk.VK_SUCCESS, result);
+            system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
         } else {
-            system.print_error("ERR : invaild pipeline\n", .{});
-            unreachable;
+            system.handle_error_msg2("iobject build invaild pipeline");
         }
         const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -564,7 +556,7 @@ pub const iobject = struct {
             .pSetLayouts = &self.*.get_ivertices(self).?.*.pipeline.*.descriptorSetLayout,
         };
         result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, result);
+        system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkAllocateDescriptorSets : {d}", .{result});
 
         self.*.transform.build();
 
@@ -637,8 +629,8 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
 }
 
 pub fn make_shape2d_data(_inout_vertex: anytype, _inout_idx: anytype, _lines: []line) geometry.line_error!void {
-    _inout_vertex.*.array.resize(0) catch unreachable;
-    _inout_idx.*.array.resize(0) catch unreachable;
+    _inout_vertex.*.array.resize(0) catch |e| system.handle_error3("make_shape2d_data _inout_vertex.*.array.resize(0)", e);
+    _inout_idx.*.array.resize(0) catch |e| system.handle_error3("make_shape2d_data _inout_idx.*.array.resize(0)", e);
     for (_lines) |*value| {
         try value.*.compute_curve(&_inout_vertex.*.array, &_inout_idx.*.array);
     }

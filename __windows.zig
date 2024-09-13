@@ -47,7 +47,7 @@ pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
         .flags = 0,
     };
     const result = __vulkan.vk.vkCreateWin32SurfaceKHR(vkInstance, &win32SurfaceCreateInfo, null, vkSurface);
-    if (result != __vulkan.vk.VK_SUCCESS) unreachable;
+    system.handle_error(result == __vulkan.vk.VK_SUCCESS, "vulkan_windows_start.vkCreateWin32SurfaceKHR {d}", .{result});
 }
 
 pub fn system_windows_start() void {
@@ -83,7 +83,7 @@ pub fn system_windows_start() void {
         __system.platform_ver.version.windows.version = if (serverOS) system.platform_version.windows_version.WindowsServer2016 else system.platform_version.windows_version.Windows10;
     } else {
         __system.platform_ver.version.windows.version = system.platform_version.windows_version.Unknown;
-        system.print_debug("WARN system_windows_start UNKNOWN platform.\n", .{});
+        system.print_debug("WARN system_windows_start UNKNOWN platform.", .{});
     }
 
     _ = win32.EnumDisplayMonitors(null, null, MonitorEnumProc, 0);
@@ -91,12 +91,9 @@ pub fn system_windows_start() void {
 }
 
 pub fn windows_start() void {
-    hInstance = win32.GetModuleHandleA(null) orelse unreachable;
+    hInstance = win32.GetModuleHandleA(null) orelse system.handle_error2("windows_start.GetModuleHandleA {d}", .{win32.GetLastError()});
 
-    timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse {
-        system.print_error("ERR windows_start.CreateWaitableTimerA failed Code {}\n", .{win32.GetLastError()});
-        unreachable;
-    };
+    timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse system.handle_error2("windows_start.CreateWaitableTimerA {d}", .{win32.GetLastError()});
 
     const CLASS_NAME = "Xfit Window Class";
 
@@ -150,10 +147,7 @@ pub fn windows_start() void {
         }
     }
 
-    hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse {
-        system.print_error("ERR windows_start.CreateWindowEx hWnd is null. code : {}\n", .{win32.GetLastError()});
-        unreachable;
-    };
+    hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse system.handle_error2("windows_start.CreateWindowExA {d}", .{win32.GetLastError()});
 
     // const raw_input = [2]win32.RAWINPUTDEVICE{
     //     .{
@@ -170,21 +164,14 @@ pub fn windows_start() void {
     //     },
     // };
 
-    // if (win32.RegisterRawInputDevices(&raw_input, 2, @sizeOf(win32.RAWINPUTDEVICE)) == FALSE) {
-    //     const err = win32.GetLastError();
-    //     system.print("ERR {}\n", .{err});
-    //     unreachable;
-    // }
+    // if (win32.RegisterRawInputDevices(&raw_input, 2, @sizeOf(win32.RAWINPUTDEVICE)) == FALSE) system.handle_error2("windows_start.RegisterRawInputDevices {d}", .{win32.GetLastError()});
     // TODO JoyStick Needed
 
     _ = win32.ShowWindow(hWnd, if (__system.init_set.screen_mode == system.screen_mode.WINDOW) @intFromEnum(__system.init_set.window_show) else win32.SW_MAXIMIZE);
 
     _ = win32.RegisterTouchWindow(hWnd, 0);
 
-    _ = std.Thread.spawn(.{}, render_thread, .{}) catch |err| {
-        system.print_error("ERR windows_start.std.Thread.spawn(render_thread) Failed. msg : {}\n", .{err});
-        unreachable;
-    };
+    _ = std.Thread.spawn(.{}, render_thread, .{}) catch |e| system.handle_error3("windows_start.std.Thread.spawn", e);
 }
 
 fn render_thread() void {
@@ -268,10 +255,7 @@ pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
 pub fn get_window_state() window.window_state {
     var pwn: win32.WINDOWPLACEMENT = undefined;
     pwn.length = @sizeOf(win32.WINDOWPLACEMENT);
-    if (win32.GetWindowPlacement(hWnd, &pwn) == FALSE) {
-        system.print_error("ERR get_window_state.GetWindowPlacement FAILED code : {}\n", .{win32.GetLastError()});
-        unreachable;
-    }
+    if (win32.GetWindowPlacement(hWnd, &pwn) == FALSE) system.handle_error2("get_window_state.GetWindowPlacement {d}", .{win32.GetLastError()});
     if (pwn.showCmd == win32.SW_MAXIMIZE) {
         return .Maximized;
     }
@@ -362,7 +346,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (wParam < __system.KEY_SIZE) {
                 if (!__system.keys[wParam].load(std.builtin.AtomicOrder.monotonic)) {
                     __system.keys[wParam].store(true, std.builtin.AtomicOrder.monotonic);
-                    //system.print_debug("input key_down {d}\n", .{wParam});
+                    //system.print_debug("input key_down {d}", .{wParam});
                     if (__system.key_down_func != null) __system.key_down_func.?(@enumFromInt(wParam));
                 }
             } else {
@@ -373,7 +357,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
         win32.WM_KEYUP => {
             if (wParam < __system.KEY_SIZE) {
                 __system.keys[wParam].store(false, std.builtin.AtomicOrder.monotonic);
-                //system.print_debug("input key_up {d}\n", .{wParam});
+                //system.print_debug("input key_up {d}", .{wParam});
                 if (__system.key_up_func != null) __system.key_up_func.?(@enumFromInt(wParam));
             } else {
                 system.print("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
@@ -474,10 +458,7 @@ fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor:
 
     _ = win32.GetMonitorInfoA(hMonitor, @ptrCast(&monitor_info));
 
-    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.recti.init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(__system.allocator) }) catch {
-        system.print_error("ERR MonitorEnumProc.monitors.append\n", .{});
-        unreachable;
-    };
+    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.recti.init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(__system.allocator) }) catch |e| system.handle_error3("MonitorEnumProc __system.monitors.append", e);
     var last = &__system.monitors.items[__system.monitors.items.len - 1];
     last.*.is_primary = (monitor_info.monitorInfo.dwFlags & win32.MONITORINFOF_PRIMARY) != 0;
     if (last.*.is_primary) __system.primary_monitor = last;
@@ -487,10 +468,7 @@ fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor:
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
     dm.dmSize = @sizeOf(win32.DEVMODEA);
     while (win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), i, &dm) != FALSE) : (i += 1) {
-        last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ dm.dmPelsWidth, dm.dmPelsHeight } }) catch {
-            system.print_error("ERR MonitorEnumProc.last.*.resolutions.append\n", .{});
-            unreachable;
-        };
+        last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ dm.dmPelsWidth, dm.dmPelsHeight } }) catch |e| system.handle_error3("MonitorEnumProc last.*.resolutions.append", e);
     }
     _ = win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), win32.ENUM_CURRENT_SETTINGS, &dm);
     last.primary_resolution = null;
