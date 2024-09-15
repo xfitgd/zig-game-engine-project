@@ -5,14 +5,14 @@ const Self = @This();
 
 thread: std.Thread,
 
-fn loop(wait_nanosec: u64, comptime function: anytype, args: anytype) bool {
-    std.time.sleep(wait_nanosec);
+inline fn loop(wait_nanosec: u64, comptime function: anytype, args: anytype) bool {
+    system.sleep(wait_nanosec);
     if (@typeInfo(@typeInfo(@TypeOf(function)).Fn.return_type.?) == .ErrorUnion) { // ? 표준 라이브러리 Thread.zig에서 가져온 코드
         const res = @call(.auto, function, args) catch |err| {
             system.print_error("ERR : {s}\n", .{@errorName(err)});
             // if (@errorReturnTrace()) |trace| {
             //     std.debug.dumpStackTrace(trace.*);
-            // } 모바일 작동을 보장할수 없어서 일단은 비활성화
+            // } print_error에서 해줘서 필요 없음
             return false;
         };
         if (@typeInfo(@TypeOf(res)) == .Bool and !res) return false;

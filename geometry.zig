@@ -96,23 +96,19 @@ pub const polygon = struct {
     ///0번 폴리곤 이후는 전부 구멍(0번 폴리곤 내부에 있어야함)
     lines: ArrayList(line),
     polygon_line_counts: ArrayList(u32),
-    __points: ArrayList(point),
-    __polygon_point_counts: ArrayList(u32),
     color: vector = .{ 1, 1, 1, 1 },
 
     pub fn init(allocator: std.mem.Allocator) polygon {
         return .{
             .lines = ArrayList(line).init(allocator),
             .polygon_line_counts = ArrayList(u32).init(allocator),
-            .__points = ArrayList(point).init(allocator),
-            .__polygon_point_counts = ArrayList(u32).init(allocator),
         };
     }
     pub fn deinit(self: polygon) void {
         self.lines.deinit();
     }
     /// out_vertices type is *ArrayList(shape_vertex_type), out_indices type is *ArrayList(idx_type)
-    pub fn compute_polygon(self: polygon, out_vertices: anytype, out_indices: anytype) polygon_error!void {
+    pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, out_vertices: anytype, out_indices: anytype) polygon_error!void {
         if (self.lines.items.len < 2) return polygon_error.is_not_polygon;
         var count: u32 = 0;
         for (self.polygon_line_counts.items) |value| {
@@ -120,21 +116,41 @@ pub const polygon = struct {
             if (self.lines.items[count].start != self.lines.items[count + value].end) return polygon_error.is_not_polygon;
             count += value;
         }
-        self.__points.resize(0);
-        self.__polygon_point_counts.resize(1);
-        self.__polygon_point_counts.items[0] = 0;
+        const __points = ArrayList(point).init(allocator);
+        const __polygon_point_counts = ArrayList(u32).initCapacity(allocator, self.polygon_line_counts.items.len) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.initCapacity", e);
+        __polygon_point_counts.append(0) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.append(0) (1)", e);
+        __polygon_point_counts.items[0] = 0;
 
+        const pitem = &__polygon_point_counts.items;
+
+        count = 0;
         for (self.lines.items) |*value| {
             value.*.compute_curve(out_vertices, out_indices) catch |e| {
                 if (e != line_error.is_not_curve) return e;
             };
-            self.__points.append(value.*.start);
+            __points.append(value.*.start) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.start)", e);
+            pitem.*[pitem.*.len - 1] += 1;
             if (0.0 > point_distance_to_line(value.*.control0, value.*.start, value.*.end)) {
-                self.__points.append(value.*.control0);
+                __points.append(value.*.control0) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control0)", e);
+                pitem.*[pitem.*.len - 1] += 1;
             }
             if (0.0 > point_distance_to_line(value.*.control1, value.*.start, value.*.end)) {
-                self.__points.append(value.*.control1);
+                __points.append(value.*.control1) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control1)", e);
+                pitem.*[pitem.*.len - 1] += 1;
             }
+            count += 1;
+            if (count >= self.polygon_line_counts.items[pitem.*.len - 1]) {
+                __polygon_point_counts.append(0) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.append(0) (2)", e);
+                count = 0;
+            }
+        }
+
+        var threshold: i32 = 80;
+        var len: usize = 0;
+        var i: usize = 0;
+        while (threshold >= 0 and i < pitem.*.len) : (i += 1) {
+            threshold -= @intCast(pitem.*[i]);
+            len += pitem.*[i];
         }
     }
 };

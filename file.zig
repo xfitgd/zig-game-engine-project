@@ -1,8 +1,5 @@
 const std = @import("std");
 const system = @import("system.zig");
-const builtin = @import("builtin");
-
-const __android = @import("__android.zig");
 
 const Self = @This();
 
@@ -26,6 +23,10 @@ pub inline fn writer(self: *Self) std.fs.File.Writer {
     return self.hFile.writer();
 }
 pub inline fn close(self: *Self) void {
+    if (self.hFile.handle == INVALID_FILE_HANDLE) {
+        system.print_error("WARN Can't close INVALID_FILE_HANDLE(not open file)\n", .{});
+        return;
+    }
     self.hFile.close();
     self.hFile.handle = INVALID_FILE_HANDLE;
 }
@@ -57,42 +58,17 @@ pub inline fn writeA(self: *Self, T: type, a: *const T) !usize {
 }
 
 pub fn read_file(path: []const u8, allocator: std.mem.Allocator) ![]u8 {
-    var __size: usize = 0;
     var buffer: []u8 = undefined;
 
-    if (system.platform == .windows) {
-        const _file = try std.fs.cwd().createFile(path, .{ .read = true, .truncate = false });
-        defer _file.close();
-        size = @intCast((try _file.stat()).size);
+    const _file = try std.fs.cwd().createFile(path, .{ .read = true, .truncate = false });
+    defer _file.close();
+    const _size = (try _file.stat()).size;
 
-        buffer = try allocator.alloc(u8, size);
+    buffer = try allocator.alloc(u8, _size);
 
-        _ = try _file.readAll(buffer);
+    _ = try _file.readAll(buffer);
 
-        //system.print("size : {d}\n",.{size});
-
-    } else if (system.platform == .android) {
-        const asset = __android.android.AAssetManager_open(__android.get_AssetManager(), @ptrCast(path), __android.android.AASSET_MODE_STREAMING);
-
-        __size = @intCast(__android.android.AAsset_getLength(asset));
-
-        buffer = try allocator.alloc(u8, __size);
-
-        var _read: usize = 0;
-        while (_read < __size) {
-            const i = __android.android.AAsset_read(asset, &buffer[_read], __size);
-            if (i < 0) {
-                return std.posix.UnexpectedError.Unexpected;
-            } else if (i == 0) {
-                break;
-            }
-            _read += @intCast(i);
-        }
-
-        __android.android.AAsset_close(asset);
-    } else {
-        @compileError("not support platform");
-    }
+    //system.print("size : {d}\n",.{size});
 
     return buffer;
 }

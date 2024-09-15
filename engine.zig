@@ -51,7 +51,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
         //"../lib/x86",
         "../lib/x86_64",
     };
-    const targets = [_]std.zig.CrossTarget{
+    const targets = [_]std.Target.Query{
         .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{.v8a}) },
         //.{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
         //.{ .os_tag = .linux, .cpu_arch = .x86, .abi = .android },
@@ -90,7 +90,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             writer.writeAll("kernel32_lib_dir=\n") catch unreachable;
             writer.writeAll("gcc_dir=\n") catch unreachable;
             const android_libc_step = b.addWriteFile("android-libc.conf", contents.items);
-            result.setLibCFile(android_libc_step.files.items[0].getPath());
+            result.setLibCFile(android_libc_step.getDirectory().join(b.allocator, "android-libc.conf") catch unreachable);
             install_step.dependOn(&android_libc_step.step);
 
             result.addLibraryPath(.{ .cwd_relative = std.fmt.allocPrint(b.allocator, "{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}/{d}", .{ ANDROID_NDK_PATH, arch_text[i], ANDROID_VER }) catch unreachable });

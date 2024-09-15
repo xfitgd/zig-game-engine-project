@@ -226,7 +226,7 @@ pub fn print_debug(comptime fmt: []const u8, args: anytype) void {
 }
 
 pub fn print_error(comptime fmt: []const u8, args: anytype) void {
-    @setCold(true);
+    @branchHint(.cold);
     const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
     defer __system.allocator.free(now_str);
 

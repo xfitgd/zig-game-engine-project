@@ -21,7 +21,7 @@ pub fn round_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
 
 pub inline fn test_number_type(comptime T: type) void {
     switch (@typeInfo(T)) {
-        .Int, .Float, .ComptimeInt, .ComptimeFloat => {},
+        .int, .float, .comptime_int, .comptime_float => {},
         else => {
             @compileError("not a number type");
         },
@@ -29,7 +29,7 @@ pub inline fn test_number_type(comptime T: type) void {
 }
 pub inline fn test_float_type(comptime T: type) void {
     switch (@typeInfo(T)) {
-        .Float, .ComptimeFloat => {},
+        .float, .comptime_float => {},
         else => {
             @compileError("not a float number type");
         },
@@ -80,13 +80,13 @@ pub const pointi = @Vector(2, i32);
 pub const vector = @Vector(4, f32);
 
 pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
-    if (@typeInfo(@TypeOf(p1, p2)) == .Vector) {
-        test_float_type(@typeInfo(@TypeOf(p1, p2)).Vector.child);
-        if (@typeInfo(@TypeOf(p1, p2)).Vector.len < 2) @compileError("no 1 element vector");
+    if (@typeInfo(@TypeOf(p1, p2)) == .vector) {
+        test_float_type(@typeInfo(@TypeOf(p1, p2)).vector.child);
+        if (@typeInfo(@TypeOf(p1, p2)).vector.len < 2) @compileError("no 1 element vector");
 
         return dot3(p1, p2);
-    } else if (@typeInfo(@TypeOf(p1, p2)) == .Array) {
-        test_float_type(@typeInfo(@TypeOf(p1, p2)).Array.child);
+    } else if (@typeInfo(@TypeOf(p1, p2)) == .array) {
+        test_float_type(@typeInfo(@TypeOf(p1, p2)).array.child);
         comptime var i = 0;
         var result: @TypeOf(p1[0]) = 0;
         inline while (i < p1.len) : (i += 1) {
@@ -101,22 +101,22 @@ pub fn length(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
 }
 
 pub inline fn dot3(v0: anytype, v1: anytype) f32 {
-    if (@typeInfo(@TypeOf(v0, v1)) == .Vector) {
-        test_float_type(@typeInfo(@TypeOf(v0, v1)).Vector.child);
+    if (@typeInfo(@TypeOf(v0, v1)) == .vector) {
+        test_float_type(@typeInfo(@TypeOf(v0, v1)).vector.child);
         const dot = v0 * v1;
 
         comptime var i = 0;
         var res: f32 = 0;
-        const len = if (@typeInfo(@TypeOf(v0, v1)).Vector.len < 3) @typeInfo(@TypeOf(v0, v1)).Vector.len else 3;
+        const len = if (@typeInfo(@TypeOf(v0, v1)).vector.len < 3) @typeInfo(@TypeOf(v0, v1)).vector.len else 3;
         inline while (i < len) : (i += 1) {
             res += dot[i];
         }
         return res;
-    } else if (@typeInfo(@TypeOf(v0, v1)) == .Array) {
-        test_float_type(@typeInfo(@TypeOf(v0, v1)).Array.child);
+    } else if (@typeInfo(@TypeOf(v0, v1)) == .array) {
+        test_float_type(@typeInfo(@TypeOf(v0, v1)).array.child);
         comptime var i = 0;
         var res: f32 = 0;
-        const len = if (@typeInfo(@TypeOf(v0, v1)).Array.len < 3) @typeInfo(@TypeOf(v0, v1)).Array.len else 3;
+        const len = if (@typeInfo(@TypeOf(v0, v1)).array.len < 3) @typeInfo(@TypeOf(v0, v1)).vector.len else 3;
         inline while (i < len) : (i += 1) {
             res += v0[i] * v1[i];
         }
@@ -126,14 +126,14 @@ pub inline fn dot3(v0: anytype, v1: anytype) f32 {
     }
 }
 pub inline fn normalize(v: anytype) @TypeOf(v) {
-    if (@typeInfo(@TypeOf(v)) == .Vector) {
+    if (@typeInfo(@TypeOf(v)) == .vector) {
         return v * (@as(@TypeOf(v), @splat(1)) / @as(@TypeOf(v), @splat(std.math.sqrt(dot3(v, v)))));
-    } else if (@typeInfo(@TypeOf(v)) == .Array) {
-        test_float_type(@typeInfo(@TypeOf(v)).Array.child);
+    } else if (@typeInfo(@TypeOf(v)) == .array) {
+        test_float_type(@typeInfo(@TypeOf(v)).array.child);
         comptime var i = 0;
         const l = std.math.sqrt(dot3(v, v));
         var res = v;
-        inline while (i < @typeInfo(@TypeOf(v)).Array.len) : (i += 1) {
+        inline while (i < @typeInfo(@TypeOf(v)).array.len) : (i += 1) {
             res[i] *= 1.0 / l;
         }
         return res;
@@ -162,22 +162,22 @@ pub const matrix_error = error{ not_exist_inverse_matrix, invaild_near_far, sfov
 
 pub fn compare_n(n: anytype, i: anytype) bool {
     switch (@typeInfo(@TypeOf(n, i))) {
-        .Float, .ComptimeFloat => {
+        .float, .comptime_float => {
             return std.math.approxEqAbs(@TypeOf(n, i), n, i, std.math.floatEps(f32));
         },
-        .Int, .ComptimeInt => {
+        .int, .comptime_int => {
             return n == i;
         },
-        .Array => {
+        .array => {
             comptime var e = 0;
             inline while (e < n.len) : (e += 1) {
                 if (!compare_n(n[e], i[e])) return false;
             }
             return true;
         },
-        .Vector => {
+        .vector => {
             comptime var e = 0;
-            inline while (e < @typeInfo(@TypeOf(n, i)).Vector.len) : (e += 1) {
+            inline while (e < @typeInfo(@TypeOf(n, i)).vector.len) : (e += 1) {
                 if (!compare_n(n[e], i[e])) return false;
             }
             return true;
