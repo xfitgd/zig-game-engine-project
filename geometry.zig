@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const DoublyLinkedList = std.DoublyLinkedList;
 const math = @import("math.zig");
 const system = @import("system.zig");
 
@@ -31,6 +32,7 @@ pub const line_error = error{
 pub const polygon_error = error{
     is_not_polygon,
     invaild_polygon_line_counts,
+    invaild_polygon_arc_180,
 } || line_error;
 
 pub fn convert_quadratic_to_cubic0(_start: point, _control: point) point {
@@ -40,11 +42,91 @@ pub fn convert_quadratic_to_cubic1(_end: point, _control: point) point {
     return .{ _end[0] + (2.0 / 3.0) * (_control[0] - _end[0]), _end[1] + (2.0 / 3.0) * (_control[1] - _end[1]) };
 }
 
+pub inline fn sub(a: anytype, b: anytype) @TypeOf(a, b) {
+    if (@typeInfo(@TypeOf(a, b)) == .vector) {
+        return a - b;
+    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
+        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
+        if (a.len != b.len) @compileError("a, b len must same");
+
+        comptime var i = 0;
+        var result: @TypeOf(a, b) = undefined;
+        inline while (i < a.len) : (i += 1) {
+            result[i] = a[i] - b[i];
+        }
+        return result;
+    } else {
+        @compileError("not a vector, array type");
+    }
+}
+
+pub inline fn add(a: anytype, b: anytype) @TypeOf(a, b) {
+    if (@typeInfo(@TypeOf(a, b)) == .vector) {
+        return a + b;
+    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
+        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
+        if (a.len != b.len) @compileError("a, b len must same");
+
+        comptime var i = 0;
+        var result: @TypeOf(a, b) = undefined;
+        inline while (i < a.len) : (i += 1) {
+            result[i] = a[i] + b[i];
+        }
+        return result;
+    } else {
+        @compileError("not a vector, array type");
+    }
+}
+
+pub inline fn mul(a: anytype, b: anytype) @TypeOf(a, b) {
+    if (@typeInfo(@TypeOf(a, b)) == .vector) {
+        return a * b;
+    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
+        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
+        if (a.len != b.len) @compileError("a, b len must same");
+
+        comptime var i = 0;
+        var result: @TypeOf(a, b) = undefined;
+        inline while (i < a.len) : (i += 1) {
+            result[i] = a[i] * b[i];
+        }
+        return result;
+    } else {
+        @compileError("not a vector, array type");
+    }
+}
+
+pub inline fn div(a: anytype, b: anytype) @TypeOf(a, b) {
+    if (@typeInfo(@TypeOf(a, b)) == .vector) {
+        return a / b;
+    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
+        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
+        if (a.len != b.len) @compileError("a, b len must same");
+
+        comptime var i = 0;
+        var result: @TypeOf(a, b) = undefined;
+        inline while (i < a.len) : (i += 1) {
+            result[i] = a[i] / b[i];
+        }
+        return result;
+    } else {
+        @compileError("not a vector, array type");
+    }
+}
+
 /// Algorithm from http://www.blackpawn.com/texts/pointinpoly/default.html
-pub fn point_in_triangle(p: point, a: point, b: point, c: point) bool {
-    const v0 = c - a;
-    const v1 = b - a;
-    const v2 = p - a;
+pub fn point_in_triangle(p: anytype, a: anytype, b: anytype, c: anytype) bool {
+    if (@typeInfo(@TypeOf(p, a, b, c)) == .vector) {
+        if (@typeInfo(@TypeOf(p, a, b, c)).vector.len != 2) @compileError("vector len must 2");
+    } else if (@typeInfo(@TypeOf(p, a, b, c)) == .array) {
+        math.test_number_type(@typeInfo(@TypeOf(p, a, b, c)).array.child);
+        if (!(p.len == 2 and 2 == a.len and 2 == b.len and 2 == c.len)) @compileError("array len must 2");
+    } else {
+        @compileError("not a vector, array type");
+    }
+    const v0 = sub(c, a);
+    const v1 = sub(b, a);
+    const v2 = sub(p, a);
 
     const dot00 = dot3(v0, v0);
     const dot01 = dot3(v0, v1);
@@ -98,6 +180,11 @@ pub const polygon = struct {
     polygon_line_counts: ArrayList(u32),
     color: vector = .{ 1, 1, 1, 1 },
 
+    const node = struct {
+        idx: u32,
+        p: point,
+    };
+
     pub fn init(allocator: std.mem.Allocator) polygon {
         return .{
             .lines = ArrayList(line).init(allocator),
@@ -116,8 +203,10 @@ pub const polygon = struct {
             if (self.lines.items[count].start != self.lines.items[count + value].end) return polygon_error.is_not_polygon;
             count += value;
         }
-        const __points = ArrayList(point).init(allocator);
+        const __points = ArrayList(node).init(allocator);
+        defer __points.deinit();
         const __polygon_point_counts = ArrayList(u32).initCapacity(allocator, self.polygon_line_counts.items.len) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.initCapacity", e);
+        defer __polygon_point_counts.deinit();
         __polygon_point_counts.append(0) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.append(0) (1)", e);
         __polygon_point_counts.items[0] = 0;
 
@@ -128,14 +217,18 @@ pub const polygon = struct {
             value.*.compute_curve(out_vertices, out_indices) catch |e| {
                 if (e != line_error.is_not_curve) return e;
             };
-            __points.append(value.*.start) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.start)", e);
+            const ii: u32 = @intCast(out_vertices.items.len);
+            out_vertices.*.append(.{ .pos = value.*.start, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.start, .uvw = .{ 1, 0, 0 } })", e);
+            __points.append(.{ .p = value.*.start, .idx = ii }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.start)", e);
             pitem.*[pitem.*.len - 1] += 1;
             if (0.0 > point_distance_to_line(value.*.control0, value.*.start, value.*.end)) {
-                __points.append(value.*.control0) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control0)", e);
+                out_vertices.*.append(.{ .pos = value.*.control0, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.control0, .uvw = .{ 1, 0, 0 } })", e);
+                __points.append(.{ .p = value.*.control0, .idx = ii + 1 }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control0)", e);
                 pitem.*[pitem.*.len - 1] += 1;
             }
             if (0.0 > point_distance_to_line(value.*.control1, value.*.start, value.*.end)) {
-                __points.append(value.*.control1) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control1)", e);
+                out_vertices.*.append(.{ .pos = value.*.control1, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.control1, .uvw = .{ 1, 0, 0 } })", e);
+                __points.append(.{ .p = value.*.control1, .idx = ii + 2 }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control1)", e);
                 pitem.*[pitem.*.len - 1] += 1;
             }
             count += 1;
@@ -145,12 +238,39 @@ pub const polygon = struct {
             }
         }
 
-        var threshold: i32 = 80;
-        var len: usize = 0;
-        var i: usize = 0;
-        while (threshold >= 0 and i < pitem.*.len) : (i += 1) {
-            threshold -= @intCast(pitem.*[i]);
-            len += pitem.*[i];
+        const pt = DoublyLinkedList(node){};
+        for (__points.items) |*value| {
+            pt.append(value);
+        }
+
+        const R = DoublyLinkedList(node){};
+        const C = DoublyLinkedList(node){};
+        const E = DoublyLinkedList(node){};
+        {
+            var n = pt.first;
+
+            const p1 = pt.last.?.*.data.p - n.?.*.data.p;
+            const p2 = n.?.*.next.?.*.data.p - n.?.*.data.p;
+
+            const a = pt.last.?.*.data.p;
+            const b = n.?.*.data.p;
+            const c = n.?.*.next.?.*.data.p;
+
+            const cross = math.cross2(p1, p2);
+            if (cross < 0) { //0 ~ 180 미만
+                C.append(n.?);
+            } else if (cross == 0) {
+                return polygon_error.invaild_polygon_arc_180;
+            } else { //180 ~ 360
+                R.append(n.?);
+            }
+            var nf = n.?.*.next.?.*.next;
+            const nl = pt.last.?.*.prev;
+            nf = nf.?.*.next;
+            while (nf != nl and nf) : (nf = nf.?.*.next) {
+                if (!point_in_triangle(nf.?.*.data.p, a, b, c)) E.append(nf);
+            }
+            while (n) : (n = n.?.*.next) {}
         }
     }
 };

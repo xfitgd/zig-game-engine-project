@@ -79,12 +79,16 @@ pub const pointu = @Vector(2, u32);
 pub const pointi = @Vector(2, i32);
 pub const vector = @Vector(4, f32);
 
-pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
+pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
     if (@typeInfo(@TypeOf(p1, p2)) == .vector) {
         test_float_type(@typeInfo(@TypeOf(p1, p2)).vector.child);
-        if (@typeInfo(@TypeOf(p1, p2)).vector.len < 2) @compileError("no 1 element vector");
-
-        return dot3(p1, p2);
+        if (@typeInfo(@TypeOf(p1)).vector.len != @typeInfo(@TypeOf(p2)).vector.len) @compileError("p1, p2 different vector len");
+        comptime var i = 0;
+        var result: @TypeOf(p1[0]) = 0;
+        inline while (i < @typeInfo(@TypeOf(p1, p2)).vector.len) : (i += 1) {
+            result += pow(p1[i] - p2[i], 2);
+        }
+        return result;
     } else if (@typeInfo(@TypeOf(p1, p2)) == .array) {
         test_float_type(@typeInfo(@TypeOf(p1, p2)).array.child);
         comptime var i = 0;
@@ -92,15 +96,40 @@ pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
         inline while (i < p1.len) : (i += 1) {
             result += pow(p1[i] - p2[i], 2);
         }
+        return result;
     } else {
         @compileError("not a vector, float array type");
     }
 }
-pub fn length(p1: anytype, p2: anytype) @TypeOf(p1[0]) {
+pub fn length(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
     return std.math.sqrt(length_sq(p1, p2));
 }
+pub fn length_sq1(p1: anytype) @TypeOf(p1[0]) {
+    if (@typeInfo(@TypeOf(p1)) == .vector) {
+        test_float_type(@typeInfo(@TypeOf(p1)).vector.child);
+        comptime var i = 0;
+        var result: @TypeOf(p1[0]) = 0;
+        inline while (i < @typeInfo(@TypeOf(p1)).vector.len) : (i += 1) {
+            result += pow(p1[i], 2);
+        }
+        return result;
+    } else if (@typeInfo(@TypeOf(p1)) == .array) {
+        test_float_type(@typeInfo(@TypeOf(p1)).array.child);
+        comptime var i = 0;
+        var result: @TypeOf(p1[0]) = 0;
+        inline while (i < p1.len) : (i += 1) {
+            result += pow(p1[i], 2);
+        }
+        return result;
+    } else {
+        @compileError("not a vector, float array type");
+    }
+}
+pub fn length1(p1: anytype) @TypeOf(p1[0]) {
+    return std.math.sqrt(length_sq1(p1));
+}
 
-pub inline fn dot3(v0: anytype, v1: anytype) f32 {
+pub inline fn dot3(v0: anytype, v1: anytype) @TypeOf(v0[0], v1[0]) {
     if (@typeInfo(@TypeOf(v0, v1)) == .vector) {
         test_float_type(@typeInfo(@TypeOf(v0, v1)).vector.child);
         const dot = v0 * v1;
