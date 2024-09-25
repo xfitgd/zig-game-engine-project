@@ -98,58 +98,58 @@ pub fn render_char(self: Self, _char: u21, allocator: std.mem.Allocator) font_er
             _end = temp;
         }
         var j: usize = _start;
-        var center_pt: ?freetype.FT_Vector = null;
+        var center_pt: ?math.point = null;
 
         while (true) : (e += 1) {
-            const start_pt = center_pt orelse self.__face.*.glyph.*.outline.points[j];
+            const start_pt = center_pt orelse .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[j].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[j].y)) / 64.0 };
             var nextj = if (center_pt != null) j else next_j(orientation, j, _start2, _end2);
             center_pt = null;
             if (self.__face.*.glyph.*.outline.tags[nextj] & 1 == 1) { //line
                 const end_pt = self.__face.*.glyph.*.outline.points[nextj];
                 polygon[0].lines[i][e] = geometry.line.line_init(
-                    .{ @as(f32, @floatFromInt(start_pt.x)) / 64.0, @as(f32, @floatFromInt(start_pt.y)) / 64.0 },
+                    start_pt,
                     .{ @as(f32, @floatFromInt(end_pt.x)) / 64.0, @as(f32, @floatFromInt(end_pt.y)) / 64.0 },
                 );
                 system.print_debug("line {d},{d}", .{ j, nextj });
             } else {
                 if (self.__face.*.glyph.*.outline.tags[nextj] & 2 == 1) { //cubic
-                    const control0_pt = self.__face.*.glyph.*.outline.points[nextj];
+                    const control0_pt: math.point = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
                     nextj = next_j(orientation, nextj, _start2, _end2);
-                    const control1_pt = self.__face.*.glyph.*.outline.points[nextj];
+                    const control1_pt: math.point = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
                     nextj = next_j(orientation, nextj, _start2, _end2);
 
-                    var end_pt: freetype.FT_Vector = undefined;
+                    var end_pt: math.point = undefined;
 
                     if (self.__face.*.glyph.*.outline.tags[nextj] & 1 == 0) {
-                        center_pt = self.__face.*.glyph.*.outline.points[nextj];
-                        center_pt = .{ .x = control1_pt.x + @divFloor((center_pt.?.x - control1_pt.x), 2), .y = control1_pt.y + @divFloor((center_pt.?.y - control1_pt.y), 2) };
+                        center_pt = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
+                        center_pt = .{ control1_pt[0] + (center_pt.?[0] - control1_pt[0]) / 2, control1_pt[1] + (center_pt.?[1] - control1_pt[1]) / 2 };
                         end_pt = center_pt.?;
                     } else {
-                        end_pt = self.__face.*.glyph.*.outline.points[nextj];
+                        end_pt = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
                     }
                     polygon[0].lines[i][e] = .{
-                        .start = .{ @as(f32, @floatFromInt(start_pt.x)) / 64.0, @as(f32, @floatFromInt(start_pt.y)) / 64.0 },
-                        .control0 = .{ @as(f32, @floatFromInt(control0_pt.x)) / 64.0, @as(f32, @floatFromInt(control0_pt.y)) / 64.0 },
-                        .control1 = .{ @as(f32, @floatFromInt(control1_pt.x)) / 64.0, @as(f32, @floatFromInt(control1_pt.y)) / 64.0 },
-                        .end = .{ @as(f32, @floatFromInt(end_pt.x)) / 64.0, @as(f32, @floatFromInt(end_pt.y)) / 64.0 },
+                        .start = start_pt,
+                        .control0 = control0_pt,
+                        .control1 = control1_pt,
+                        .end = end_pt,
                     };
                     system.print_debug("cubic {d},{d}", .{ j, nextj });
                 } else { //quadratic
-                    const control0_pt = self.__face.*.glyph.*.outline.points[nextj];
+                    const control0_pt: math.point = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
                     nextj = next_j(orientation, nextj, _start2, _end2);
-                    var end_pt: freetype.FT_Vector = undefined;
+                    var end_pt: math.point = undefined;
 
                     if (self.__face.*.glyph.*.outline.tags[nextj] & 1 == 0) {
-                        center_pt = self.__face.*.glyph.*.outline.points[nextj];
-                        center_pt = .{ .x = control0_pt.x + @divFloor((center_pt.?.x - control0_pt.x), 2), .y = control0_pt.y + @divFloor((center_pt.?.y - control0_pt.y), 2) };
+                        center_pt = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
+                        center_pt = .{ control0_pt[0] + (center_pt.?[0] - control0_pt[0]) / 2, control0_pt[1] + (center_pt.?[1] - control0_pt[1]) / 2 };
                         end_pt = center_pt.?;
                     } else {
-                        end_pt = self.__face.*.glyph.*.outline.points[nextj];
+                        end_pt = .{ @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].x)) / 64.0, @as(f32, @floatFromInt(self.__face.*.glyph.*.outline.points[nextj].y)) / 64.0 };
                     }
                     polygon[0].lines[i][e] = geometry.line.quadratic_init(
-                        .{ @as(f32, @floatFromInt(start_pt.x)) / 64.0, @as(f32, @floatFromInt(start_pt.y)) / 64.0 },
-                        .{ @as(f32, @floatFromInt(control0_pt.x)) / 64.0, @as(f32, @floatFromInt(control0_pt.y)) / 64.0 },
-                        .{ @as(f32, @floatFromInt(end_pt.x)) / 64.0, @as(f32, @floatFromInt(end_pt.y)) / 64.0 },
+                        start_pt,
+                        control0_pt,
+                        end_pt,
                     );
                     system.print_debug("quadratic {d},{d}", .{ j, nextj });
                 }

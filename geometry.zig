@@ -153,8 +153,8 @@ pub const circle = struct {
 };
 
 pub const polygon = struct {
-    ///0번 폴리곤 이후는 전부 구멍(0번 폴리곤 내부에 있어야함)
     lines: [][]line,
+    colors: ?[]vector = null,
 
     const node = struct {
         idx: u32,
@@ -193,7 +193,7 @@ pub const polygon = struct {
         while (count < self.lines.len) : (count += 1) {
             i = 0;
             while (i < self.lines[count].len) : (i += 1) {
-                const vv = try self.lines[count][i].compute_curve(out_vertices, out_indices, true);
+                const vv = try self.lines[count][i].compute_curve(out_vertices, out_indices, if (self.colors != null) self.colors.?[if (count > self.colors.?.len - 1) self.colors.?.len - 1 else count] else null, true);
                 j = 0;
                 while (j < vv) : (j += 1) {
                     try __points[count].append(.{
@@ -403,11 +403,11 @@ pub const line = struct {
     }
 
     /// out_vertices type is *ArrayList(shape_vertex_type), out_indices type is *ArrayList(idx_type)
-    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, make_extra_vertices: bool) line_error!u32 {
-        return try __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, -1, make_extra_vertices);
+    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, color: ?vector, make_extra_vertices: bool) line_error!u32 {
+        return try __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, color, -1, make_extra_vertices);
     }
     ///https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
-    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_idxs: anytype, repeat: i32, make_extra_vertices: bool) line_error!u32 {
+    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_idxs: anytype, color: ?vector, repeat: i32, make_extra_vertices: bool) line_error!u32 {
         var d1: f32 = undefined;
         var d2: f32 = undefined;
         var d3: f32 = undefined;
@@ -417,6 +417,9 @@ pub const line = struct {
                 try out_vertices.*.resize(out_vertices.*.items.len + 1);
                 out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
                 out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                if (color != null) {
+                    out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                }
                 return 1;
             }
             return 0;
@@ -547,6 +550,9 @@ pub const line = struct {
                     try out_vertices.*.resize(out_vertices.*.items.len + 1);
                     out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
                     out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    if (color != null) {
+                        out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                    }
                     return 1;
                 }
                 return 0;
@@ -573,8 +579,8 @@ pub const line = struct {
             const x0123 = (x123 - x012) * subdiv + x012;
             const y0123 = (y123 - y012) * subdiv + y012;
 
-            _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, if (artifact == 1) 0 else 1, false);
-            _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, if (artifact == 1) 1 else 0, false);
+            _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, color, if (artifact == 1) 0 else 1, false);
+            _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, color, if (artifact == 1) 1 else 0, false);
 
             var count: u32 = 0;
 
@@ -592,12 +598,21 @@ pub const line = struct {
                 out_vertices.*.items[n + 1].uvw = .{ 1, 0, 0 };
                 out_vertices.*.items[n + 2].uvw = .{ 1, 0, 0 };
 
+                if (color != null) {
+                    out_vertices.*.items[n].color = color.?;
+                    out_vertices.*.items[n + 1].color = color.?;
+                    out_vertices.*.items[n + 2].color = color.?;
+                }
+
                 try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 });
 
                 if (make_extra_vertices) {
                     try out_vertices.*.resize(out_vertices.*.items.len + 1);
                     out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
                     out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    if (color != null) {
+                        out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                    }
                     count += 1;
                 }
             } else {
@@ -617,6 +632,14 @@ pub const line = struct {
                     out_vertices.*.items[out_vertices.*.items.len - 3].uvw = .{ 1, 0, 0 };
                     out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
                     out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    if (color != null) {
+                        out_vertices.*.items[out_vertices.*.items.len - 6].color = color.?;
+                        out_vertices.*.items[out_vertices.*.items.len - 5].color = color.?;
+                        out_vertices.*.items[out_vertices.*.items.len - 4].color = color.?;
+                        out_vertices.*.items[out_vertices.*.items.len - 3].color = color.?;
+                        out_vertices.*.items[out_vertices.*.items.len - 2].color = color.?;
+                        out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                    }
                     count += 6;
                 }
             }
@@ -649,23 +672,33 @@ pub const line = struct {
         out_vertices.*.items[n + 2].uvw = .{ mat.e[2][0], mat.e[2][1], mat.e[2][2] };
         out_vertices.*.items[n + 3].uvw = .{ mat.e[3][0], mat.e[3][1], mat.e[3][2] };
 
+        if (color != null) {
+            out_vertices.*.items[n].color = color.?;
+            out_vertices.*.items[n + 1].color = color.?;
+            out_vertices.*.items[n + 2].color = color.?;
+            out_vertices.*.items[n + 3].color = color.?;
+        }
+
         var count: u32 = 0;
         if (repeat == -1 and make_extra_vertices) {
             try out_vertices.*.resize(out_vertices.*.items.len + 1);
             out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
             out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
             count += 1;
-            if (flip) {
-                try out_vertices.*.resize(out_vertices.*.items.len + 1);
-                out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control0;
-                out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
-                count += 1;
+            if (color != null) {
+                out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
             }
             if (flip) {
-                try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                try out_vertices.*.resize(out_vertices.*.items.len + 2);
+                out_vertices.*.items[out_vertices.*.items.len - 2].pos = _control0;
                 out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control1;
+                out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
                 out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
-                count += 1;
+                if (color != null) {
+                    out_vertices.*.items[out_vertices.*.items.len - 2].color = color.?;
+                    out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                }
+                count += 2;
             }
         }
 
