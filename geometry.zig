@@ -242,7 +242,7 @@ pub const polygon = struct {
                 } else {
                     var e: u32 = 0;
                     while (e < __points.len) : (e += 1) {
-                        if (e != count) {
+                        if (e != v) {
                             if (line_in_polygon(__points[g].items[i].p, __points[v].items[j].p, __points2[e].items, false)) {
                                 check = false;
                                 break;
@@ -315,7 +315,7 @@ pub const polygon = struct {
             while (pt.len > 2) {
                 const p = try refreshE(pt);
                 if (p == null) {
-                    if (pt.len > 3) system.print("null E pt.len {d}", .{pt.len});
+                    if (pt.len > 3) system.print("null E pt.len {d}\n", .{pt.len});
                     break;
                 }
                 const next = p.?.*.next orelse pt.first.?;
