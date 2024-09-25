@@ -2,7 +2,7 @@ const std = @import("std");
 const unicode = std.unicode;
 const system = @import("system.zig");
 const __system = @import("__system.zig");
-const freetype = @cImport({
+pub const freetype = @cImport({
     @cInclude("freetype/ft2build.h");
     @cInclude("freetype/freetype/freetype.h");
     @cInclude("freetype/freetype/ftoutln.h");
@@ -71,6 +71,12 @@ pub fn deinit(self: *Self) void {
     self.*.__char_array.deinit();
 }
 
+pub fn clear_char_array(self: *Self) void {
+    const allocator = self.*.__char_array.allocator;
+    deinit(self);
+    self.*.__char_array = AutoHashMap(u21, char_data).init(allocator);
+}
+
 fn get_char_idx(self: *Self, _char: u21) font_error!u32 {
     const idx = freetype.FT_Get_Char_Index(self.*.__face, @intCast(_char));
     if (idx != 0) return idx;
@@ -86,13 +92,16 @@ fn load_glyph(self: *Self, _char: u21) font_error!void {
 pub fn render_string(self: *Self, _str: []const u8, color: vector, out_polygon: *graphics.raw_polygon, allocator: std.mem.Allocator) !void {
     out_polygon.*.vertices = try allocator.alloc(graphics.color_vertex_2d, 0);
     out_polygon.*.indices = try allocator.alloc(u32, 0);
-    var i: u32 = 0;
     //https://gencmurat.com/en/posts/zig-strings/
     var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
     var offset: point = .{ 0, 0 };
     while (utf8.nextCodepoint()) |codepoint| {
+        if (codepoint == '\n') {
+            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.glyph.*.metrics.height)) / 64.0 * 1.3;
+            offset[0] = 0;
+            continue;
+        }
         try _render_char(self, codepoint, out_polygon, &offset, .{ 1, 1 }, color, allocator);
-        i += 1;
     }
 }
 
@@ -190,7 +199,7 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
         }
     }
     offset.*[0] += char_d.?.*.advance[0] * scale[0];
-    offset.*[1] += char_d.?.*.advance[1] * scale[1];
+    offset.*[1] -= char_d.?.*.advance[1] * scale[1];
 }
 
 pub fn free_raw_polygon(allocator: std.mem.Allocator, _polygon: *graphics.raw_polygon) void {
