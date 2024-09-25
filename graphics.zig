@@ -68,7 +68,7 @@ pub const tex_vertex_2d = extern struct {
 pub var scene: ?*[]*iobject = null;
 
 pub const index_type = enum { U16, U32 };
-pub const DEF_IDX_TYPE: index_type = .U16;
+pub const DEF_IDX_TYPE: index_type = .U32;
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
     var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
@@ -627,3 +627,7 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
         }
     };
 }
+pub const raw_polygon = struct {
+    vertices: []color_vertex_2d,
+    indices: []u32,
+};
