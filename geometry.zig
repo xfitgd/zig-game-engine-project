@@ -348,7 +348,7 @@ pub const polygon = struct {
         const a = b.*.prev orelse pt.last.?;
 
         const cross = math.cross2(b.*.data.*.p - a.*.data.*.p, c.*.data.*.p - b.*.data.*.p);
-        if (cross <= 0) return null; //180도 이상
+        if (cross > 0) return null; //180도 이상
 
         var nf: ?*DoublyLinkedList(*node).Node = c.next;
         const nl = a.*.prev orelse pt.last;
@@ -541,7 +541,7 @@ pub const line = struct {
                 mat.e[3][1] = -1;
                 mat.e[3][2] = 1;
 
-                flip = d3 >= 0.0;
+                flip = d3 < 0.0;
                 system.print_debug("quadratic {}", .{flip});
             },
             .line => {
@@ -707,7 +707,7 @@ pub const line = struct {
             while (i < 4) : (i += 1) {
                 var j: usize = i + 1;
                 while (j < 4) : (j += 1) {
-                    if (math.compare_n(out_vertices.*.items[n + i].pos, out_vertices.*.items[n + j].pos)) {
+                    if (math.compare(out_vertices.*.items[n + i].pos, out_vertices.*.items[n + j].pos)) {
                         var indices: [3]@TypeOf(out_idxs.items[0]) = .{ nn, nn, nn };
                         var index: usize = 0;
                         var k: usize = 0;

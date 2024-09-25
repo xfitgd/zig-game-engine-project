@@ -299,8 +299,8 @@ pub inline fn min_vector(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
 ///v0 * v1 + v2
 inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) {
     switch (@typeInfo(@TypeOf(v0, v1, v2))) {
-        .Vector => |info| {
-            if (@typeInfo(info.child) == .Float or @typeInfo(info.child) == .ComptimeFloat) {
+        .vector => |info| {
+            if (@typeInfo(info.child) == .float or @typeInfo(info.child) == .comptime_float) {
                 return @mulAdd(@TypeOf(v0, v1, v2), v0, v1, v2);
             } else {
                 return v0 * v1 + v2;
@@ -617,7 +617,7 @@ pub fn matrix4x4(comptime T: type) type {
                 const vy = @shuffle(T, self.*.e[row], undefined, [4]i32{ 1, 1, 1, 1 });
                 const vz = @shuffle(T, self.*.e[row], undefined, [4]i32{ 2, 2, 2, 2 });
                 const vw = @shuffle(T, self.*.e[row], undefined, [4]i32{ 3, 3, 3, 3 });
-                result.e[row] = mulAdd(T, vx, _matrix.*.e[0], vz * _matrix.*.e[2]) + mulAdd(T, vy, _matrix.*.e[1], vw * _matrix.*.e[3]);
+                result.e[row] = mulAdd(vx, _matrix.*.e[0], vz * _matrix.*.e[2]) + mulAdd(vy, _matrix.*.e[1], vw * _matrix.*.e[3]);
             }
             return result;
         }
