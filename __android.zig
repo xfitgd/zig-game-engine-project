@@ -447,12 +447,17 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
                 _ = android.ASensorEventQueue_setEventRate(app.sensor_event_queue, app.accelerometer_sensor, (1000 / 60) * 1000);
             }
             app.paused = false;
+            __system.pause.store(false, std.builtin.AtomicOrder.monotonic);
+            __system.activated.store(false, std.builtin.AtomicOrder.monotonic);
+            root.xfit_activate(false, false);
         },
         AppEvent.APP_CMD_LOST_FOCUS => {
             if (app.accelerometer_sensor != null) {
                 _ = android.ASensorEventQueue_disableSensor(app.sensor_event_queue, app.accelerometer_sensor);
             }
-            app.paused = true;
+            __system.pause.store(true, std.builtin.AtomicOrder.monotonic);
+            __system.activated.store(true, std.builtin.AtomicOrder.monotonic);
+            root.xfit_activate(true, true);
         },
         else => {},
     }

@@ -34,7 +34,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
     var pro = std.process.Child.init(&[_][]const u8{ ENGINE_DIR ++ "/shader_compile", ENGINE_DIR }, b.allocator);
     _ = pro.spawnAndWait() catch unreachable;
 
-    const target = b.standardTargetOptions(.{});
     const build_options = b.addOptions();
 
     build_options.addOption(XfitPlatform, "platform", PLATFORM);
@@ -111,6 +110,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
                 .dest_dir = .{ .override = .{ .custom = out_arch_text[i] } },
             }).step);
         } else if (PLATFORM == XfitPlatform.windows) {
+            const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
             result = b.addExecutable(.{
                 .target = target,
                 .name = "XfitTest",
@@ -121,8 +121,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
 
             result.subsystem = .Windows;
 
-            result.root_module.addImport("build_options", build_options_module);
-
             result.addObjectFile(get_lazypath(b, ENGINE_DIR ++ "/lib/windows/vulkan.lib"));
             for (lib_names) |name| {
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/windows/{s}/{s}", .{ ENGINE_DIR, get_arch_text(target.result.cpu.arch), name }) catch unreachable));
@@ -130,6 +128,10 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             callback(result);
             b.installArtifact(result);
         } else unreachable;
+
+        const system = b.addModule("system", .{ .root_source_file = b.path("zig-game-engine-project/system.zig") });
+        system.addImport("build_options", build_options_module);
+        result.root_module.addImport("build_options", build_options_module);
 
         result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include"));
         result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include/freetype"));

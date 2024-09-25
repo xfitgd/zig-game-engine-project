@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const MemoryPool = std.heap.MemoryPool;
 const DoublyLinkedList = std.DoublyLinkedList;
 const math = @import("math.zig");
 const system = @import("system.zig");
@@ -27,12 +28,12 @@ pub const line_error = error{
     is_not_curve,
     invaild_line,
     out_of_idx,
-};
+} || std.mem.Allocator.Error;
 
 pub const polygon_error = error{
     is_not_polygon,
     invaild_polygon_line_counts,
-    invaild_polygon_arc_180,
+    cant_polygon_match_holes,
 } || line_error;
 
 pub fn convert_quadratic_to_cubic0(_start: point, _control: point) point {
@@ -42,91 +43,11 @@ pub fn convert_quadratic_to_cubic1(_end: point, _control: point) point {
     return .{ _end[0] + (2.0 / 3.0) * (_control[0] - _end[0]), _end[1] + (2.0 / 3.0) * (_control[1] - _end[1]) };
 }
 
-pub inline fn sub(a: anytype, b: anytype) @TypeOf(a, b) {
-    if (@typeInfo(@TypeOf(a, b)) == .vector) {
-        return a - b;
-    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
-        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
-        if (a.len != b.len) @compileError("a, b len must same");
-
-        comptime var i = 0;
-        var result: @TypeOf(a, b) = undefined;
-        inline while (i < a.len) : (i += 1) {
-            result[i] = a[i] - b[i];
-        }
-        return result;
-    } else {
-        @compileError("not a vector, array type");
-    }
-}
-
-pub inline fn add(a: anytype, b: anytype) @TypeOf(a, b) {
-    if (@typeInfo(@TypeOf(a, b)) == .vector) {
-        return a + b;
-    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
-        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
-        if (a.len != b.len) @compileError("a, b len must same");
-
-        comptime var i = 0;
-        var result: @TypeOf(a, b) = undefined;
-        inline while (i < a.len) : (i += 1) {
-            result[i] = a[i] + b[i];
-        }
-        return result;
-    } else {
-        @compileError("not a vector, array type");
-    }
-}
-
-pub inline fn mul(a: anytype, b: anytype) @TypeOf(a, b) {
-    if (@typeInfo(@TypeOf(a, b)) == .vector) {
-        return a * b;
-    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
-        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
-        if (a.len != b.len) @compileError("a, b len must same");
-
-        comptime var i = 0;
-        var result: @TypeOf(a, b) = undefined;
-        inline while (i < a.len) : (i += 1) {
-            result[i] = a[i] * b[i];
-        }
-        return result;
-    } else {
-        @compileError("not a vector, array type");
-    }
-}
-
-pub inline fn div(a: anytype, b: anytype) @TypeOf(a, b) {
-    if (@typeInfo(@TypeOf(a, b)) == .vector) {
-        return a / b;
-    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
-        math.test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
-        if (a.len != b.len) @compileError("a, b len must same");
-
-        comptime var i = 0;
-        var result: @TypeOf(a, b) = undefined;
-        inline while (i < a.len) : (i += 1) {
-            result[i] = a[i] / b[i];
-        }
-        return result;
-    } else {
-        @compileError("not a vector, array type");
-    }
-}
-
 /// Algorithm from http://www.blackpawn.com/texts/pointinpoly/default.html
-pub fn point_in_triangle(p: anytype, a: anytype, b: anytype, c: anytype) bool {
-    if (@typeInfo(@TypeOf(p, a, b, c)) == .vector) {
-        if (@typeInfo(@TypeOf(p, a, b, c)).vector.len != 2) @compileError("vector len must 2");
-    } else if (@typeInfo(@TypeOf(p, a, b, c)) == .array) {
-        math.test_number_type(@typeInfo(@TypeOf(p, a, b, c)).array.child);
-        if (!(p.len == 2 and 2 == a.len and 2 == b.len and 2 == c.len)) @compileError("array len must 2");
-    } else {
-        @compileError("not a vector, array type");
-    }
-    const v0 = sub(c, a);
-    const v1 = sub(b, a);
-    const v2 = sub(p, a);
+pub fn point_in_triangle(p: point, a: point, b: point, c: point) bool {
+    const v0 = c - a;
+    const v1 = b - a;
+    const v2 = p - a;
 
     const dot00 = dot3(v0, v0);
     const dot01 = dot3(v0, v1);
@@ -134,34 +55,48 @@ pub fn point_in_triangle(p: anytype, a: anytype, b: anytype, c: anytype) bool {
     const dot11 = dot3(v1, v1);
     const dot12 = dot3(v1, v2);
     const denominator = dot00 * dot11 - dot01 * dot01;
-    if (denominator == 0) return false;
+    if (denominator == 0) {
+        return false;
+    }
 
     const inverseDenominator = 1.0 / denominator;
     const u = (dot11 * dot02 - dot01 * dot12) * inverseDenominator;
     const v = (dot00 * dot12 - dot01 * dot02) * inverseDenominator;
 
-    return (u > 0.0) and (v > 0.0) and (u + v < 1.0);
+    return (u >= 0.0) and (v >= 0.0) and (u + v < 1.0);
 }
 
-///반환 값이 result 0이고 is_in true면 정확히 선 위에 있다
-pub fn point_in_line(p: point, l0: point, l1: point) struct { result: f32, is_in: bool } {
+pub fn point_in_line(p: point, l0: point, l1: point, result: ?*f32) bool {
     const a = l1[1] - l0[1];
     const b = l0[0] - l1[0];
     const c = l1[0] * l0[1] - l0[0] * l1[1];
-    const result = a * p[0] + b * p[1] + c;
-    return .{
-        .result = result,
-        .is_in = p[0] >= @min(l0[0], l1[0]) and p[0] <= @max(l0[0], l1[0]) and p[1] >= @min(l0[1], l1[1]) and p[1] <= @max(l0[1], l1[1]),
-    };
+    const _result = a * p[0] + b * p[1] + c;
+    if (result != null) result.?.* = _result;
+    return _result == 0 and p[0] >= @min(l0[0], l1[0]) and p[0] <= @max(l0[0], l1[0]) and p[1] >= @min(l0[1], l1[1]) and p[1] <= @max(l0[1], l1[1]);
 }
 
-inline fn __orientation(p1: point, p2: point, p3: point) i32 {
-    const crossProduct = (p2[1] - p1[1]) * (p3[0] - p2[0]) - (p3[1] - p2[1]) * (p2[0] - p1[0]);
-    return if (crossProduct < 0.0) -1 else (if (crossProduct > 0.0) 1 else 0);
+pub fn point_in_vector(p: point, v0: point, v1: point, result: ?*f32) bool {
+    const a = v1[1] - v0[1];
+    const b = v0[0] - v1[0];
+    const c = v1[0] * v0[1] - v0[0] * v1[1];
+    const _result = a * p[0] + b * p[1] + c;
+    if (result != null) result.?.* = _result;
+    return _result == 0;
 }
 
-pub fn lines_intersect(p1: point, q1: point, p2: point, q2: point) bool {
-    return (__orientation(p1, q1, p2) != __orientation(p1, q1, q2) and __orientation(p2, q2, p1) != __orientation(p2, q2, q1));
+pub fn lines_intersect(a1: point, a2: point, b1: point, b2: point, result: ?*point) bool {
+    const a = a2 - a1;
+    const b = b2 - b1;
+    const ab = a1 - b1;
+    const aba = math.cross2(a, b);
+    if (aba == 0.0) return false;
+    const A = math.cross2(b, ab) / aba;
+    const B = math.cross2(a, ab) / aba;
+    if ((A <= 1.0) and (B <= 1.0) and (A >= 0.0) and (B >= 0.0)) {
+        if (result != null) result.?.* = a1 + @as(point, @splat(A)) * (a2 - a1);
+        return true;
+    }
+    return false;
 }
 
 pub fn point_distance_to_line(p: point, l0: point, l1: point) f32 {
@@ -173,105 +108,261 @@ pub fn point_distance_to_line(p: point, l0: point, l1: point) f32 {
 
     return z / sqrt((xx1 * xx1) + (yy1 * yy1));
 }
+///https://bowbowbow.tistory.com/24
+pub fn point_in_polygon(p: point, pts: []point) bool {
+    var i: usize = 0;
+    //crosses는 점p와 오른쪽 반직선과 다각형과의 교점의 개수
+    var crosses: usize = 0;
+    while (i < pts.len) : (i += 1) {
+        const j = (i + 1) % pts.len;
+        //점 p가 선분 (pts[i], pts[j])의 y좌표 사이에 있음
+        if ((pts[i][1] > p[1]) != (pts[j][1] > p[1])) {
+            //atX는 점 p를 지나는 수평선과 선분 (pts[i], pts[j])의 교점
+            const atx = (pts[j][0] - pts[i][0]) * (p[1] - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0];
+            //atX가 오른쪽 반직선과의 교점이 맞으면 교점의 개수를 증가시킨다.
+            if (p[0] < atx) crosses += 1;
+        }
+    }
+    return (crosses % 2) > 0;
+}
+pub fn line_in_polygon(a: point, b: point, pts: []point, check_inside_line: bool) bool {
+    if (check_inside_line and point_in_polygon(a, pts)) return true; //반드시 점 ab가 다각형 내에 모두 있어야 선 ab와 다각형 선분이 교차하지 않는다. 따라서 b는 확인할 필요 없다.
+    var i: usize = 0;
+    var result: point = undefined;
+    while (i < pts.len - 1) : (i += 1) {
+        if (lines_intersect(pts[i], pts[i + 1], a, b, &result)) {
+            if (math.compare_n(a, result) or math.compare_n(b, result)) continue;
+            return true;
+        }
+    }
+    if (lines_intersect(pts[pts.len - 1], pts[0], a, b, &result)) {
+        if (math.compare_n(a, result) or math.compare_n(b, result)) return false;
+        return true;
+    }
+    return false;
+}
+pub const circle = struct {
+    p: point,
+    radius: f32,
+    pub fn circle_in_circle(a: @This(), b: circle) bool {
+        return math.length_pow(a.p, b.p) <= math.pow(a.radius + b.radius, 2);
+    }
+    pub fn circle_in_point(c: @This(), p: point) bool {
+        return math.length_pow(c.p, p.p) <= c.radius * c.radius;
+    }
+};
 
 pub const polygon = struct {
     ///0번 폴리곤 이후는 전부 구멍(0번 폴리곤 내부에 있어야함)
-    lines: ArrayList(line),
-    polygon_line_counts: ArrayList(u32),
-    color: vector = .{ 1, 1, 1, 1 },
+    lines: [][]line,
 
     const node = struct {
         idx: u32,
         p: point,
     };
+    const Dnode = DoublyLinkedList(*node).Node;
 
-    pub fn init(allocator: std.mem.Allocator) polygon {
-        return .{
-            .lines = ArrayList(line).init(allocator),
-            .polygon_line_counts = ArrayList(u32).init(allocator),
-        };
-    }
-    pub fn deinit(self: polygon) void {
-        self.lines.deinit();
-    }
     /// out_vertices type is *ArrayList(shape_vertex_type), out_indices type is *ArrayList(idx_type)
     pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, out_vertices: anytype, out_indices: anytype) polygon_error!void {
-        if (self.lines.items.len < 2) return polygon_error.is_not_polygon;
-        var count: u32 = 0;
-        for (self.polygon_line_counts.items) |value| {
-            if (count + value > self.lines.items.len) return polygon_error.invaild_polygon_line_counts;
-            if (self.lines.items[count].start != self.lines.items[count + value].end) return polygon_error.is_not_polygon;
-            count += value;
+        //var tt = std.time.Timer.start() catch system.unreachable2();
+
+        if (self.lines[0].len < 3) return polygon_error.is_not_polygon;
+        const __points = try allocator.alloc(ArrayList(node), self.lines.len);
+        const __points2 = try allocator.alloc(ArrayList(point), self.lines.len);
+        var __outside_polygon = try ArrayList(u32).initCapacity(allocator, self.lines.len);
+        var __inside_polygon = try ArrayList([4]u32).initCapacity(allocator, self.lines.len);
+        var i: u32 = 0;
+
+        while (i < __points.len) : (i += 1) {
+            __points[i] = ArrayList(node).init(allocator);
+            __points2[i] = ArrayList(point).init(allocator);
         }
-        const __points = ArrayList(node).init(allocator);
-        defer __points.deinit();
-        const __polygon_point_counts = ArrayList(u32).initCapacity(allocator, self.polygon_line_counts.items.len) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.initCapacity", e);
-        defer __polygon_point_counts.deinit();
-        __polygon_point_counts.append(0) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.append(0) (1)", e);
-        __polygon_point_counts.items[0] = 0;
-
-        const pitem = &__polygon_point_counts.items;
-
-        count = 0;
-        for (self.lines.items) |*value| {
-            value.*.compute_curve(out_vertices, out_indices) catch |e| {
-                if (e != line_error.is_not_curve) return e;
-            };
-            const ii: u32 = @intCast(out_vertices.items.len);
-            out_vertices.*.append(.{ .pos = value.*.start, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.start, .uvw = .{ 1, 0, 0 } })", e);
-            __points.append(.{ .p = value.*.start, .idx = ii }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.start)", e);
-            pitem.*[pitem.*.len - 1] += 1;
-            if (0.0 > point_distance_to_line(value.*.control0, value.*.start, value.*.end)) {
-                out_vertices.*.append(.{ .pos = value.*.control0, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.control0, .uvw = .{ 1, 0, 0 } })", e);
-                __points.append(.{ .p = value.*.control0, .idx = ii + 1 }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control0)", e);
-                pitem.*[pitem.*.len - 1] += 1;
+        defer {
+            i = 0;
+            while (i < __points.len) : (i += 1) {
+                __points[i].deinit();
+                __points2[i].deinit();
             }
-            if (0.0 > point_distance_to_line(value.*.control1, value.*.start, value.*.end)) {
-                out_vertices.*.append(.{ .pos = value.*.control1, .uvw = .{ 1, 0, 0 } }) catch |e| system.handle_error3("compute_polygon out_vertices.*.append(.{ .pos = value.*.control1, .uvw = .{ 1, 0, 0 } })", e);
-                __points.append(.{ .p = value.*.control1, .idx = ii + 2 }) catch |e| system.handle_error3("compute_polygon  __points.append(value.*.control1)", e);
-                pitem.*[pitem.*.len - 1] += 1;
+            __inside_polygon.deinit();
+            __outside_polygon.deinit();
+            allocator.free(__points);
+            allocator.free(__points2);
+        }
+        var j: u32 = 0;
+        var count: u32 = 0;
+        while (count < self.lines.len) : (count += 1) {
+            i = 0;
+            while (i < self.lines[count].len) : (i += 1) {
+                const vv = try self.lines[count][i].compute_curve(out_vertices, out_indices, true);
+                j = 0;
+                while (j < vv) : (j += 1) {
+                    try __points[count].append(.{
+                        .p = out_vertices.*.items[out_vertices.*.items.len - (vv - j)].pos,
+                        .idx = @intCast(out_vertices.*.items.len - (vv - j)),
+                    });
+                    try __points2[count].append(out_vertices.*.items[out_vertices.*.items.len - (vv - j)].pos);
+                }
+            }
+            try __outside_polygon.append(count);
+        }
+        //system.print("compute_curve {d}\n", .{tt.lap()});
+        count = 0;
+        out: while (count < __outside_polygon.items.len) {
+            const v = __outside_polygon.items[count];
+            for (__outside_polygon.items) |g| {
+                if (g != v) {
+                    if (point_in_polygon(__points2[v].items[0], __points2[g].items)) {
+                        try __inside_polygon.append(.{ v, g, 0, 0 }); //0:inside, 1:outside, i,j
+                        _ = __outside_polygon.orderedRemove(count);
+                        continue :out;
+                    }
+                }
             }
             count += 1;
-            if (count >= self.polygon_line_counts.items[pitem.*.len - 1]) {
-                __polygon_point_counts.append(0) catch |e| system.handle_error3("compute_polygon __polygon_point_counts.append(0) (2)", e);
-                count = 0;
+        }
+        count = 0;
+        while (count < __inside_polygon.items.len) : (count += 1) {
+            const v = __inside_polygon.items[count][0];
+            j = 0;
+            var maxX = std.math.floatMin(f32);
+            while (j < __points[v].items.len) : (j += 1) {
+                if (maxX <= __points[v].items[j].p[0]) {
+                    maxX = __points[v].items[j].p[0];
+                    __inside_polygon.items[count][3] = j;
+                }
+            }
+            j = __inside_polygon.items[count][3];
+            var check: bool = undefined;
+            const g = __inside_polygon.items[count][1];
+            i = 0;
+            while (i < __points[g].items.len) : (i += 1) {
+                check = true;
+                if (__points[g].items[i].p[0] < __points[v].items[j].p[0] or __points[g].items[i].p[1] > __points[v].items[j].p[1]) {
+                    check = false;
+                } else {
+                    var e: u32 = 0;
+                    while (e < __points.len) : (e += 1) {
+                        if (e != count) {
+                            if (line_in_polygon(__points[g].items[i].p, __points[v].items[j].p, __points2[e].items, false)) {
+                                check = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (check) {
+                    __inside_polygon.items[count][2] = i;
+                    break;
+                }
+            }
+
+            if (!check) {
+                return polygon_error.cant_polygon_match_holes;
             }
         }
+        //system.print("find hole {d}\n", .{tt.lap()});
+        var pt = DoublyLinkedList(*node){};
+        var mem = MemoryPool(Dnode).init(allocator);
+        defer mem.deinit();
 
-        const pt = DoublyLinkedList(node){};
-        for (__points.items) |*value| {
-            pt.append(value);
-        }
-
-        const R = DoublyLinkedList(node){};
-        const C = DoublyLinkedList(node){};
-        const E = DoublyLinkedList(node){};
-        {
-            var n = pt.first;
-
-            const p1 = pt.last.?.*.data.p - n.?.*.data.p;
-            const p2 = n.?.*.next.?.*.data.p - n.?.*.data.p;
-
-            const a = pt.last.?.*.data.p;
-            const b = n.?.*.data.p;
-            const c = n.?.*.next.?.*.data.p;
-
-            const cross = math.cross2(p1, p2);
-            if (cross < 0) { //0 ~ 180 미만
-                C.append(n.?);
-            } else if (cross == 0) {
-                return polygon_error.invaild_polygon_arc_180;
-            } else { //180 ~ 360
-                R.append(n.?);
+        while (0 < __outside_polygon.items.len) {
+            //tt.reset();
+            const pop = __outside_polygon.pop();
+            j = 0;
+            while (j < __points[pop].items.len) : (j += 1) {
+                const pn: *Dnode = mem.create() catch return polygon_error.OutOfMemory;
+                pn.* = .{ .data = &__points[pop].items[j] };
+                pt.append(pn);
             }
-            var nf = n.?.*.next.?.*.next;
-            const nl = pt.last.?.*.prev;
-            nf = nf.?.*.next;
-            while (nf != nl and nf) : (nf = nf.?.*.next) {
-                if (!point_in_triangle(nf.?.*.data.p, a, b, c)) E.append(nf);
+            j = 0;
+            while (j < __inside_polygon.items.len) {
+                if (__inside_polygon.items[j][1] == pop) {
+                    var pp = pt.first;
+                    var next: ?*Dnode = null;
+                    while (pp != null) : (pp = pp.?.*.next) {
+                        if (pp.?.*.data == &__points[pop].items[__inside_polygon.items[j][2]]) {
+                            next = pp;
+                            break;
+                        }
+                    }
+                    if (next == null) system.unreachable2();
+                    const start = __inside_polygon.items[j][3];
+                    const end = if (__inside_polygon.items[j][3] == 0) @as(u32, @intCast(__points[__inside_polygon.items[j][0]].items.len - 1)) else __inside_polygon.items[j][3] - 1;
+
+                    var e = start;
+                    while (true) {
+                        const pn: *Dnode = mem.create() catch return polygon_error.OutOfMemory;
+                        pn.* = .{ .data = &__points[__inside_polygon.items[j][0]].items[e] };
+                        pt.insertAfter(next.?, pn);
+                        next = pn;
+                        if (e == end) break;
+                        e = if (e == __points[__inside_polygon.items[j][0]].items.len - 1) 0 else e + 1;
+                    }
+                    const pn: *Dnode = mem.create() catch return polygon_error.OutOfMemory;
+                    pn.* = .{ .data = &__points[__inside_polygon.items[j][0]].items[__inside_polygon.items[j][3]] };
+                    pt.insertAfter(next.?, pn);
+                    next = pn;
+                    const pn2: *Dnode = mem.create() catch return polygon_error.OutOfMemory;
+                    pn2.* = .{ .data = &__points[pop].items[__inside_polygon.items[j][2]] };
+                    pt.insertAfter(next.?, pn2);
+                    _ = __inside_polygon.orderedRemove(j);
+                } else {
+                    j += 1;
+                }
             }
-            while (n) : (n = n.?.*.next) {}
+            //system.print("insert {d}\n", .{tt.lap()});
+
+            while (pt.len > 2) {
+                const p = try refreshE(pt);
+                if (p == null) {
+                    if (pt.len > 3) system.print("null E pt.len {d}", .{pt.len});
+                    break;
+                }
+                const next = p.?.*.next orelse pt.first.?;
+                const prev = p.?.*.prev orelse pt.last.?;
+
+                try out_indices.*.appendSlice(&.{ @intCast(prev.*.data.idx), @intCast(p.?.*.data.idx), @intCast(next.*.data.idx) });
+
+                pt.remove(p.?);
+                mem.destroy(p.?);
+            }
+            while (pt.len > 0) {
+                const first = pt.first;
+                pt.remove(first.?);
+                mem.destroy(first.?);
+            }
+            //system.print("draw {d}\n", .{tt.lap()});
         }
+    }
+    fn refreshE(pt: DoublyLinkedList(*node)) polygon_error!?*DoublyLinkedList(*node).Node {
+        var n = pt.first;
+        while (n != null) : (n = n.?.*.next) {
+            const result = try appendE(pt, n.?);
+            if (result != null) return result;
+        }
+        return null;
+    }
+    fn appendE(pt: DoublyLinkedList(*node), p: *Dnode) polygon_error!?*DoublyLinkedList(*node).Node {
+        const b = p;
+        const c = b.*.next orelse pt.first.?;
+        const a = b.*.prev orelse pt.last.?;
+
+        const cross = math.cross2(b.*.data.*.p - a.*.data.*.p, c.*.data.*.p - b.*.data.*.p);
+        if (cross <= 0) return null; //180도 이상
+
+        var nf: ?*DoublyLinkedList(*node).Node = c.next;
+        const nl = a.*.prev orelse pt.last;
+
+        while (true) : (nf = nf.?.*.next) {
+            if (nf == null) nf = pt.first;
+            if (point_in_triangle(nf.?.*.data.*.p, a.*.data.*.p, b.*.data.*.p, c.*.data.*.p)) {
+                if (math.compare(nf.?.*.data.*.p, a.*.data.*.p) or math.compare(nf.?.*.data.*.p, b.*.data.*.p) or math.compare(nf.?.*.data.*.p, c.*.data.*.p)) {} else {
+                    return null;
+                }
+            }
+            if (nf == nl) break;
+        }
+        return b;
     }
 };
 
@@ -312,15 +403,24 @@ pub const line = struct {
     }
 
     /// out_vertices type is *ArrayList(shape_vertex_type), out_indices type is *ArrayList(idx_type)
-    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype) line_error!void {
-        return __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, -1);
+    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, make_extra_vertices: bool) line_error!u32 {
+        return try __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, -1, make_extra_vertices);
     }
     ///https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
-    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_idxs: anytype, repeat: i32) line_error!void {
+    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_idxs: anytype, repeat: i32, make_extra_vertices: bool) line_error!u32 {
         var d1: f32 = undefined;
         var d2: f32 = undefined;
         var d3: f32 = undefined;
-        if (self.*.curve_type == .line) return line_error.is_not_curve; //곡선이 아니니 계산하지 않는다.(polygon에서 그려준다. 직선이 모여야 도형이 되므로)
+        if (self.*.curve_type == .line) {
+            system.print_debug("line", .{});
+            if (make_extra_vertices) {
+                try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
+                out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                return 1;
+            }
+            return 0;
+        }
         const cur_type = try __get_curve_type(_start, _control0, _control1, _end, &d1, &d2, &d3);
         self.*.curve_type = cur_type;
 
@@ -355,8 +455,8 @@ pub const line = struct {
                 mat.e[3][1] = -(ltMinusLs * ltMinusLs * ltMinusLs);
                 mat.e[3][2] = -(mtMinusMs * mtMinusMs * mtMinusMs);
 
-                flip = d1 < 0;
-                system.print_debug("serpentine", .{});
+                flip = d1 < 0.0;
+                system.print_debug("serpentine {}", .{flip});
             },
             .loop => {
                 const t1 = sqrt(4.0 * d1 * d3 - 3.0 * d2 * d2);
@@ -395,8 +495,8 @@ pub const line = struct {
                     mat.e[3][1] = -(ltMinusLs * ltMinusLs) * mtMinusMs;
                     mat.e[3][2] = -ltMinusLs * mtMinusMs * mtMinusMs;
 
-                    if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
-                    system.print_debug("loop", .{});
+                    if (repeat == -1) flip = ((d1 > 0.0001 and mat.e[0][0] < -0.0001) or (d1 < -0.0001 and mat.e[0][0] > 0.0001));
+                    system.print_debug("loop flip {}", .{flip});
                 }
             },
             .cusp => {
@@ -419,29 +519,38 @@ pub const line = struct {
                 mat.e[3][0] = lsMinusLt;
                 mat.e[3][1] = lsMinusLt * lsMinusLt * lsMinusLt;
                 mat.e[3][2] = 1;
-                system.print_debug("cusp", .{});
+                system.print_debug("cusp {}", .{flip});
             },
             .quadratic => {
                 mat.e[0][0] = 0;
                 mat.e[0][1] = 0;
                 mat.e[0][2] = 0;
 
-                mat.e[1][0] = (1.0 / 3.0);
+                mat.e[1][0] = -(1.0 / 3.0);
                 mat.e[1][1] = 0;
                 mat.e[1][2] = (1.0 / 3.0);
 
-                mat.e[2][0] = (2.0 / 3.0);
-                mat.e[2][1] = (1.0 / 3.0);
+                mat.e[2][0] = -(2.0 / 3.0);
+                mat.e[2][1] = -(1.0 / 3.0);
                 mat.e[2][2] = (2.0 / 3.0);
 
-                mat.e[3][0] = 1;
-                mat.e[3][1] = 1;
+                mat.e[3][0] = -1;
+                mat.e[3][1] = -1;
                 mat.e[3][2] = 1;
 
-                flip = d3 < 0;
-                system.print_debug("quadratic", .{});
+                flip = d3 >= 0.0;
+                system.print_debug("quadratic {}", .{flip});
             },
-            .line => return,
+            .line => {
+                system.print_debug("line", .{});
+                if (make_extra_vertices) {
+                    try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                    out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
+                    out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    return 1;
+                }
+                return 0;
+            },
             else => return line_error.is_not_curve,
         }
 
@@ -464,15 +573,17 @@ pub const line = struct {
             const x0123 = (x123 - x012) * subdiv + x012;
             const y0123 = (y123 - y012) * subdiv + y012;
 
-            try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, if (artifact == 1) 0 else 1);
-            try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, if (artifact == 1) 1 else 0);
+            _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, if (artifact == 1) 0 else 1, false);
+            _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, if (artifact == 1) 1 else 0, false);
+
+            var count: u32 = 0;
 
             if (!((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0))) { //flip 상태가 아닐때만(안쪽 일때) 추가 삼각형 그리기
                 system.print_debug("additional triangle", .{});
                 const n: usize = out_vertices.items.len;
                 if (n + 2 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) return line_error.out_of_idx;
                 const nn: @TypeOf(out_idxs.items[0]) = @intCast(n);
-                out_vertices.*.resize(n + 3) catch |e| system.handle_error3("__compute_curve out_vertices.*.resize(n + 3)", e);
+                try out_vertices.*.resize(n + 3);
                 out_vertices.*.items[n].pos = _start;
                 out_vertices.*.items[n + 1].pos = .{ x0123, y0123 };
                 out_vertices.*.items[n + 2].pos = _end;
@@ -481,9 +592,35 @@ pub const line = struct {
                 out_vertices.*.items[n + 1].uvw = .{ 1, 0, 0 };
                 out_vertices.*.items[n + 2].uvw = .{ 1, 0, 0 };
 
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 });
+
+                if (make_extra_vertices) {
+                    try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                    out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
+                    out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    count += 1;
+                }
+            } else {
+                if (make_extra_vertices) {
+                    try out_vertices.*.resize(out_vertices.*.items.len + 6);
+                    out_vertices.*.items[out_vertices.*.items.len - 6].pos = _start;
+                    out_vertices.*.items[out_vertices.*.items.len - 6].uvw = .{ 1, 0, 0 };
+
+                    out_vertices.*.items[out_vertices.*.items.len - 5].pos = .{ x01, y01 };
+                    out_vertices.*.items[out_vertices.*.items.len - 4].pos = .{ x012, y012 };
+                    out_vertices.*.items[out_vertices.*.items.len - 3].pos = .{ x0123, y0123 };
+                    out_vertices.*.items[out_vertices.*.items.len - 2].pos = .{ x123, y123 };
+                    out_vertices.*.items[out_vertices.*.items.len - 1].pos = .{ x23, y23 };
+
+                    out_vertices.*.items[out_vertices.*.items.len - 5].uvw = .{ 1, 0, 0 };
+                    out_vertices.*.items[out_vertices.*.items.len - 4].uvw = .{ 1, 0, 0 };
+                    out_vertices.*.items[out_vertices.*.items.len - 3].uvw = .{ 1, 0, 0 };
+                    out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
+                    out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                    count += 6;
+                }
             }
-            return;
+            return count;
         }
         if (repeat == 1) flip = !flip;
 
@@ -501,7 +638,7 @@ pub const line = struct {
         const n: usize = out_vertices.items.len;
         if (n + 3 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) return line_error.out_of_idx;
         const nn: @TypeOf(out_idxs.items[0]) = @intCast(n);
-        out_vertices.*.resize(n + 4) catch |e| system.handle_error3("__compute_curve out_vertices.*.resize(n + 4)", e);
+        try out_vertices.*.resize(n + 4);
         out_vertices.*.items[n].pos = _start;
         out_vertices.*.items[n + 1].pos = _control0;
         out_vertices.*.items[n + 2].pos = _control1;
@@ -511,6 +648,26 @@ pub const line = struct {
         out_vertices.*.items[n + 1].uvw = .{ mat.e[1][0], mat.e[1][1], mat.e[1][2] };
         out_vertices.*.items[n + 2].uvw = .{ mat.e[2][0], mat.e[2][1], mat.e[2][2] };
         out_vertices.*.items[n + 3].uvw = .{ mat.e[3][0], mat.e[3][1], mat.e[3][2] };
+
+        var count: u32 = 0;
+        if (repeat == -1 and make_extra_vertices) {
+            try out_vertices.*.resize(out_vertices.*.items.len + 1);
+            out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
+            out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+            count += 1;
+            if (flip) {
+                try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control0;
+                out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                count += 1;
+            }
+            if (flip) {
+                try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control1;
+                out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                count += 1;
+            }
+        }
 
         {
             var i: usize = 0;
@@ -529,8 +686,8 @@ pub const line = struct {
                         }
                         //system.print_debug("1", .{});
 
-                        out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] })", e);
-                        return;
+                        try out_idxs.*.appendSlice(&.{ indices[0], indices[1], indices[2] });
+                        return count;
                     }
                 }
             }
@@ -551,38 +708,39 @@ pub const line = struct {
                     var k: usize = 0;
                     //system.print_debug("2", .{});
                     while (k < 3) : (k += 1) {
-                        out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) })", e);
+                        try out_idxs.*.appendSlice(&.{ indices[k], indices[(k + 1) % 3], @intCast(nn + i) });
                     }
-                    return;
+                    return count;
                 }
             }
         }
 
-        if (lines_intersect(_start, _control1, _control0, _end)) {
-            if (math.length_sq(_control1, _start) < math.length_sq(_end, _control0)) {
+        if (lines_intersect(_start, _control1, _control0, _end, null)) {
+            if (math.length_pow(_control1, _start) < math.length_pow(_end, _control0)) {
                 //system.print_debug("3", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 0, nn + 2, nn + 3 });
             } else {
                 //system.print_debug("4", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 1, nn + 2, nn + 3 });
             }
-        } else if (lines_intersect(_start, _end, _control0, _control1)) {
-            if (math.length_sq(_end, _start) < math.length_sq(_control1, _control0)) {
+        } else if (lines_intersect(_start, _end, _control0, _control1, null)) {
+            if (math.length_pow(_end, _start) < math.length_pow(_control1, _control0)) {
                 //system.print_debug("5", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 }) catch |e| system.handle_error3("__compute_curve  out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 3, nn + 0, nn + 3, nn + 2 });
             } else {
                 //system.print_debug("6", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2, nn + 2, nn + 2, nn + 3 });
             }
         } else {
-            if (math.length_sq(_control0, _start) < math.length_sq(_end, _control1)) {
+            if (math.length_pow(_control0, _start) < math.length_pow(_end, _control1)) {
                 //system.print_debug("7", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 1, nn + 0, nn + 1, nn + 3 });
             } else {
                 //system.print_debug("8", .{});
-                out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 }) catch |e| system.handle_error3("__compute_curve out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 })", e);
+                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 2, nn + 3, nn + 3, nn + 2, nn + 1 });
             }
         }
+        return count;
     }
     pub fn get_curve_type(self: Self) line_error!curve_TYPE {
         var d1: f32 = undefined;
@@ -610,18 +768,18 @@ pub const line = struct {
             return line_error.is_point_not_line;
         }
 
-        if (math.compare_n(discr, 0.0)) {
-            if (math.compare_n(out_d1.*, 0.0)) {
-                if (math.compare_n(out_d2.*, 0.0)) {
-                    if (math.compare_n(out_d3.*, 0.0)) return curve_TYPE.line;
+        if (std.math.approxEqAbs(f32, discr, 0, 0.0001)) {
+            if (std.math.approxEqAbs(f32, out_d1.*, 0, 0.0001)) {
+                if (std.math.approxEqAbs(f32, out_d2.*, 0, 0.0001)) {
+                    if (std.math.approxEqAbs(f32, out_d3.*, 0, 0.0001)) return curve_TYPE.line;
                     return curve_TYPE.quadratic;
                 }
             } else {
                 return curve_TYPE.cusp;
             }
-            if (D < -std.math.floatEps(f32)) return curve_TYPE.loop;
+            if (D < -0.0001) return curve_TYPE.loop;
         }
-        if (discr > std.math.floatEps(f32)) return curve_TYPE.serpentine;
+        if (discr > 0.0001) return curve_TYPE.serpentine;
         return curve_TYPE.loop;
     }
 };

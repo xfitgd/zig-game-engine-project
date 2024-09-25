@@ -350,7 +350,7 @@ pub const transform = struct {
 
         __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, mem.u8arr(self.*.model));
     }
-    ///write_flag가 readwrite_cpu만 호출
+    ///write_flag가 readwrite_cpu일때만 호출
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
         self.*.__model_uniform.map(@ptrCast(&data));
@@ -626,12 +626,4 @@ pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
             self.*.interface.deinit();
         }
     };
-}
-
-pub fn make_shape2d_data(_inout_vertex: anytype, _inout_idx: anytype, _lines: []line) geometry.line_error!void {
-    _inout_vertex.*.array.resize(0) catch |e| system.handle_error3("make_shape2d_data _inout_vertex.*.array.resize(0)", e);
-    _inout_idx.*.array.resize(0) catch |e| system.handle_error3("make_shape2d_data _inout_idx.*.array.resize(0)", e);
-    for (_lines) |*value| {
-        try value.*.compute_curve(&_inout_vertex.*.array, &_inout_idx.*.array);
-    }
 }

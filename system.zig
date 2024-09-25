@@ -39,19 +39,53 @@ pub inline fn activated() bool {
 }
 
 pub const platform_version = struct {
-    pub const android_api_level = enum(u32) { Nougat = 24, Nougat_MR1 = 25, Oreo = 26, Oreo_MR1 = 27, Pie = 28, Q = 29, R = 30, S = 31, S_V2 = 32, Tiramisu = 33, UpsideDownCake = 34, VanillaIceCream = 35, Unknown = 0 };
-    pub const windows_version = enum { Windows7, WindowsServer2008R2, Windows8, WindowsServer2012, Windows8Point1, WindowsServer2012R2, Windows10, WindowsServer2016, Windows11, WindowsServer2019, WindowsServer2022, Unknown };
+    pub const android_api_level = enum(u32) {
+        Nougat = 24,
+        Nougat_MR1 = 25,
+        Oreo = 26,
+        Oreo_MR1 = 27,
+        Pie = 28,
+        Q = 29,
+        R = 30,
+        S = 31,
+        S_V2 = 32,
+        Tiramisu = 33,
+        UpsideDownCake = 34,
+        VanillaIceCream = 35,
+        Unknown = 0,
+        _,
+    };
+    pub const windows_version = enum {
+        Windows7,
+        WindowsServer2008R2,
+        Windows8,
+        WindowsServer2012,
+        Windows8Point1,
+        WindowsServer2012R2,
+        Windows10,
+        WindowsServer2016,
+        Windows11,
+        WindowsServer2019,
+        WindowsServer2022,
+        Unknown,
+    };
 
-    platform: root.XfitPlatform,
+    platform: XfitPlatform,
     version: union {
-        windows: struct { version: windows_version, build_number: u32, service_pack: u32 },
+        windows: struct {
+            version: windows_version,
+            build_number: u32,
+            service_pack: u32,
+        },
         android: struct {
             api_level: android_api_level,
         },
     },
 };
 
-pub const platform = root.platform;
+pub const platform = @import("build_options").platform;
+pub const XfitPlatform = @import("build_options").@"zig-game-engine-project.engine.XfitPlatform";
+
 pub const error_handling_func: ?*const fn (text: []u8, stack_trace: []u8) void = null;
 
 pub const screen_info = struct {
@@ -88,8 +122,7 @@ pub const monitor_info = struct {
             __windows.set_fullscreen_mode(&self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print_error("WARN monitor_info.set_fullscreen_mode not support mobile platform.\n", .{});
-            return;
+            @compileError("not support platform");
         }
     }
     pub fn set_borderlessscreen_mode(self: Self) void {
@@ -98,8 +131,7 @@ pub const monitor_info = struct {
             __windows.set_borderlessscreen_mode(&self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
-            print_error("WARN monitor_info.set_borderlessscreen_mode not support mobile platform.\n", .{});
-            return;
+            @compileError("not support platform");
         }
     }
 };
@@ -125,6 +157,7 @@ pub const init_setting = struct {
     can_maximize: bool = true,
     can_minimize: bool = true,
     can_resizewindow: bool = true,
+    use_console: bool = if (dbg) true else false,
 
     window_title: ?[]const u8 = "Xfit",
     icon: ?[]const u8 = null,
@@ -132,36 +165,36 @@ pub const init_setting = struct {
     //*
 
     ///nanosec 단위 1프레임당 1sec = 1000000000 nanosec
-    maxframe: i64 = 0,
+    maxframe: u64 = 0,
     refleshrate: u32 = 0,
-    vSync: bool = false,
+    vSync: bool = true,
 };
 
 pub inline fn monitors() []const monitor_info {
     return __windows.monitors.items;
 }
 pub inline fn primary_monitor() *const monitor_info {
-    return __windows.primary_monitor.?;
+    return __system.primary_monitor;
 }
 
-///nanosec
-pub inline fn dt_i64() i64 {
+///nanosec 1 / 1000000000 sec
+pub inline fn dt_i64() u64 {
     return __system.delta_time;
 }
 pub inline fn dt() f64 {
-    return @as(f64, @floatFromInt(__system.delta_time)) / 1000000000;
+    return @as(f64, @floatFromInt(__system.delta_time)) / 1000000000.0;
 }
 
-///nanosec
-pub inline fn get_maxframe_i64() i64 {
-    return @atomicLoad(i64, &__system.init_set.maxframe, std.builtin.AtomicOrder.monotonic);
+///nanosec 1 / 1000000000 sec
+pub inline fn get_maxframe_u64() u64 {
+    return @atomicLoad(u64, &__system.init_set.maxframe, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn get_maxframe() f64 {
-    return @as(f64, @floatFromInt(get_maxframe_i64())) / 1000000000;
+    return @as(f64, @floatFromInt(get_maxframe_u64())) / 1000000000.0;
 }
-///nanosec
-pub inline fn set_maxframe_i64(_maxframe: i64) void {
-    @atomicStore(i64, &__system.init_set.maxframe, _maxframe, std.builtin.AtomicOrder.monotonic);
+///nanosec 1 / 1000000000 sec
+pub inline fn set_maxframe_u64(_maxframe: u64) void {
+    @atomicStore(u64, &__system.init_set.maxframe, _maxframe, std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn get_platform_version() *const platform_version {
@@ -194,8 +227,7 @@ pub fn notify() void {
     if (platform == .windows) {
         _ = __windows.win32.FlashWindow(__windows.hWnd, __windows.TRUE);
     } else {
-        print("WARN notify not support mobile platform.\n", .{});
-        return;
+        @compileError("not support platform");
     }
 }
 pub fn text_notify(text: []const u8) void {

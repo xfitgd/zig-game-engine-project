@@ -51,7 +51,7 @@ pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
 }
 
 pub fn system_windows_start() void {
-    if (builtin.mode == std.builtin.OptimizeMode.Debug)
+    if (__system.init_set.use_console)
         _ = win32.AllocConsole();
 
     var system_info: win32.SYSTEM_INFO = undefined;
@@ -62,7 +62,7 @@ pub fn system_windows_start() void {
     osversioninfo.dwOSVersionInfoSize = @sizeOf(win32.OSVERSIONINFOEXW);
     _ = std.os.windows.ntdll.RtlGetVersion(@ptrCast(&osversioninfo));
 
-    __system.platform_ver.platform = root.XfitPlatform.windows;
+    __system.platform_ver.platform = .windows;
     __system.platform_ver.version.windows.build_number = osversioninfo.dwBuildNumber;
     __system.platform_ver.version.windows.service_pack = osversioninfo.wServicePackMajor;
 
@@ -128,12 +128,12 @@ pub fn windows_start() void {
 
     if (__system.init_set.screen_mode != system.screen_mode.WINDOW) {
         if (__system.init_set.screen_index == system.init_setting.PRIMARY_SCREEN_INDEX) {
-            window_x = __system.primary_monitor.?.*.rect.left;
-            window_y = __system.primary_monitor.?.*.rect.top;
-            window_width = __system.primary_monitor.?.*.rect.width();
-            window_height = __system.primary_monitor.?.*.rect.height();
+            window_x = __system.primary_monitor.*.rect.left;
+            window_y = __system.primary_monitor.*.rect.top;
+            window_width = __system.primary_monitor.*.rect.width();
+            window_height = __system.primary_monitor.*.rect.height();
             if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) {
-                change_fullscreen(__system.primary_monitor.?, __system.primary_monitor.?.*.primary_resolution.?);
+                change_fullscreen(__system.primary_monitor, __system.primary_monitor.*.primary_resolution.?);
             }
         } else {
             if (__system.monitors.items.len <= __system.init_set.screen_index) __system.init_set.screen_index = @intCast(__system.monitors.items.len - 1);

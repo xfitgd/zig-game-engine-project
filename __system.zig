@@ -2,6 +2,7 @@ const std = @import("std");
 
 const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
+const Timer = std.time.Timer;
 
 pub var allocator: std.mem.Allocator = undefined;
 
@@ -24,7 +25,7 @@ pub var prev_window: struct {
 
 pub var init_set: system.init_setting = .{};
 
-pub var delta_time: i64 = 0;
+pub var delta_time: u64 = 0;
 pub var processor_core_len: u32 = 0;
 pub var platform_ver: system.platform_version = undefined;
 
@@ -58,7 +59,7 @@ pub var key_down_func: ?*const fn (key_code: input.key()) void = null;
 pub var key_up_func: ?*const fn (key_code: input.key()) void = null;
 
 pub var monitors: ArrayList(system.monitor_info) = undefined;
-pub var primary_monitor: ?*system.monitor_info = null;
+pub var primary_monitor: *system.monitor_info = undefined;
 pub var size_update_sem: std.Thread.Semaphore = .{};
 
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
@@ -70,21 +71,18 @@ pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_sett
 pub fn loop() void {
     const S = struct {
         var start = false;
-        var now: i128 = 0;
+        var now: Timer = undefined;
     };
     if (!S.start) {
-        S.now = std.time.nanoTimestamp();
+        S.now = Timer.start() catch |e| system.handle_error3("S.now = Timer.start()", e);
         S.start = true;
     } else {
-        const temp = S.now;
-        S.now = std.time.nanoTimestamp();
-        delta_time = @intCast(S.now - temp);
-        const maxframe: i64 = system.get_maxframe_i64();
+        delta_time = S.now.lap();
+        const maxframe: u64 = system.get_maxframe_u64();
 
         if (maxframe > 0) {
-            const maxf: i64 = @divTrunc((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
-            const sleep: i64 = maxf - delta_time;
-            if (sleep > 0) system.sleep(@intCast(sleep));
+            const maxf: u64 = @divTrunc((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
+            if (maxf > delta_time) system.sleep(maxf - delta_time);
             delta_time = maxf;
         }
     }

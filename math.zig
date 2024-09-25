@@ -36,8 +36,10 @@ pub inline fn test_float_type(comptime T: type) void {
     }
 }
 
-pub inline fn pow(v0: anytype, p: anytype) @TypeOf(v0) {
-    return std.math.pow(@TypeOf(v0), v0, p);
+pub inline fn pow(v0: anytype, p: comptime_float) @TypeOf(v0) {
+    if (p == 2) return v0 * v0;
+    if (p == 3) return v0 * v0 * v0;
+    return std.math.pow(@TypeOf(v0), v0, @floatCast(p));
 }
 
 pub fn rect_(comptime T: type) type {
@@ -79,7 +81,7 @@ pub const pointu = @Vector(2, u32);
 pub const pointi = @Vector(2, i32);
 pub const vector = @Vector(4, f32);
 
-pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
+pub fn length_pow(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
     if (@typeInfo(@TypeOf(p1, p2)) == .vector) {
         test_float_type(@typeInfo(@TypeOf(p1, p2)).vector.child);
         if (@typeInfo(@TypeOf(p1)).vector.len != @typeInfo(@TypeOf(p2)).vector.len) @compileError("p1, p2 different vector len");
@@ -102,9 +104,9 @@ pub fn length_sq(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
     }
 }
 pub fn length(p1: anytype, p2: anytype) @TypeOf(p1[0], p2[0]) {
-    return std.math.sqrt(length_sq(p1, p2));
+    return std.math.sqrt(length_pow(p1, p2));
 }
-pub fn length_sq1(p1: anytype) @TypeOf(p1[0]) {
+pub fn length_pow1(p1: anytype) @TypeOf(p1[0]) {
     if (@typeInfo(@TypeOf(p1)) == .vector) {
         test_float_type(@typeInfo(@TypeOf(p1)).vector.child);
         comptime var i = 0;
@@ -126,7 +128,7 @@ pub fn length_sq1(p1: anytype) @TypeOf(p1[0]) {
     }
 }
 pub fn length1(p1: anytype) @TypeOf(p1[0]) {
-    return std.math.sqrt(length_sq1(p1));
+    return std.math.sqrt(length_pow1(p1));
 }
 
 pub inline fn dot3(v0: anytype, v1: anytype) @TypeOf(v0[0], v1[0]) {
@@ -152,6 +154,48 @@ pub inline fn dot3(v0: anytype, v1: anytype) @TypeOf(v0[0], v1[0]) {
         return res;
     } else {
         @compileError("not a vector, float array type");
+    }
+}
+pub inline fn sub(a: anytype, b: anytype) @TypeOf(a, b) {
+    return calc(a, b, calc_sub);
+}
+pub inline fn add(a: anytype, b: anytype) @TypeOf(a, b) {
+    return calc(a, b, calc_add);
+}
+pub inline fn mul(a: anytype, b: anytype) @TypeOf(a, b) {
+    return calc(a, b, calc_mul);
+}
+pub inline fn div(a: anytype, b: anytype) @TypeOf(a, b) {
+    return calc(a, b, calc_div);
+}
+
+inline fn calc_add(a: anytype, b: anytype) @TypeOf(a, b) {
+    return a + b;
+}
+inline fn calc_sub(a: anytype, b: anytype) @TypeOf(a, b) {
+    return a - b;
+}
+inline fn calc_mul(a: anytype, b: anytype) @TypeOf(a, b) {
+    return a * b;
+}
+inline fn calc_div(a: anytype, b: anytype) @TypeOf(a, b) {
+    return a / b;
+}
+inline fn calc(a: anytype, b: anytype, calc_func: anytype) @TypeOf(a, b) {
+    if (@typeInfo(@TypeOf(a, b)) == .vector) {
+        return calc_func(a, b);
+    } else if (@typeInfo(@TypeOf(a, b)) == .array) {
+        test_number_type(@typeInfo(@TypeOf(a, b)).array.child);
+        if (a.len != b.len) @compileError("a, b len must same");
+
+        comptime var i = 0;
+        var result: @TypeOf(a, b) = undefined;
+        inline while (i < a.len) : (i += 1) {
+            result[i] = calc_func(a[i], b[i]);
+        }
+        return result;
+    } else {
+        @compileError("not a vector, array type");
     }
 }
 pub inline fn normalize(v: anytype) @TypeOf(v) {
@@ -188,6 +232,34 @@ pub inline fn cross3(v0: vector, v1: vector) vector {
 pub const matrix3x3 = matrix_(f32, 3, 3);
 
 pub const matrix_error = error{ not_exist_inverse_matrix, invaild_near_far, sfov_0, far_near_0, near_far_0, aspect_0, w_0, h_0 };
+
+pub fn compare(n: anytype, i: anytype) bool {
+    switch (@typeInfo(@TypeOf(n, i))) {
+        .float, .comptime_float => {
+            return n == i;
+        },
+        .int, .comptime_int => {
+            return n == i;
+        },
+        .array => {
+            comptime var e = 0;
+            inline while (e < n.len) : (e += 1) {
+                if (!compare(n[e], i[e])) return false;
+            }
+            return true;
+        },
+        .vector => {
+            comptime var e = 0;
+            inline while (e < @typeInfo(@TypeOf(n, i)).vector.len) : (e += 1) {
+                if (!compare(n[e], i[e])) return false;
+            }
+            return true;
+        },
+        else => {
+            @compileError("not a number type");
+        },
+    }
+}
 
 pub fn compare_n(n: anytype, i: anytype) bool {
     switch (@typeInfo(@TypeOf(n, i))) {
