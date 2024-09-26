@@ -24,7 +24,6 @@ pub const curve_TYPE = enum {
 
 pub const line_error = error{
     is_point_not_line,
-    ///직선에 대한 처리를 따로한다.
     is_not_curve,
     invaild_line,
     out_of_idx,
