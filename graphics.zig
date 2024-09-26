@@ -1,5 +1,4 @@
 const std = @import("std");
-const ArrayList = std.ArrayList;
 
 const file = @import("file.zig");
 const system = @import("system.zig");
@@ -29,15 +28,17 @@ const vulkan_res_node = __vulkan_allocator.vulkan_res_node;
 ///use make_shape2d_data fn
 pub const indices16 = indices_(.U16);
 pub const indices32 = indices_(.U32);
-pub const indices = indices_(DEF_IDX_TYPE);
+pub const indices = indices_(DEF_IDX_TYPE_);
 
 pub const dummy_vertices = [@sizeOf(vertices(u8))]u8;
 pub const dummy_indices = [@sizeOf(indices)]u8;
 pub const dummy_object = [@sizeOf(object(u8))]u8;
 
-pub const take_vertices = mem.align_ptr_cast;
-pub const take_indices = mem.align_ptr_cast;
-pub const take_object = mem.align_ptr_cast;
+pub fn take_vertices(dest_type: type, src_ptrmempool: anytype) !dest_type {
+    return mem.align_ptr_cast(dest_type, try src_ptrmempool.*.create());
+}
+pub const take_indices = take_vertices;
+pub const take_object = take_vertices;
 
 pub const write_flag = enum { read_gpu, readwrite_cpu };
 
@@ -68,7 +69,8 @@ pub const tex_vertex_2d = extern struct {
 pub var scene: ?*[]*iobject = null;
 
 pub const index_type = enum { U16, U32 };
-pub const DEF_IDX_TYPE: index_type = .U32;
+pub const DEF_IDX_TYPE_: index_type = .U32;
+pub const DEF_IDX_TYPE = indices_(DEF_IDX_TYPE_).idxT;
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
     var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
@@ -88,6 +90,7 @@ pub const ivertices = struct {
 
     get_vertices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
+    deinit_for_alloc: *const fn (self: *Self) void = undefined,
 
     node: vulkan_res_node(.buffer) = .{},
     pipeline: *__vulkan.pipeline_set = undefined,
@@ -101,6 +104,7 @@ pub const iindices = struct {
 
     get_indices_len: *const fn (self: *Self) usize = undefined,
     deinit: *const fn (self: *Self) void = undefined,
+    deinit_for_alloc: *const fn (self: *Self) void = undefined,
 
     node: vulkan_res_node(.buffer) = .{},
     idx_type: index_type = undefined,
@@ -114,32 +118,48 @@ pub fn vertices(comptime vertexT: type) type {
     return struct {
         const Self = @This();
 
-        array: ArrayList(vertexT) = undefined,
+        array: []vertexT = undefined,
         interface: ivertices = .{},
+        allocator: std.mem.Allocator = undefined,
 
-        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터 호출 가능)
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init() Self {
             var self: Self = .{};
             self.interface.pipeline = vertexT.get_pipeline();
-            system.handle_error_msg(self.interface.pipeline.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
-            self.array = ArrayList(vertexT).init(allocator);
 
             self.interface.get_vertices_len = get_vertices_len;
             self.interface.deinit = _deinit;
             return self;
         }
+        pub fn init_for_alloc(__allocator: std.mem.Allocator) Self {
+            var self: Self = .{};
+            self.interface.pipeline = vertexT.get_pipeline();
+
+            self.interface.get_vertices_len = get_vertices_len;
+            self.interface.deinit = _deinit;
+            self.interface.deinit_for_alloc = _deinit_for_alloc;
+            self.allocator = __allocator;
+            return self;
+        }
         fn get_vertices_len(_interface: *ivertices) usize {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return self.*.array.items.len;
+            return self.*.array.len;
         }
         fn _deinit(_interface: *ivertices) void {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
             deinit(self);
         }
+        fn _deinit_for_alloc(_interface: *ivertices) void {
+            const self = @as(*Self, @fieldParentPtr("interface", _interface));
+            deinit_for_alloc(self);
+        }
         ///완전히 정리
         pub inline fn deinit(self: *Self) void {
             clean(self);
-            self.*.array.deinit();
+        }
+        ///완전히 정리
+        pub inline fn deinit_for_alloc(self: *Self) void {
+            self.allocator.free(self.array);
+            clean(self);
         }
         ///다시 빌드할수 있게 버퍼 내용만 정리
         pub inline fn clean(self: *Self) void {
@@ -147,7 +167,7 @@ pub fn vertices(comptime vertexT: type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.items.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
             const prop: vk.VkMemoryPropertyFlags =
                 switch (_flag) {
@@ -155,13 +175,13 @@ pub fn vertices(comptime vertexT: type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
             var data: ?*vertexT = undefined;
             self.*.interface.node.map(@ptrCast(&data));
-            mem.memcpy_nonarray(data.?, self.*.array.items.ptr);
+            mem.memcpy_nonarray(data.?, self.*.array.ptr);
             self.*.interface.node.unmap();
         }
     };
@@ -175,27 +195,42 @@ pub fn indices_(comptime _type: index_type) type {
             .U32 => u32,
         };
 
-        array: ArrayList(idxT) = undefined,
+        array: []idxT = undefined,
         interface: iindices = .{},
+        allocator: std.mem.Allocator = undefined,
 
-        ///! 반드시 시스템 초기화 후 호출(xfit_init 함수 부터 호출 가능)
-        pub fn init(allocator: std.mem.Allocator) Self {
-            system.handle_error_msg(__vulkan.color_2d_pipeline_set.pipeline != null, "Must be called this function after system initialisation (from xfit_init function)");
+        pub fn init() Self {
             var self: Self = .{};
-            self.array = ArrayList(idxT).init(allocator);
             self.interface.get_indices_len = get_indices_len;
             self.interface.idx_type = _type;
             self.interface.deinit = _deinit;
+            return self;
+        }
+        pub fn init_for_alloc(__allocator: std.mem.Allocator) Self {
+            var self: Self = .{};
+            self.interface.get_indices_len = get_indices_len;
+            self.interface.idx_type = _type;
+            self.interface.deinit = _deinit;
+            self.interface.deinit_for_alloc = _deinit_for_alloc;
+            self.allocator = __allocator;
             return self;
         }
         fn _deinit(_interface: *iindices) void {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
             deinit(self);
         }
+        fn _deinit_for_alloc(_interface: *iindices) void {
+            const self = @as(*Self, @fieldParentPtr("interface", _interface));
+            deinit_for_alloc(self);
+        }
         ///완전히 정리
         pub inline fn deinit(self: *Self) void {
             clean(self);
-            self.*.array.deinit();
+        }
+        ///완전히 정리
+        pub inline fn deinit_for_alloc(self: *Self) void {
+            self.allocator.free(self.array);
+            clean(self);
         }
         ///다시 빌드할수 있게 버퍼 내용만 정리
         pub inline fn clean(self: *Self) void {
@@ -203,11 +238,11 @@ pub fn indices_(comptime _type: index_type) type {
         }
         fn get_indices_len(_interface: *iindices) usize {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return self.*.array.items.len;
+            return self.*.array.len;
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.items.len, .usage = vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.len, .usage = vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
             const prop: vk.VkMemoryPropertyFlags =
                 switch (_flag) {
@@ -215,13 +250,13 @@ pub fn indices_(comptime _type: index_type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.items));
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
             var data: ?*idxT = undefined;
             self.*.interface.node.map(@ptrCast(&data));
-            mem.memcpy_nonarray(data.?, self.*.array.items.ptr);
+            mem.memcpy_nonarray(data.?, self.*.array.ptr);
             self.*.interface.node.unmap();
         }
     };
@@ -364,23 +399,17 @@ pub const texture = struct {
     __image: vulkan_res_node(.image) = .{},
     width: u32 = undefined,
     height: u32 = undefined,
-    pixels: ArrayList(u8),
+    pixels: []u8 = undefined,
 
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return Self{
-            .pixels = ArrayList(u8).init(allocator),
-        };
-    }
     ///완전히 정리
     pub inline fn deinit(self: *Self) void {
         clean(self);
-        self.*.pixels.deinit();
     }
     ///write_flag가 readwrite_cpu만 호출
     pub fn map_update(self: *Self) void {
         var data: ?*u8 = undefined;
         self.*.__model_uniform.map(@ptrCast(&data));
-        mem.memcpy_nonarray(data.?, self.*.pixels.items.ptr);
+        mem.memcpy_nonarray(data.?, self.*.pixels.ptr);
         self.*.__model_uniform.unmap();
     }
     ///다시 빌드할수 있게 버퍼 내용만 정리
@@ -404,7 +433,7 @@ pub const texture = struct {
             .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
-        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.items));
+        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels));
     }
 };
 
@@ -579,7 +608,7 @@ pub const iobject = struct {
 };
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
 pub fn object(comptime vertexT: type) type {
-    return object_(vertexT, DEF_IDX_TYPE);
+    return object_(vertexT, DEF_IDX_TYPE_);
 }
 /// ! object는 deinit 필요없음 vertices, indices는 따로 해제
 pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
