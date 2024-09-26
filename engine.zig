@@ -62,6 +62,9 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
     const lib_names = comptime [_][]const u8{
         "libwebp.a",
         "libfreetype.a",
+        "libogg.a",
+        "libopus.a", //-fno-stack-protector 옵션으로 빌드 필요
+        "libopusfile.a",
     };
 
     var i: usize = 0;
@@ -99,6 +102,13 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             result.linkSystemLibrary("c");
             result.linkSystemLibrary("log");
 
+            result.addCSourceFile(.{
+                .file = b.path("zig-game-engine-project/lib/android/libc.c"),
+                .flags = &.{
+                    "-O3", "-D__clang__", "-U_MSC_VER",
+                },
+            });
+
             for (lib_names) |name| {
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/android/{s}/{s}", .{ ENGINE_DIR, get_arch_text(targets[i].cpu_arch.?), name }) catch unreachable));
             }
@@ -132,9 +142,18 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
         const system = b.addModule("system", .{ .root_source_file = b.path("zig-game-engine-project/system.zig") });
         system.addImport("build_options", build_options_module);
         result.root_module.addImport("build_options", build_options_module);
+        result.addCSourceFile(.{
+            .file = b.path("zig-game-engine-project/lib/miniaudio.c"),
+            .flags = &.{
+                "-O3", "-D__clang__", "-U_MSC_VER",
+                "-fno-sanitize=undefined", //없으면 오류남
+            },
+        });
 
         result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include"));
         result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include/freetype"));
+        result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include/opus"));
+        result.addIncludePath(get_lazypath(b, ENGINE_DIR ++ "/include/opusfile"));
         if (PLATFORM != XfitPlatform.android) break;
     }
 

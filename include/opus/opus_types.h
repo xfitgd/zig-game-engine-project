@@ -48,14 +48,14 @@
 #  undef opus_int8
 #  undef opus_uint64
 #  undef opus_uint8
-   typedef int8_t opus_int8;
-   typedef uint8_t opus_uint8;
-   typedef int16_t opus_int16;
-   typedef uint16_t opus_uint16;
-   typedef int32_t opus_int32;
-   typedef uint32_t opus_uint32;
-   typedef int64_t opus_int64;
-   typedef uint64_t opus_uint64;
+   typedef char opus_int8;
+   typedef unsigned char opus_uint8;
+   typedef short opus_int16;
+   typedef unsigned short opus_uint16;
+   typedef int opus_int32;
+   typedef unsigned int opus_uint32;
+   typedef long long opus_int64;
+   typedef unsigned long long opus_uint64;
 #elif defined(_WIN32)
 
 #  if defined(__CYGWIN__)

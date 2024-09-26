@@ -641,4 +641,5 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
     app.mutex.unlock();
 
     root.xfit_clean();
+    __system.real_destroy();
 }

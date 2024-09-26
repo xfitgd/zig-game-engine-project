@@ -23,6 +23,8 @@ pub fn xfit_main(_allocator: std.mem.Allocator, init_setting: *const system.init
         __system.destroy();
 
         root.xfit_clean();
+
+        __system.real_destroy();
     } else if (system.platform == .android) {
         __vulkan.vulkan_start();
 

@@ -24,11 +24,10 @@ pub const font_error = error{
 } || std.mem.Allocator.Error;
 
 pub const char_data = struct {
-    raw_p: graphics.raw_polygon,
+    raw_p: ?graphics.raw_polygon = null,
     advance: point,
     left: f32,
     top: f32,
-    empty: bool,
     allocator: std.mem.Allocator,
 };
 
@@ -42,13 +41,15 @@ fn handle_error(code: freetype.FT_Error) void {
 }
 
 pub fn start() void {
-    if (library != null) system.handle_error_msg2("font start failed");
+    if (system.dbg and __system.font_started) system.handle_error_msg2("font already started");
+    if (system.dbg) __system.font_started = true;
     handle_error(freetype.FT_Init_FreeType(&library));
 }
 
 pub fn destroy() void {
-    if (library == null) system.handle_error_msg2("font not started");
+    if (system.dbg and !__system.font_started) system.handle_error_msg2("font not started");
     _ = freetype.FT_Done_FreeType(library);
+    if (system.dbg) __system.font_started = false;
 }
 
 pub fn init(_font_data: []const u8, _face_index: freetype.FT_Long) Self {
@@ -63,9 +64,9 @@ pub fn init(_font_data: []const u8, _face_index: freetype.FT_Long) Self {
 pub fn deinit(self: *Self) void {
     var it = self.*.__char_array.valueIterator();
     while (it.next()) |v| {
-        if (!v.*.empty) {
-            v.*.allocator.free(v.*.raw_p.vertices);
-            v.*.allocator.free(v.*.raw_p.indices);
+        if (v.*.raw_p != null) {
+            v.*.allocator.free(v.*.raw_p.?.vertices);
+            v.*.allocator.free(v.*.raw_p.?.indices);
         }
     }
     self.*.__char_array.deinit();
@@ -152,9 +153,8 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
             return font_error.OutOfMemory;
         }
         if (data.idx == 0) {
-            char_d2.empty = true;
+            char_d2.raw_p = null;
         } else {
-            char_d2.empty = false;
             poly.lines[data.idx - 1] = try allocator.realloc(poly.lines[data.idx - 1], data.idx2);
 
             var vertices_array = std.ArrayList(graphics.color_vertex_2d).init(allocator);
@@ -166,10 +166,12 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
 
             try poly.compute_polygon(allocator, &vertices_array, &indices_array);
 
-            char_d2.raw_p.vertices = try allocator.alloc(graphics.color_vertex_2d, vertices_array.items.len);
-            char_d2.raw_p.indices = try allocator.alloc(u32, indices_array.items.len);
-            @memcpy(char_d2.raw_p.vertices, vertices_array.items);
-            @memcpy(char_d2.raw_p.indices, indices_array.items);
+            char_d2.raw_p = .{
+                .vertices = try allocator.alloc(graphics.color_vertex_2d, vertices_array.items.len),
+                .indices = try allocator.alloc(u32, indices_array.items.len),
+            };
+            @memcpy(char_d2.raw_p.?.vertices, vertices_array.items);
+            @memcpy(char_d2.raw_p.?.indices, indices_array.items);
         }
         char_d2.advance[0] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.x)) / 64.0;
         char_d2.advance[1] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.y)) / 64.0;
@@ -180,10 +182,10 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
         try self.*.__char_array.put(char, char_d2);
         char_d = &char_d2;
     }
-    if (char_d.?.empty) {} else {
+    if (char_d.?.raw_p == null) {} else {
         const len = out_polygon.*.vertices.len;
-        out_polygon.*.vertices = try allocator.realloc(out_polygon.*.vertices, len + char_d.?.raw_p.vertices.len);
-        @memcpy(out_polygon.*.vertices[len..], char_d.?.raw_p.vertices);
+        out_polygon.*.vertices = try allocator.realloc(out_polygon.*.vertices, len + char_d.?.raw_p.?.vertices.len);
+        @memcpy(out_polygon.*.vertices[len..], char_d.?.raw_p.?.vertices);
         var i: usize = len;
         while (i < out_polygon.*.vertices.len) : (i += 1) {
             out_polygon.*.vertices[i].pos *= scale;
@@ -191,8 +193,8 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
             out_polygon.*.vertices[i].color = color;
         }
         const ilen = out_polygon.*.indices.len;
-        out_polygon.*.indices = try allocator.realloc(out_polygon.*.indices, ilen + char_d.?.raw_p.indices.len);
-        @memcpy(out_polygon.*.indices[ilen..], char_d.?.raw_p.indices);
+        out_polygon.*.indices = try allocator.realloc(out_polygon.*.indices, ilen + char_d.?.raw_p.?.indices.len);
+        @memcpy(out_polygon.*.indices[ilen..], char_d.?.raw_p.?.indices);
         i = ilen;
         while (i < out_polygon.*.indices.len) : (i += 1) {
             out_polygon.*.indices[i] += @intCast(len);

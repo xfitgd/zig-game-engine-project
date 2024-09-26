@@ -62,6 +62,10 @@ pub var monitors: ArrayList(system.monitor_info) = undefined;
 pub var primary_monitor: *system.monitor_info = undefined;
 pub var size_update_sem: std.Thread.Semaphore = .{};
 
+//debug variables
+pub var sound_started: if (system.dbg) bool else void = if (system.dbg) false else {};
+pub var font_started: if (system.dbg) bool else void = if (system.dbg) false else {};
+
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
     allocator = _allocator;
     monitors = ArrayList(system.monitor_info).init(allocator);
@@ -104,4 +108,11 @@ pub fn destroy() void {
         value.*.resolutions.deinit();
     }
     monitors.deinit();
+}
+
+pub fn real_destroy() void {
+    if (system.dbg) {
+        if (sound_started) system.handle_error_msg2("sound not destroyed");
+        if (font_started) system.handle_error_msg2("font not destroyed");
+    }
 }
