@@ -65,6 +65,9 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
         "libogg.a",
         "libopus.a", //-fno-stack-protector 옵션으로 빌드 필요
         "libopusfile.a",
+        "libvorbis.a",
+        "libvorbisenc.a",
+        "libvorbisfile.a",
     };
 
     var i: usize = 0;
@@ -110,7 +113,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, PLATFORM: XfitP
             });
 
             for (lib_names) |name| {
-                result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/android/{s}/{s}", .{ ENGINE_DIR, get_arch_text(targets[i].cpu_arch.?), name }) catch unreachable));
+                result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/linux(android)/{s}/{s}", .{ ENGINE_DIR, get_arch_text(targets[i].cpu_arch.?), name }) catch unreachable));
             }
 
             result.root_module.addImport("build_options", build_options_module);

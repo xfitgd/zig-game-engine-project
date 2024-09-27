@@ -60,6 +60,7 @@ pub fn read_file(path: []const u8, allocator: std.mem.Allocator) ![]u8 {
     __size = @intCast(__android.android.AAsset_getLength(asset));
 
     buffer = try allocator.alloc(u8, __size);
+    errdefer allocator.free(buffer);
 
     var _read: usize = 0;
     while (_read < __size) {

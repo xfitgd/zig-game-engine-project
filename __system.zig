@@ -63,7 +63,7 @@ pub var primary_monitor: *system.monitor_info = undefined;
 pub var size_update_sem: std.Thread.Semaphore = .{};
 
 //debug variables
-pub var sound_started: if (system.dbg) bool else void = if (system.dbg) false else {};
+pub var sound_started: bool = false;
 pub var font_started: if (system.dbg) bool else void = if (system.dbg) false else {};
 
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
