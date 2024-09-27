@@ -102,11 +102,28 @@ pub fn render_string(self: *Self, _str: []const u8, color: vector, out_polygon: 
             offset[0] = 0;
             continue;
         }
-        try _render_char(self, codepoint, out_polygon, &offset, .{ 1, 1 }, color, allocator);
+        try _render_char(self, codepoint, out_polygon, &offset, null, .{ 1, 1 }, color, allocator);
     }
 }
 
-fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offset: *point, scale: point, color: vector, allocator: std.mem.Allocator) !void {
+pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, color: vector, out_polygon: *graphics.raw_polygon, allocator: std.mem.Allocator) !void {
+    out_polygon.*.vertices = try allocator.alloc(graphics.color_vertex_2d, 0);
+    out_polygon.*.indices = try allocator.alloc(u32, 0);
+    //https://gencmurat.com/en/posts/zig-strings/
+    var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
+    var offset: point = .{ 0, 0 };
+    while (utf8.nextCodepoint()) |codepoint| {
+        if (offset[1] <= -area[1]) break;
+        if (codepoint == '\n') {
+            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.glyph.*.metrics.height)) / 64.0 * 1.3;
+            offset[0] = 0;
+            continue;
+        }
+        try _render_char(self, codepoint, out_polygon, &offset, area, .{ 1, 1 }, color, allocator);
+    }
+}
+
+fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offset: *point, area: ?math.point, scale: point, color: vector, allocator: std.mem.Allocator) !void {
     var char_d: ?*char_data = self.*.__char_array.getPtr(char);
 
     if (char_d != null) {} else {
@@ -181,6 +198,11 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
         char_d2.allocator = allocator;
         try self.*.__char_array.put(char, char_d2);
         char_d = &char_d2;
+    }
+    if (area != null and offset.*[0] + char_d.?.*.advance[0] * scale[0] >= area.?[0]) {
+        offset.*[1] -= @as(f32, @floatFromInt(self.*.__face.*.glyph.*.metrics.height)) / 64.0 * 1.3;
+        offset.*[0] = 0;
+        if (offset.*[1] <= -area.?[1]) return;
     }
     if (char_d.?.raw_p == null) {} else {
         const len = out_polygon.*.vertices.len;
