@@ -12,7 +12,7 @@ void main() {
 
     // float sd = (pow(fragUv.x, 3) - fragUv.y * fragUv.z) / sqrt(fx * fx + fy * fy);
     // float alpha = 0.5 - sd;
-
+    // TODO antialising
 
     outColor = vec4(fragColor.xyz, fragColor.w * step(0, pow(fragUv.x, 3) - fragUv.y * fragUv.z));
 
