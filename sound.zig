@@ -86,7 +86,9 @@ fn callback_thread() void {
             this = g_ends.pop();
         }
         g_mutex2.unlock();
-        if (this != null) this.?.*.deinit();
+        if (this != null) {
+            if (miniaudio.ma_sound_is_looping(&this.?.*.__sound.?) == 0) this.?.*.deinit();
+        }
     }
 }
 
@@ -103,7 +105,7 @@ pub const sound_source = struct {
         std.c.free(self.*.out_data.?.ptr);
         __system.allocator.destroy(self);
     }
-    pub fn play_sound_memory(self: *sound_source, volume: f32) !?*Self {
+    pub fn play_sound_memory(self: *sound_source, volume: f32, loop: bool) !?*Self {
         if (!@atomicLoad(bool, &__system.sound_started, .acquire)) return null;
 
         const result_sound: *Self = try __system.allocator.create(Self);
@@ -127,6 +129,7 @@ pub const sound_source = struct {
         sound_config.endCallback = end_callback;
         sound_config.pEndCallbackUserData = @ptrCast(result_sound);
         sound_config.pDataSource = &result_sound.*.__audio_buf;
+        sound_config.isLooping = if (loop) 1 else 0;
 
         result_sound.*.__sound = undefined;
 
@@ -149,7 +152,7 @@ pub const sound_source = struct {
     }
 };
 
-pub fn play_sound(path: []const u8, volume: f32) !?*Self {
+pub fn play_sound(path: []const u8, volume: f32, loop: bool) !?*Self {
     if (!@atomicLoad(bool, &__system.sound_started, .acquire)) return null;
 
     var self: *Self = undefined;
@@ -209,6 +212,7 @@ pub fn play_sound(path: []const u8, volume: f32) !?*Self {
     sound_config.endCallback = end_callback;
     sound_config.pEndCallbackUserData = @ptrCast(self);
     sound_config.pDataSource = &self.*.__audio_buf;
+    sound_config.isLooping = if (loop) 1 else 0;
 
     result = miniaudio.ma_sound_init_ex(&engine, &sound_config, &self.*.__sound.?);
     if (result != miniaudio.MA_SUCCESS) {
