@@ -6,7 +6,7 @@
 
 - [opus](https://github.com/xiph/opus)
 - [opusfile](https://github.com/xiph/opusfile)
-- [libogg](https://xiph.org/downloads/)
+- [libogg, libvorbis](https://xiph.org/downloads/)
 - [freetype](https://freetype.org/)
 - [libwebp](https://chromium.googlesource.com/webm/libwebp)
 - [miniaudio](https://github.com/mackron/miniaudio)
