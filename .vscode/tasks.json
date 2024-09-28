@@ -1,0 +1,15 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build zig",
+            "type": "shell",
+            "command": "cd examples & zig build",
+        },
+        {
+            "label": "install apk",
+            "type": "shell",
+            "command": "adb install -r --no-incremental zig-out/signed.apk"
+        }
+    ]
+}
