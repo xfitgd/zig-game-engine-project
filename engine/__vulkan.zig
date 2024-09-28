@@ -15,8 +15,8 @@ pub var vk_allocator: __vulkan_allocator = undefined;
 
 pub const vk = @import("include/vulkan.zig");
 
-const shape_vert = @embedFile("shaders/out/shape_vert.spv");
-const shape_frag = @embedFile("shaders/out/shape_frag.spv");
+const shape_vert = @embedFile("shaders/out/shape_curve_vert.spv");
+const shape_frag = @embedFile("shaders/out/shape_curve_frag.spv");
 var shape_vert_shader: vk.VkShaderModule = undefined;
 var shape_frag_shader: vk.VkShaderModule = undefined;
 
@@ -40,6 +40,7 @@ pub const pipeline_set = struct {
 };
 
 //Predefined Pipelines
+pub var shape_color_2d_pipeline_set: pipeline_set = .{};
 pub var color_2d_pipeline_set: pipeline_set = .{};
 pub var tex_2d_pipeline_set: pipeline_set = .{};
 //
@@ -598,19 +599,19 @@ pub fn vulkan_start() void {
             .bindingCount = uboLayoutBinding.len,
             .pBindings = &uboLayoutBinding,
         };
-        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &color_2d_pipeline_set.descriptorSetLayout);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout color_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
+        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &shape_color_2d_pipeline_set.descriptorSetLayout);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout shape_color_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
 
         const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .setLayoutCount = 1,
-            .pSetLayouts = &color_2d_pipeline_set.descriptorSetLayout,
+            .pSetLayouts = &shape_color_2d_pipeline_set.descriptorSetLayout,
             .pushConstantRangeCount = 0,
             .pPushConstantRanges = null,
         };
 
-        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &color_2d_pipeline_set.pipelineLayout);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout color_2d_pipeline_set.pipelineLayout : {d}", .{result});
+        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &shape_color_2d_pipeline_set.pipelineLayout);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout shape_color_2d_pipeline_set.pipelineLayout : {d}", .{result});
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
@@ -643,15 +644,15 @@ pub fn vulkan_start() void {
             .pDepthStencilState = null,
             .pColorBlendState = &colorAlphaBlending,
             .pDynamicState = &dynamicState,
-            .layout = color_2d_pipeline_set.pipelineLayout,
+            .layout = shape_color_2d_pipeline_set.pipelineLayout,
             .renderPass = vkRenderPass,
             .subpass = 0,
             .basePipelineHandle = null,
             .basePipelineIndex = -1,
         };
 
-        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline_set.pipeline : {d}", .{result});
+        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &shape_color_2d_pipeline_set.pipeline);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines shape_color_2d_pipeline_set.pipeline : {d}", .{result});
     }
     //create_tex_2d_pipeline
     {
@@ -796,7 +797,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyShaderModule(vkDevice, tex_vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, tex_frag_shader, null);
 
-    color_2d_pipeline_set.deinit();
+    shape_color_2d_pipeline_set.deinit();
     tex_2d_pipeline_set.deinit();
 
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);

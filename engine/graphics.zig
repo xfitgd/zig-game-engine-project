@@ -51,7 +51,7 @@ pub const shape_color_vertex_2d = extern struct {
     uvw: [3]f32 align(1),
 
     pub inline fn get_pipeline() *__vulkan.pipeline_set {
-        return &__vulkan.color_2d_pipeline_set;
+        return &__vulkan.shape_color_2d_pipeline_set;
     }
 };
 
@@ -481,7 +481,7 @@ pub const iobject = struct {
                 .range = @sizeOf(matrix),
             },
         };
-        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.color_2d_pipeline_set) {
+        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
             const descriptorWrite = vk.VkWriteDescriptorSet{
                 .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = self.*.__descriptor_set,
@@ -546,7 +546,7 @@ pub const iobject = struct {
         }
 
         var result: vk.VkResult = undefined;
-        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.color_2d_pipeline_set) {
+        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
             clean(self);
 
             const pool_size: vk.VkDescriptorPoolSize = .{
@@ -560,7 +560,7 @@ pub const iobject = struct {
                 .maxSets = 1,
             };
             result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-            system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkCreateDescriptorPool(color_2d_pipeline_set) : {d}", .{result});
+            system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkCreateDescriptorPool(shape_color_2d_pipeline_set) : {d}", .{result});
         } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
             if (self.*.get_texture(self) == null) {
                 system.handle_error_msg2("iobject build need texture");

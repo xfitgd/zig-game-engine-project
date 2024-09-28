@@ -84,7 +84,7 @@ pub const platform_version = struct {
 };
 
 pub const platform = @import("build_options").platform;
-pub const XfitPlatform = @import("build_options").@"zig-game-engine-project.engine.XfitPlatform";
+pub const XfitPlatform = @TypeOf(platform);
 
 pub const error_handling_func: ?*const fn (text: []u8, stack_trace: []u8) void = null;
 
