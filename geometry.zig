@@ -98,14 +98,8 @@ pub fn lines_intersect(a1: point, a2: point, b1: point, b2: point, result: ?*poi
     return false;
 }
 
-pub fn point_distance_to_line(p: point, l0: point, l1: point) f32 {
-    const xx1 = l1[0] - l0[0];
-    const yy1 = l1[1] - l0[1];
-    const xx2 = p[0] - l0[0];
-    const yy2 = p[1] - l0[1];
-    const z = (xx1 * yy2) - (xx2 - yy1);
-
-    return z / sqrt((xx1 * xx1) + (yy1 * yy1));
+pub inline fn point_line_side(p: point, l0: point, l1: point) f32 {
+    return (l1[0] - l0[0]) * (p[1] - l0[1]) - (p[0] - l0[0]) * (l1[1] - l0[1]);
 }
 ///https://bowbowbow.tistory.com/24
 pub fn point_in_polygon(p: point, pts: []point) bool {
@@ -140,6 +134,15 @@ pub fn line_in_polygon(a: point, b: point, pts: []point, check_inside_line: bool
     }
     return false;
 }
+
+pub fn nearest_point_between_point_line(p: point, l0: point, l1: point) point {
+    const a = (l0[1] - l1[1]) / (l0[0] - l1[0]);
+    const c = (l1[0] - l0[0]) / (l0[1] - l1[1]);
+
+    const x = (p[1] - l0[1] + l0[0] * a - p[0] * c) / (a - c);
+    return .{ x, a * p[0] + l0[1] - l0[0] * a };
+}
+
 pub const circle = struct {
     p: point,
     radius: f32,
@@ -189,6 +192,29 @@ pub const polygon = struct {
         }
         var j: u32 = 0;
         var count: u32 = 0;
+        count = 0;
+        while (count < self.lines.len) : (count += 1) {
+            i = 0;
+            while (i < self.lines[count].len) : (i += 1) {
+                j = 0;
+                out: while (j < self.lines.len) : (j += 1) {
+                    var k: u32 = 0;
+                    while (k < self.lines[j].len) : (k += 1) {
+                        const nextk: u32 = if (k + 1 > self.lines[j].len - 1) 0 else k + 1;
+                        const prevk: u32 = if (k == 0) @intCast(self.lines[j].len - 1) else k - 1;
+                        if (!(count == j and (i == k or i == prevk or i == nextk)) and self.lines[count][i].curve_type != .line and self.lines[j][k].curve_type != .line) {
+                            const l0: [2]point = .{ self.lines[count][i].start, self.lines[count][i].end };
+                            const l1: [2]point = .{ self.lines[j][k].end, self.lines[j][k].control0 };
+                            if (lines_intersect(l0[0], l0[1], l1[0], l1[1], null)) {
+                                self.lines[count][i].divide = 0.5;
+                                break :out;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        count = 0;
         while (count < self.lines.len) : (count += 1) {
             i = 0;
             while (i < self.lines[count].len) : (i += 1) {
@@ -204,7 +230,6 @@ pub const polygon = struct {
             }
             try __outside_polygon.append(count);
         }
-        //system.print("compute_curve {d}\n", .{tt.lap()});
         count = 0;
         out: while (count < __outside_polygon.items.len) {
             const v = __outside_polygon.items[count];
@@ -225,7 +250,7 @@ pub const polygon = struct {
             j = 0;
             var maxX = std.math.floatMin(f32);
             while (j < __points[v].items.len) : (j += 1) {
-                if (maxX <= __points[v].items[j].p[0]) {
+                if (maxX < __points[v].items[j].p[0]) {
                     maxX = __points[v].items[j].p[0];
                     __inside_polygon.items[count][3] = j;
                 }
@@ -236,18 +261,22 @@ pub const polygon = struct {
             i = 0;
             while (i < __points[g].items.len) : (i += 1) {
                 check = true;
-                if (__points[g].items[i].p[0] < __points[v].items[j].p[0] or __points[g].items[i].p[1] > __points[v].items[j].p[1]) {
+                if (__points[g].items[i].p[0] < __points[v].items[j].p[0] or __points[g].items[i].p[1] < __points[v].items[j].p[1]) {
                     check = false;
                 } else {
                     var e: u32 = 0;
-                    while (e < __points.len) : (e += 1) {
-                        if (e != v) {
-                            if (line_in_polygon(__points[g].items[i].p, __points[v].items[j].p, __points2[e].items, false)) {
+                    while (e < __inside_polygon.items.len) : (e += 1) {
+                        const vv = __inside_polygon.items[e][0];
+                        if (vv != v and __inside_polygon.items[e][1] == __inside_polygon.items[count][1]) {
+                            if (line_in_polygon(__points[g].items[i].p, __points[v].items[j].p, __points2[vv].items, false)) {
                                 check = false;
                                 break;
                             }
                         }
                     }
+                }
+                if (check and line_in_polygon(__points[g].items[i].p, __points[v].items[j].p, __points2[g].items, false)) {
+                    check = false;
                 }
                 if (check) {
                     __inside_polygon.items[count][2] = i;
@@ -347,7 +376,7 @@ pub const polygon = struct {
         const a = b.*.prev orelse pt.last.?;
 
         const cross = math.cross2(b.*.data.*.p - a.*.data.*.p, c.*.data.*.p - b.*.data.*.p);
-        if (cross > 0) return null; //180도 이상
+        if (cross <= 0) return null; //180도 이상
 
         var nf: ?*DoublyLinkedList(*node).Node = c.next;
         const nl = a.*.prev orelse pt.last;
@@ -372,6 +401,7 @@ pub const line = struct {
     control1: point,
     end: point,
     curve_type: curve_TYPE = curve_TYPE.unknown,
+    divide: f32 = 0,
 
     pub fn quadratic_init(_start: point, _control01: point, _end: point) Self {
         return .{
@@ -407,9 +437,9 @@ pub const line = struct {
     }
     ///https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
     fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_idxs: anytype, color: ?vector, repeat: i32, make_extra_vertices: bool) line_error!u32 {
-        var d1: f32 = undefined;
-        var d2: f32 = undefined;
-        var d3: f32 = undefined;
+        var d1: f64 = undefined;
+        var d2: f64 = undefined;
+        var d3: f64 = undefined;
         if (self.*.curve_type == .line) {
             system.print_debug("line", .{});
             if (make_extra_vertices) {
@@ -423,7 +453,7 @@ pub const line = struct {
             }
             return 0;
         }
-        const cur_type = try __get_curve_type(_start, _control0, _control1, _end, &d1, &d2, &d3);
+        const cur_type = if (self.*.curve_type == .quadratic) .quadratic else try __get_curve_type(_start, _control0, _control1, _end, &d1, &d2, &d3);
         self.*.curve_type = cur_type;
 
         var mat: math.matrix = undefined;
@@ -441,21 +471,21 @@ pub const line = struct {
                 const ltMinusLs = lt - ls;
                 const mtMinusMs = mt - ms;
 
-                mat.e[0][0] = ls * ms;
-                mat.e[0][1] = ls * ls * ls;
-                mat.e[0][2] = ms * ms * ms;
+                mat.e[0][0] = @floatCast(ls * ms);
+                mat.e[0][1] = @floatCast(ls * ls * ls);
+                mat.e[0][2] = @floatCast(ms * ms * ms);
 
-                mat.e[1][0] = (1.0 / 3.0) * (3.0 * ls * ms - ls * mt - lt * ms);
-                mat.e[1][1] = ls * ls * (ls - lt);
-                mat.e[1][2] = ms * ms * (ms - mt);
+                mat.e[1][0] = @floatCast((1.0 / 3.0) * (3.0 * ls * ms - ls * mt - lt * ms));
+                mat.e[1][1] = @floatCast(ls * ls * (ls - lt));
+                mat.e[1][2] = @floatCast(ms * ms * (ms - mt));
 
-                mat.e[2][0] = (1.0 / 3.0) * (lt * (mt - 2.0 * ms) + ls * (3.0 * ms - 2.0 * mt));
-                mat.e[2][1] = ltMinusLs * ltMinusLs * ls;
-                mat.e[2][2] = mtMinusMs * mtMinusMs * ms;
+                mat.e[2][0] = @floatCast((1.0 / 3.0) * (lt * (mt - 2.0 * ms) + ls * (3.0 * ms - 2.0 * mt)));
+                mat.e[2][1] = @floatCast(ltMinusLs * ltMinusLs * ls);
+                mat.e[2][2] = @floatCast(mtMinusMs * mtMinusMs * ms);
 
-                mat.e[3][0] = ltMinusLs * mtMinusMs;
-                mat.e[3][1] = -(ltMinusLs * ltMinusLs * ltMinusLs);
-                mat.e[3][2] = -(mtMinusMs * mtMinusMs * mtMinusMs);
+                mat.e[3][0] = @floatCast(ltMinusLs * mtMinusMs);
+                mat.e[3][1] = @floatCast(-(ltMinusLs * ltMinusLs * ltMinusLs));
+                mat.e[3][2] = @floatCast(-(mtMinusMs * mtMinusMs * mtMinusMs));
 
                 flip = d1 < 0.0;
                 system.print_debug("serpentine {}", .{flip});
@@ -471,33 +501,33 @@ pub const line = struct {
                 const qm = ms / mt;
                 if (repeat == -1 and 0.0 < ql and ql < 1.0) {
                     artifact = 1;
-                    subdiv = ql;
+                    subdiv = @floatCast(ql);
                     system.print_debug("loop(1)", .{});
                 } else if (repeat == -1 and 0.0 < qm and qm < 1.0) {
                     artifact = 2;
-                    subdiv = qm;
+                    subdiv = @floatCast(ql);
                     system.print_debug("loop(2)", .{});
                 } else {
                     const ltMinusLs = lt - ls;
                     const mtMinusMs = mt - ms;
 
-                    mat.e[0][0] = ls * ms;
-                    mat.e[0][1] = ls * ls * ms;
-                    mat.e[0][2] = ls * ms * ms;
+                    mat.e[0][0] = @floatCast(ls * ms);
+                    mat.e[0][1] = @floatCast(ls * ls * ms);
+                    mat.e[0][2] = @floatCast(ls * ms * ms);
 
-                    mat.e[1][0] = (1.0 / 3.0) * (-ls * mt - lt * ms + 3.0 * ls * ms);
-                    mat.e[1][1] = -(1.0 / 3.0) * ls * (ls * (mt - 3.0 * ms) + 2.0 * lt * ms);
-                    mat.e[1][2] = -(1.0 / 3.0) * ms * (ls * (2.0 * mt - 3.0 * ms) + lt * ms);
+                    mat.e[1][0] = @floatCast((1.0 / 3.0) * (-ls * mt - lt * ms + 3.0 * ls * ms));
+                    mat.e[1][1] = @floatCast(-(1.0 / 3.0) * ls * (ls * (mt - 3.0 * ms) + 2.0 * lt * ms));
+                    mat.e[1][2] = @floatCast(-(1.0 / 3.0) * ms * (ls * (2.0 * mt - 3.0 * ms) + lt * ms));
 
-                    mat.e[2][0] = (1.0 / 3.0) * (lt * (mt - 2.0 * ms) + ls * (3.0 * ms - 2.0 * mt));
-                    mat.e[2][1] = (1.0 / 3.0) * (lt - ls) * (ls * (2.0 * mt - 3.0 * ms) + lt * ms);
-                    mat.e[2][2] = (1.0 / 3.0) * (mt - ms) * (ls * (mt - 3.0 * ms) + 2.0 * lt * ms);
+                    mat.e[2][0] = @floatCast((1.0 / 3.0) * (lt * (mt - 2.0 * ms) + ls * (3.0 * ms - 2.0 * mt)));
+                    mat.e[2][1] = @floatCast((1.0 / 3.0) * ltMinusLs * (ls * (2.0 * mt - 3.0 * ms) + lt * ms));
+                    mat.e[2][2] = @floatCast((1.0 / 3.0) * mtMinusMs * (ls * (mt - 3.0 * ms) + 2.0 * lt * ms));
 
-                    mat.e[3][0] = ltMinusLs * mtMinusMs;
-                    mat.e[3][1] = -(ltMinusLs * ltMinusLs) * mtMinusMs;
-                    mat.e[3][2] = -ltMinusLs * mtMinusMs * mtMinusMs;
+                    mat.e[3][0] = @floatCast(ltMinusLs * mtMinusMs);
+                    mat.e[3][1] = @floatCast(-(ltMinusLs * ltMinusLs) * mtMinusMs);
+                    mat.e[3][2] = @floatCast(-ltMinusLs * mtMinusMs * mtMinusMs);
 
-                    if (repeat == -1) flip = ((d1 > 0.0001 and mat.e[0][0] < -0.0001) or (d1 < -0.0001 and mat.e[0][0] > 0.0001));
+                    if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
                     system.print_debug("loop flip {}", .{flip});
                 }
             },
@@ -506,21 +536,22 @@ pub const line = struct {
                 const lt = 3.0 * d2;
                 const lsMinusLt = ls - lt;
 
-                mat.e[0][0] = ls;
-                mat.e[0][1] = ls * ls * ls;
+                mat.e[0][0] = @floatCast(ls);
+                mat.e[0][1] = @floatCast(ls * ls * ls);
                 mat.e[0][2] = 1;
 
-                mat.e[1][0] = ls - (1.0 / 3.0) * lt;
-                mat.e[1][1] = ls * ls * lsMinusLt;
+                mat.e[1][0] = @floatCast((ls - (1.0 / 3.0) * lt));
+                mat.e[1][1] = @floatCast(ls * ls * lsMinusLt);
                 mat.e[1][2] = 1;
 
-                mat.e[2][0] = ls - (2.0 / 3.0) * lt;
-                mat.e[2][1] = lsMinusLt * lsMinusLt * ls;
+                mat.e[2][0] = @floatCast((ls - (2.0 / 3.0) * lt));
+                mat.e[2][1] = @floatCast(lsMinusLt * lsMinusLt * ls);
                 mat.e[2][2] = 1;
 
-                mat.e[3][0] = lsMinusLt;
-                mat.e[3][1] = lsMinusLt * lsMinusLt * lsMinusLt;
+                mat.e[3][0] = @floatCast(lsMinusLt);
+                mat.e[3][1] = @floatCast(lsMinusLt * lsMinusLt * lsMinusLt);
                 mat.e[3][2] = 1;
+
                 system.print_debug("cusp {}", .{flip});
             },
             .quadratic => {
@@ -540,7 +571,7 @@ pub const line = struct {
                 mat.e[3][1] = -1;
                 mat.e[3][2] = 1;
 
-                flip = d3 < 0.0;
+                if (math.cross2(_control0 - _start, _control1 - _control0) < 0) flip = true;
                 system.print_debug("quadratic {}", .{flip});
             },
             .line => {
@@ -559,7 +590,11 @@ pub const line = struct {
             else => return line_error.is_not_curve,
         }
 
-        if (artifact != 0) {
+        if (artifact != 0 or (self.*.divide != 0.0 and repeat == -1)) {
+            if (artifact == 0) {
+                artifact = 1;
+                subdiv = self.*.divide;
+            }
             const x01 = (_control0[0] - _start[0]) * subdiv + _start[0];
             const y01 = (_control0[1] - _start[1]) * subdiv + _start[1];
 
@@ -578,41 +613,23 @@ pub const line = struct {
             const x0123 = (x123 - x012) * subdiv + x012;
             const y0123 = (y123 - y012) * subdiv + y012;
 
-            _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, color, if (artifact == 1) 0 else 1, false);
-            _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, color, if (artifact == 1) 1 else 0, false);
+            _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_idxs, color, if (artifact == 1) 0 else 0, false);
+            _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_idxs, color, if (artifact == 1) 0 else 0, false);
 
             var count: u32 = 0;
 
-            if (!((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0))) { //flip 상태가 아닐때만(안쪽 일때) 추가 삼각형 그리기
-                system.print_debug("additional triangle", .{});
-                const n: usize = out_vertices.items.len;
-                if (n + 2 > std.math.maxInt(@TypeOf(out_idxs.items[0]))) return line_error.out_of_idx;
-                const nn: @TypeOf(out_idxs.items[0]) = @intCast(n);
-                try out_vertices.*.resize(n + 3);
-                out_vertices.*.items[n].pos = _start;
-                out_vertices.*.items[n + 1].pos = .{ x0123, y0123 };
-                out_vertices.*.items[n + 2].pos = _end;
-
-                out_vertices.*.items[n].uvw = .{ 1, 0, 0 };
-                out_vertices.*.items[n + 1].uvw = .{ 1, 0, 0 };
-                out_vertices.*.items[n + 2].uvw = .{ 1, 0, 0 };
-
-                if (color != null) {
-                    out_vertices.*.items[n].color = color.?;
-                    out_vertices.*.items[n + 1].color = color.?;
-                    out_vertices.*.items[n + 2].color = color.?;
-                }
-
-                try out_idxs.*.appendSlice(&.{ nn + 0, nn + 1, nn + 2 });
-
+            if (!flip) {
                 if (make_extra_vertices) {
-                    try out_vertices.*.resize(out_vertices.*.items.len + 1);
-                    out_vertices.*.items[out_vertices.*.items.len - 1].pos = _start;
+                    try out_vertices.*.resize(out_vertices.*.items.len + 2);
+                    out_vertices.*.items[out_vertices.*.items.len - 2].pos = _start;
+                    out_vertices.*.items[out_vertices.*.items.len - 1].pos = .{ x0123, y0123 };
+                    out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
                     out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
                     if (color != null) {
+                        out_vertices.*.items[out_vertices.*.items.len - 2].color = color.?;
                         out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
                     }
-                    count += 1;
+                    count += 2;
                 }
             } else {
                 if (make_extra_vertices) {
@@ -644,7 +661,7 @@ pub const line = struct {
             }
             return count;
         }
-        if (repeat == 1) flip = !flip;
+        if (repeat == 1 and self.*.divide == 0.0) flip = !flip;
 
         if (flip) {
             mat.e[0][0] = -mat.e[0][0];
@@ -687,17 +704,40 @@ pub const line = struct {
             if (color != null) {
                 out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
             }
-            if (flip) {
-                try out_vertices.*.resize(out_vertices.*.items.len + 2);
-                out_vertices.*.items[out_vertices.*.items.len - 2].pos = _control0;
-                out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control1;
-                out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
-                out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
-                if (color != null) {
-                    out_vertices.*.items[out_vertices.*.items.len - 2].color = color.?;
-                    out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+            if (cur_type != .cusp) {
+                if (cur_type == .quadratic) {
+                    if (flip) {
+                        try out_vertices.*.resize(out_vertices.*.items.len + 2);
+                        out_vertices.*.items[out_vertices.*.items.len - 2].pos = _control0;
+                        out_vertices.*.items[out_vertices.*.items.len - 2].uvw = .{ 1, 0, 0 };
+                        if (color != null) {
+                            out_vertices.*.items[out_vertices.*.items.len - 2].color = color.?;
+                            out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                        }
+                        out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control1;
+                        out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                        count += 2;
+                    }
+                } else {
+                    if (math.cross2(_control0 - _start, _control1 - _control0) < 0) {
+                        try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                        out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control0;
+                        out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                        if (color != null) {
+                            out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                        }
+                        count += 1;
+                    }
+                    if (math.cross2(_control1 - _control0, _end - _control1) < 0) {
+                        try out_vertices.*.resize(out_vertices.*.items.len + 1);
+                        out_vertices.*.items[out_vertices.*.items.len - 1].pos = _control1;
+                        out_vertices.*.items[out_vertices.*.items.len - 1].uvw = .{ 1, 0, 0 };
+                        if (color != null) {
+                            out_vertices.*.items[out_vertices.*.items.len - 1].color = color.?;
+                        }
+                        count += 1;
+                    }
                 }
-                count += 2;
             }
         }
 
@@ -775,15 +815,28 @@ pub const line = struct {
         return count;
     }
     pub fn get_curve_type(self: Self) line_error!curve_TYPE {
-        var d1: f32 = undefined;
-        var d2: f32 = undefined;
-        var d3: f32 = undefined;
+        var d1: f64 = undefined;
+        var d2: f64 = undefined;
+        var d3: f64 = undefined;
         return try __get_curve_type(self.start, self.control0, self.control1, self.end, &d1, &d2, &d3);
     }
-    fn __get_curve_type(_start: point, _control0: point, _control1: point, _end: point, out_d1: *f32, out_d2: *f32, out_d3: *f32) line_error!curve_TYPE {
-        const a1 = dot3(vector{ _start[0], _start[1], 1, 0 }, cross3(vector{ _end[0], _end[1], 1, 0 }, vector{ _control1[0], _control1[1], 1, 0 }));
-        const a2 = dot3(vector{ _control0[0], _control0[1], 1, 0 }, cross3(vector{ _start[0], _start[1], 1, 0 }, vector{ _end[0], _end[1], 1, 0 }));
-        const a3 = dot3(vector{ _control1[0], _control1[1], 1, 0 }, cross3(vector{ _control0[0], _control0[1], 1, 0 }, vector{ _start[0], _start[1], 1, 0 }));
+    fn __get_curve_type(_start: point, _control0: point, _control1: point, _end: point, out_d1: *f64, out_d2: *f64, out_d3: *f64) line_error!curve_TYPE {
+        const start_x: f64 = @floatCast(_start[0]);
+        const start_y: f64 = @floatCast(_start[1]);
+        const control0_x: f64 = @floatCast(_control0[0]);
+        const control0_y: f64 = @floatCast(_control0[1]);
+        const control1_x: f64 = @floatCast(_control1[0]);
+        const control1_y: f64 = @floatCast(_control1[1]);
+        const end_x: f64 = @floatCast(_end[0]);
+        const end_y: f64 = @floatCast(_end[1]);
+
+        const cross_1: [3]f64 = .{ end_y - control1_y, control1_x - end_x, end_x * control1_y - end_y * control1_x };
+        const cross_2: [3]f64 = .{ start_y - end_y, end_x - start_x, start_x * end_y - start_y * end_x };
+        const cross_3: [3]f64 = .{ control0_y - start_y, start_x - control0_x, control0_x * start_y - control0_y * start_x };
+
+        const a1 = start_x * cross_1[0] + start_y * cross_1[1] + cross_1[2];
+        const a2 = control0_x * cross_2[0] + control0_y * cross_2[1] + cross_2[2];
+        const a3 = control1_x * cross_3[0] + control1_y * cross_3[1] + cross_3[2];
 
         out_d1.* = a1 - 2 * a2 + 3 * a3;
         out_d2.* = -a2 + 3 * a3;
@@ -796,22 +849,22 @@ pub const line = struct {
         const D = (3 * (out_d2.* * out_d2.*) - 4 * out_d3.* * out_d1.*);
         const discr = out_d1.* * out_d1.* * D; //어떤 타입의 곡선인지 판별하는 값
 
-        if (math.compare_n(_start, _control0) and math.compare_n(_control0, _control1) and math.compare_n(_control1, _end)) {
+        if (math.compare(_start, _control0) and math.compare(_control0, _control1) and math.compare(_control1, _end)) {
             return line_error.is_point_not_line;
         }
 
-        if (std.math.approxEqAbs(f32, discr, 0, 0.0001)) {
-            if (std.math.approxEqAbs(f32, out_d1.*, 0, 0.0001)) {
-                if (std.math.approxEqAbs(f32, out_d2.*, 0, 0.0001)) {
-                    if (std.math.approxEqAbs(f32, out_d3.*, 0, 0.0001)) return curve_TYPE.line;
+        if (std.math.approxEqAbs(f64, discr, 0, std.math.floatEps(f64))) {
+            if (std.math.approxEqAbs(f64, out_d1.*, 0, std.math.floatEps(f64))) {
+                if (std.math.approxEqAbs(f64, out_d2.*, 0, std.math.floatEps(f64))) {
+                    if (std.math.approxEqAbs(f64, out_d3.*, 0, std.math.floatEps(f64))) return curve_TYPE.line;
                     return curve_TYPE.quadratic;
                 }
             } else {
                 return curve_TYPE.cusp;
             }
-            if (D < -0.0001) return curve_TYPE.loop;
+            if (D < 0) return curve_TYPE.loop;
         }
-        if (discr > 0.0001) return curve_TYPE.serpentine;
+        if (discr > 0) return curve_TYPE.serpentine;
         return curve_TYPE.loop;
     }
 };

@@ -166,6 +166,10 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
             .len = self.*.__face.*.glyph.*.outline.n_points,
         };
 
+        if (freetype.FT_Outline_Get_Orientation(&self.*.__face.*.glyph.*.outline) == freetype.FT_ORIENTATION_FILL_RIGHT) {
+            freetype.FT_Outline_Reverse(&self.*.__face.*.glyph.*.outline);
+        }
+
         if (freetype.FT_Outline_Decompose(&self.*.__face.*.glyph.*.outline, &funcs, &data) != freetype.FT_Err_Ok) {
             return font_error.OutOfMemory;
         }
