@@ -221,6 +221,38 @@ pub fn set_window_mode() void {
         .Minimized => win32.SW_MINIMIZE,
     });
 }
+
+pub fn set_window_size(w: u32, h: u32) void {
+    var rect: RECT = .{ .left = 0, .top = 0, .right = @intCast(w), .bottom = @intCast(h) };
+    const style: c_long = ((((win32.WS_OVERLAPPED |
+        win32.WS_CAPTION) |
+        win32.WS_SYSMENU) |
+        if (window.can_resizewindow()) win32.WS_THICKFRAME else 0) |
+        if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
+        if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
+    win32.AdjustWindowRect(&rect, style, FALSE);
+
+    win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    __system.prev_window.width = @intCast(w);
+    __system.prev_window.height = @intCast(h);
+}
+
+pub fn set_window_pos(x: i32, y: i32) void {
+    const style: c_long = ((((win32.WS_OVERLAPPED |
+        win32.WS_CAPTION) |
+        win32.WS_SYSMENU) |
+        if (window.can_resizewindow()) win32.WS_THICKFRAME else 0) |
+        if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
+        if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
+
+    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
+    win32.AdjustWindowRect(&rect, style, FALSE);
+
+    win32.SetWindowPos(hWnd, 0, x, y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    __system.prev_window.x = @intCast(x);
+    __system.prev_window.y = @intCast(y);
+}
+
 pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: window.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
     const style: c_long = ((((win32.WS_OVERLAPPED |
         win32.WS_CAPTION) |
@@ -241,6 +273,11 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
         .Maximized => win32.SW_MAXIMIZE,
         .Minimized => win32.SW_MINIMIZE,
     });
+}
+
+pub fn set_window_title() void {
+    //?window.set_window_title 참고
+    win32.SetWindowTextA(hWnd, __system.title);
 }
 
 pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {

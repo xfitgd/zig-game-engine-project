@@ -83,13 +83,43 @@ pub fn can_resizewindow() bool {
     }
     @compileError("not support platform.");
 }
-//TODO pub fn set_window_size and pos ???
-//TODO pub fn get_window_title() set_window_title()
+
+pub fn get_window_title() []const u8 {
+    return __system.title[0 .. __system.title.len - 1];
+}
+pub fn set_window_title(title: []const u8) void {
+    __system.allocator.free(__system.title);
+    title = __system.allocator.dupeZ(u8, title) catch |e| system.handle_error3("set_window_title.title = allocator.dupeZ", e);
+
+    __windows.set_window_title();
+}
+
+pub fn set_window_size(w: u32, h: u32) void {
+    if (system.platform == .windows) {
+        __windows.set_window_size(w, h);
+    } else {
+        system.print_error("WARN window.set_window_size not support mobile platform.\n", .{});
+        return;
+    }
+    @atomicStore(i32, &__system.init_set.window_width, __system.prev_window.width, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_height, __system.prev_window.height, std.builtin.AtomicOrder.monotonic);
+}
+pub fn set_window_pos(x: i32, y: i32) void {
+    if (system.platform == .windows) {
+        __windows.set_window_pos(x, y);
+    } else {
+        system.print_error("WARN window.set_window_pos not support mobile platform.\n", .{});
+        return;
+    }
+    @atomicStore(i32, &__system.init_set.window_x, __system.prev_window.x, std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_y, __system.prev_window.y, std.builtin.AtomicOrder.monotonic);
+}
+
 pub fn set_window_mode() void {
     if (system.platform == .windows) {
         __windows.set_window_mode();
     } else {
-        system.print_error("WARN monitor_info.set_window_mode not support mobile platform.\n", .{});
+        system.print_error("WARN window.set_window_mode not support mobile platform.\n", .{});
         return;
     }
     @atomicStore(system.screen_mode, &__system.init_set.screen_mode, system.screen_mode.WINDOW, std.builtin.AtomicOrder.monotonic);

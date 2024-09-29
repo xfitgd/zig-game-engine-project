@@ -8,7 +8,7 @@ pub const img_error = error{
     src_too_small,
     dest_too_small,
 };
-pub inline fn bit(fmt: color_format) c_int {
+pub inline fn bit(fmt: color_format) u32 {
     return switch (fmt) {
         .RGB, .BGR => 24,
         .RGBA, .BGRA, .ABGR, .ARGB, .Gray32, .Gray32F => 32,
@@ -22,25 +22,21 @@ pub inline fn bit(fmt: color_format) c_int {
 }
 
 pub fn cut(_src: anytype, _fmt: color_format, _src_width: u32, _src_height: u32, _dest: anytype, _dest_x: u32, _dest_y: u32, _dest_width: u32, _dest_height: u32) img_error!void {
-    switch (_fmt) {
-        .RGB, .BGR => {
-            const src = mem.cvtarr(u8, _src);
-            if (_src_height * _src_width * 3 > src.len) return img_error.src_too_small;
-            const dest = mem.cvtarr(u8, _dest);
-            if (_dest_height * _dest_width * 3 > dest.len) return img_error.dest_too_small;
-            var w: u32 = 0;
-            var h: u32 = 0;
-            while (h < _dest_height) : (h += 1) {
-                while (w < _dest_width) : (w += 1) {
-                    const dest_idx = (h * _dest_width + w) * 3;
-                    const src_idx = ((h + _dest_y) * _src_width + _dest_x + w) * 3;
-                    dest.*[dest_idx] = src.*[src_idx];
-                    dest.*[dest_idx + 1] = src.*[src_idx + 1];
-                    dest.*[dest_idx + 2] = src.*[src_idx + 2];
-                }
+    const src = mem.u8arr(_src);
+    const dest = mem.u8arr(_dest);
+    const pixel_size: u32 = bit(_fmt) >> 3;
+    if (_src_height * _src_width * pixel_size > src.len) return img_error.src_too_small;
+    if (_dest_height * _dest_width * pixel_size > dest.len) return img_error.dest_too_small;
+    var w: u32 = 0;
+    var h: u32 = 0;
+    while (h < _dest_height) : (h += 1) {
+        while (w < _dest_width) : (w += 1) {
+            const dest_idx = (h * _dest_width + w) * pixel_size;
+            const src_idx = ((h + _dest_y) * _src_width + _dest_x + w) * pixel_size;
+            var i: u32 = 0;
+            while (i < pixel_size) : (i += 1) {
+                dest.*[dest_idx + i] = src.*[src_idx + i];
             }
-        },
-        //TODO 나머지 포멧도 구현
-        else => {},
+        }
     }
 }

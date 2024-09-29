@@ -39,8 +39,9 @@ pub var g_camera: graphics.camera = undefined;
 var font0: font = undefined;
 var font0_data: []u8 = undefined;
 
-var polygon: graphics.raw_polygon = undefined;
 var text_color: math.vector = .{ 1, 1, 1, 1 };
+
+var shape_src: graphics.shape.source = .{};
 
 pub fn xfit_init() void {
     font.start();
@@ -50,35 +51,39 @@ pub fn xfit_init() void {
     objects_mem_pool = MemoryPool(graphics.dummy_object).init(allocator);
     indices_mem_pool = MemoryPool(graphics.dummy_indices).init(allocator);
     const vertices = graphics.take_vertices(*graphics.vertices(graphics.color_vertex_2d), &vertices_mem_pool) catch system.handle_error_msg2("vertices_mem_pool OutOfMemory");
+    const curve_vertices = graphics.take_vertices(*graphics.vertices(graphics.shape_color_vertex_2d), &vertices_mem_pool) catch system.handle_error_msg2("vertices_mem_pool OutOfMemory");
     const indices = graphics.take_indices(*graphics.indices, &indices_mem_pool) catch system.handle_error_msg2("indices_mem_pool OutOfMemory");
-    const object = graphics.take_object(*graphics.shape2d, &objects_mem_pool) catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
+    const curve_indices = graphics.take_indices(*graphics.indices, &indices_mem_pool) catch system.handle_error_msg2("indices_mem_pool OutOfMemory");
+    const object = graphics.take_object(*graphics.shape, &objects_mem_pool) catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
     g_proj = graphics.projection.init(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
 
-    object.* = graphics.shape2d.init();
+    object.* = graphics.shape.init();
     vertices.* = graphics.vertices(graphics.color_vertex_2d).init_for_alloc(allocator);
+    curve_vertices.* = graphics.vertices(graphics.shape_color_vertex_2d).init_for_alloc(allocator);
     indices.* = graphics.indices.init_for_alloc(allocator);
+    curve_indices.* = graphics.indices.init_for_alloc(allocator);
+    shape_src.vertices = vertices;
+    shape_src.curve_vertices = curve_vertices;
+    shape_src.indices = indices;
+    shape_src.curve_indices = curve_indices;
 
     font0_data = file_.read_file("BinggraeⅡ.otf", allocator) catch |e| system.handle_error3("read_file font0_data", e);
     font0 = font.init(font0_data, 0);
 
     var tt = std.time.Timer.start() catch system.unreachable2();
-    font0.render_string("Hello World!\nbreak;", .{ 0, 1, 1, 0.5 }, &polygon, allocator) catch |e| system.handle_error3("font0.render_string", e);
-    //font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, .{ 0, 1, 1, 1 }, &polygon, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("Hello World!\nbreak;", .{ 0, 1, 1, 0.5 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    //font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, .{ 0, 1, 1, 1 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
     system.print("render string {d}", .{tt.lap()});
 
-    vertices.*.array = polygon.vertices;
-    indices.*.array = polygon.indices;
+    shape_src.build_all(.read_gpu);
 
-    vertices.*.build(.read_gpu);
-    indices.*.build(.read_gpu);
-
-    for ([_]*graphics.shape2d{object}) |value| {
+    for ([_]*graphics.shape{object}) |value| {
         value.*.interface.transform.camera = &g_camera;
         value.*.interface.transform.projection = &g_proj;
-        value.*.vertices = vertices;
-        value.*.indices = indices;
-        value.*.build(.readwrite_cpu);
+        value.*.src.*.vertices = vertices;
+        value.*.src.*.indices = indices;
+        value.*.interface.build(.readwrite_cpu);
 
         value.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-1, 0, 0));
         value.*.interface.transform.map_update();
@@ -101,10 +106,10 @@ pub fn xfit_size() void {}
 
 ///before system clean
 pub fn xfit_destroy() void {
-    const ivertices = objects.items[0].*.get_ivertices(objects.items[0]);
-    const iindices = objects.items[0].*.get_iindices(objects.items[0]);
-    ivertices.?.*.deinit_for_alloc(ivertices.?);
-    iindices.?.*.deinit_for_alloc(iindices.?);
+    shape_src.vertices.?.deinit_for_alloc();
+    shape_src.curve_vertices.?.deinit_for_alloc();
+    shape_src.indices.?.deinit_for_alloc();
+    shape_src.curve_indices.?.deinit_for_alloc();
 
     g_camera.deinit();
     g_proj.deinit();
@@ -117,7 +122,6 @@ pub fn xfit_destroy() void {
     objects_mem_pool.deinit();
     indices_mem_pool.deinit();
 
-    //font.free_raw_polygon(allocator, &polygon);
     font0.deinit();
     allocator.free(font0_data);
     font.destroy();

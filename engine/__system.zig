@@ -23,6 +23,8 @@ pub var prev_window: struct {
     state: window.window_state,
 } = undefined;
 
+pub var title: [:0]u8 = undefined;
+
 pub var init_set: system.init_setting = .{};
 
 pub var delta_time: u64 = 0;
@@ -70,6 +72,8 @@ pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_sett
     allocator = _allocator;
     monitors = ArrayList(system.monitor_info).init(allocator);
     init_set = init_setting.*;
+
+    title = allocator.dupeZ(u8, init_set.window_title.?) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
 }
 
 pub fn loop() void {
@@ -108,6 +112,7 @@ pub fn destroy() void {
         value.*.resolutions.deinit();
     }
     monitors.deinit();
+    allocator.free(title);
 }
 
 pub fn real_destroy() void {

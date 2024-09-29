@@ -13,59 +13,11 @@ pub inline fn memcpy_nonarray(dest: anytype, src: anytype) void {
 pub inline fn align_ptr_cast(dest_type: type, src: anytype) dest_type {
     return @as(dest_type, @ptrCast(@alignCast(src)));
 }
-pub inline fn u8arr(src: anytype) *[@sizeOf(@TypeOf(src))]u8 {
-    return @as(*[@sizeOf(@TypeOf(src))]u8, @constCast(@ptrCast(&src)));
+///src 타입 배열(Slice)을 u8 배열(Slice)로 변환한다.
+pub inline fn u8arr(src: anytype) []u8 {
+    return @as([*]u8, @ptrCast(src.ptr))[0..@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(u8))];
 }
-pub inline fn cvtarr(comptime dest_type: type, src: anytype) *[@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(dest_type))]dest_type {
-    return @as(*[@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(dest_type))]u8, @constCast(@ptrCast(&src)));
+///src 타입 배열(Slice)을 dest_type 타입 배열(Slice)로 변환한다.
+pub inline fn cvtarr(comptime dest_type: type, src: anytype) []dest_type {
+    return @as([*]dest_type, src.ptr)[0..@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(dest_type))];
 }
-
-// pub const Check = enum { ok, leak };
-
-// pub const dummy_allocator = struct {
-//     const Self = @This();
-//     const stack = struct { trace: std.builtin.StackTrace, addr: [4]usize };
-//     list: AutoHashMap(*anyopaque, *stack),
-//     pool: MemoryPool(stack),
-//     mutex: std.Thread.Mutex = .{},
-//     pub fn alloc(self: *Self) *anyopaque {
-//         self.mutex.lock();
-//         defer self.mutex.unlock();
-//         const node: *stack = self.*.pool.create() catch |e| system.handle_error3("dummy_allocator alloc.self.*.pool.create", e);
-//         node.*.trace.instruction_addresses = &node.*.addr;
-//         std.debug.captureStackTrace(null, &node.*.trace);
-//         self.*.list.put(@ptrCast(node), node) catch |e| system.handle_error3("dummy_allocator alloc.self.*.list.put(@ptrCast(node), node)", e);
-//         return @ptrCast(node);
-//     }
-//     pub fn free(self: *Self, alloc_code: *anyopaque) void {
-//         self.mutex.lock();
-//         defer self.mutex.unlock();
-//         _ = self.*.list.fetchRemove(alloc_code) orelse system.handle_error_msg2("dummy_allocator free.self.*.list.fetchRemove(alloc_code)");
-//         self.*.pool.destroy(align_ptr_cast(*stack, alloc_code));
-//     }
-//     pub fn init(allocator: std.mem.Allocator) Self {
-//         return Self{
-//             .list = AutoHashMap(*anyopaque, *stack).init(allocator),
-//             .pool = MemoryPool(stack).init(allocator),
-//         };
-//     }
-//     pub fn deinit(self: *Self) Check {
-//         self.mutex.lock();
-//         defer self.mutex.unlock();
-//         var it = self.*.list.iterator();
-//         var next = it.next();
-//         var is_leak = false;
-//         while (next != null) {
-//             if (!is_leak) {
-//                 system.print("Dummy Memory Leak !!!!!!!!!!!!!!!!!!!!\n", .{});
-//             }
-//             std.debug.dumpStackTrace(next.?.value_ptr.*.*.trace);
-//             is_leak = true;
-//             system.print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", .{});
-//             next = it.next();
-//         }
-//         self.list.deinit();
-//         self.pool.deinit();
-//         return if (is_leak) .leak else .ok;
-//     }
-// };

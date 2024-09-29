@@ -24,7 +24,12 @@ pub const font_error = error{
 } || std.mem.Allocator.Error;
 
 pub const char_data = struct {
-    raw_p: ?graphics.raw_polygon = null,
+    raw_p: ?struct {
+        vertices: []graphics.color_vertex_2d,
+        indices: []u32,
+        curve_vertices: []graphics.shape_color_vertex_2d,
+        curve_indices: []u32,
+    } = null,
     advance: point,
     left: f32,
     top: f32,
@@ -90,9 +95,16 @@ fn load_glyph(self: *Self, _char: u21) font_error!void {
     handle_error(freetype.FT_Load_Glyph(self.*.__face, try get_char_idx(self, _char), freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
 }
 
-pub fn render_string(self: *Self, _str: []const u8, color: vector, out_polygon: *graphics.raw_polygon, allocator: std.mem.Allocator) !void {
-    out_polygon.*.vertices = try allocator.alloc(graphics.color_vertex_2d, 0);
-    out_polygon.*.indices = try allocator.alloc(u32, 0);
+fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
+    if (out_shape_src.vertices.?.array == null) out_shape_src.*.vertices.?.array = try allocator.alloc(graphics.color_vertex_2d, 0);
+    if (out_shape_src.indices.?.array == null) out_shape_src.*.indices.?.array = try allocator.alloc(u32, 0);
+    if (out_shape_src.curve_vertices.?.array == null) out_shape_src.*.curve_vertices.?.array = try allocator.alloc(graphics.shape_color_vertex_2d, 0);
+    if (out_shape_src.curve_indices.?.array == null) out_shape_src.*.curve_indices.?.array = try allocator.alloc(u32, 0);
+}
+
+pub fn render_string(self: *Self, _str: []const u8, color: vector, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
+    try init_shape_src(out_shape_src, allocator);
+
     //https://gencmurat.com/en/posts/zig-strings/
     var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
     var offset: point = .{ 0, 0 };
@@ -102,14 +114,13 @@ pub fn render_string(self: *Self, _str: []const u8, color: vector, out_polygon: 
             offset[0] = 0;
             continue;
         }
-        try _render_char(self, codepoint, out_polygon, &offset, null, .{ 1, 1 }, color, allocator);
+        try _render_char(self, codepoint, out_shape_src, &offset, null, .{ 1, 1 }, color, allocator);
     }
 }
 
-pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, color: vector, out_polygon: *graphics.raw_polygon, allocator: std.mem.Allocator) !void {
-    out_polygon.*.vertices = try allocator.alloc(graphics.color_vertex_2d, 0);
-    out_polygon.*.indices = try allocator.alloc(u32, 0);
-    //https://gencmurat.com/en/posts/zig-strings/
+pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, color: vector, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
+    try init_shape_src(out_shape_src, allocator);
+
     var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
     var offset: point = .{ 0, 0 };
     while (utf8.nextCodepoint()) |codepoint| {
@@ -119,11 +130,11 @@ pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, color:
             offset[0] = 0;
             continue;
         }
-        try _render_char(self, codepoint, out_polygon, &offset, area, .{ 1, 1 }, color, allocator);
+        try _render_char(self, codepoint, out_shape_src, &offset, area, .{ 1, 1 }, color, allocator);
     }
 }
 
-fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offset: *point, area: ?math.point, scale: point, color: vector, allocator: std.mem.Allocator) !void {
+fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, offset: *point, area: ?math.point, scale: point, color: vector, allocator: std.mem.Allocator) !void {
     var char_d: ?*char_data = self.*.__char_array.getPtr(char);
 
     if (char_d != null) {} else {
@@ -185,12 +196,12 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
                 indices_array.deinit();
             }
 
-            try poly.compute_polygon(allocator, &vertices_array, &indices_array);
+            //try poly.compute_polygon(allocator, &vertices_array, &indices_array);
 
-            char_d2.raw_p = .{
-                .vertices = try allocator.alloc(graphics.color_vertex_2d, vertices_array.items.len),
-                .indices = try allocator.alloc(u32, indices_array.items.len),
-            };
+            // char_d2.raw_p = .{
+            //     .vertices = try allocator.alloc(graphics.color_vertex_2d, vertices_array.items.len),
+            //     .indices = try allocator.alloc(u32, indices_array.items.len),
+            // };
             @memcpy(char_d2.raw_p.?.vertices, vertices_array.items);
             @memcpy(char_d2.raw_p.?.indices, indices_array.items);
         }
@@ -209,21 +220,21 @@ fn _render_char(self: *Self, char: u21, out_polygon: *graphics.raw_polygon, offs
         if (offset.*[1] <= -area.?[1]) return;
     }
     if (char_d.?.raw_p == null) {} else {
-        const len = out_polygon.*.vertices.len;
-        out_polygon.*.vertices = try allocator.realloc(out_polygon.*.vertices, len + char_d.?.raw_p.?.vertices.len);
-        @memcpy(out_polygon.*.vertices[len..], char_d.?.raw_p.?.vertices);
+        const len = out_shape_src.*.vertices.len;
+        out_shape_src.*.vertices = try allocator.realloc(out_shape_src.*.vertices, len + char_d.?.raw_p.?.vertices.len);
+        @memcpy(out_shape_src.*.vertices[len..], char_d.?.raw_p.?.vertices);
         var i: usize = len;
-        while (i < out_polygon.*.vertices.len) : (i += 1) {
-            out_polygon.*.vertices[i].pos *= scale;
-            out_polygon.*.vertices[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
-            out_polygon.*.vertices[i].color = color;
+        while (i < out_shape_src.*.vertices.len) : (i += 1) {
+            out_shape_src.*.vertices[i].pos *= scale;
+            out_shape_src.*.vertices[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
+            out_shape_src.*.vertices[i].color = color;
         }
-        const ilen = out_polygon.*.indices.len;
-        out_polygon.*.indices = try allocator.realloc(out_polygon.*.indices, ilen + char_d.?.raw_p.?.indices.len);
-        @memcpy(out_polygon.*.indices[ilen..], char_d.?.raw_p.?.indices);
+        const ilen = out_shape_src.*.indices.len;
+        out_shape_src.*.indices = try allocator.realloc(out_shape_src.*.indices, ilen + char_d.?.raw_p.?.indices.len);
+        @memcpy(out_shape_src.*.indices[ilen..], char_d.?.raw_p.?.indices);
         i = ilen;
-        while (i < out_polygon.*.indices.len) : (i += 1) {
-            out_polygon.*.indices[i] += @intCast(len);
+        while (i < out_shape_src.*.indices.len) : (i += 1) {
+            out_shape_src.*.indices[i] += @intCast(len);
         }
     }
     offset.*[0] += char_d.?.*.advance[0] * scale[0];

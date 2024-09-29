@@ -32,7 +32,7 @@ pub const indices = indices_(DEF_IDX_TYPE_);
 
 pub const dummy_vertices = [@sizeOf(vertices(u8))]u8;
 pub const dummy_indices = [@sizeOf(indices)]u8;
-pub const dummy_object = [@sizeOf(object(u8))]u8;
+pub const dummy_object = [@sizeOf(shape)]u8;
 
 pub fn take_vertices(dest_type: type, src_ptrmempool: anytype) !dest_type {
     return mem.align_ptr_cast(dest_type, try src_ptrmempool.*.create());
@@ -41,9 +41,6 @@ pub const take_indices = take_vertices;
 pub const take_object = take_vertices;
 
 pub const write_flag = enum { read_gpu, readwrite_cpu };
-
-pub const shape2d = object(color_vertex_2d);
-pub const image2d = object(tex_vertex_2d);
 
 pub const shape_color_vertex_2d = extern struct {
     pos: point align(1),
@@ -125,7 +122,7 @@ pub fn vertices(comptime vertexT: type) type {
     return struct {
         const Self = @This();
 
-        array: []vertexT = undefined,
+        array: ?[]vertexT = undefined,
         interface: ivertices = .{},
         allocator: std.mem.Allocator = undefined,
 
@@ -149,7 +146,7 @@ pub fn vertices(comptime vertexT: type) type {
         }
         fn get_vertices_len(_interface: *ivertices) usize {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return self.*.array.len;
+            return self.*.array.?.len;
         }
         fn _deinit(_interface: *ivertices) void {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
@@ -165,7 +162,7 @@ pub fn vertices(comptime vertexT: type) type {
         }
         ///완전히 정리
         pub inline fn deinit_for_alloc(self: *Self) void {
-            self.allocator.free(self.array);
+            self.allocator.free(self.array.?);
             clean(self);
         }
         ///다시 빌드할수 있게 버퍼 내용만 정리
@@ -202,7 +199,7 @@ pub fn indices_(comptime _type: index_type) type {
             .U32 => u32,
         };
 
-        array: []idxT = undefined,
+        array: ?[]idxT = undefined,
         interface: iindices = .{},
         allocator: std.mem.Allocator = undefined,
 
@@ -236,7 +233,7 @@ pub fn indices_(comptime _type: index_type) type {
         }
         ///완전히 정리
         pub inline fn deinit_for_alloc(self: *Self) void {
-            self.allocator.free(self.array);
+            self.allocator.free(self.array.?);
             clean(self);
         }
         ///다시 빌드할수 있게 버퍼 내용만 정리
@@ -245,7 +242,7 @@ pub fn indices_(comptime _type: index_type) type {
         }
         fn get_indices_len(_interface: *iindices) usize {
             const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return self.*.array.len;
+            return self.*.array.?.len;
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
@@ -322,7 +319,7 @@ pub const projection = struct {
             .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.proj));
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -361,7 +358,7 @@ pub const camera = struct {
             .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(self.*.view));
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(@as([*]matrix, @ptrCast(&self.*.view))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -406,7 +403,7 @@ pub const texture = struct {
     __image: vulkan_res_node(.image) = .{},
     width: u32 = undefined,
     height: u32 = undefined,
-    pixels: []u8 = undefined,
+    pixels: ?[]u8 = null,
 
     ///완전히 정리
     pub inline fn deinit(self: *Self) void {
@@ -444,13 +441,12 @@ pub const texture = struct {
     }
 };
 
-/// ! object는 deinit 필요없음 vertices, indices는 따로 해제
 pub const iobject = struct {
     const Self = @This();
 
-    get_ivertices: *const fn (self: *iobject) ?*ivertices = undefined,
-    get_iindices: *const fn (self: *iobject) ?*iindices = undefined,
-    get_texture: *const fn (self: *iobject) ?*texture = undefined,
+    get_ivertices: *const fn (self: *iobject, idx: usize) ?*ivertices = undefined,
+    get_iindices: *const fn (self: *iobject, idx: usize) ?*iindices = undefined,
+    get_texture: *const fn (self: *iobject, idx: usize) ?*texture = undefined,
     transform: transform = .{},
     __descriptor_set: vk.VkDescriptorSet = null,
     __descriptor_pool: vk.VkDescriptorPool = null,
@@ -481,7 +477,7 @@ pub const iobject = struct {
                 .range = @sizeOf(matrix),
             },
         };
-        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
+        if (self.*.get_ivertices(self, 0).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
             const descriptorWrite = vk.VkWriteDescriptorSet{
                 .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = self.*.__descriptor_set,
@@ -494,10 +490,10 @@ pub const iobject = struct {
                 .pTexelBufferView = null,
             };
             vk.vkUpdateDescriptorSets(__vulkan.vkDevice, 1, &descriptorWrite, 0, null);
-        } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
+        } else if (self.*.get_ivertices(self, 0).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
             const imageInfo: vk.VkDescriptorImageInfo = .{
                 .imageLayout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                .imageView = self.*.get_texture(self).?.__image.__image_view,
+                .imageView = self.*.get_texture(self, 0).?.__image.__image_view,
                 .sampler = __vulkan.linear_sampler,
             };
             const descriptorWrite2 = [2]vk.VkWriteDescriptorSet{
@@ -541,12 +537,12 @@ pub const iobject = struct {
         if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.is_inited() or !self.*.transform.projection.?.*.is_inited()) {
             system.handle_error_msg2("iobject build need transform.camera, projection build(invaild)");
         }
-        if (self.*.get_ivertices(self) == null) {
+        if (self.*.get_ivertices(self, 0) == null) {
             system.handle_error_msg2("iobject build need vertices");
         }
 
         var result: vk.VkResult = undefined;
-        if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
+        if (self.*.get_ivertices(self, 0).?.*.pipeline == &__vulkan.shape_color_2d_pipeline_set) {
             clean(self);
 
             const pool_size: vk.VkDescriptorPoolSize = .{
@@ -561,8 +557,8 @@ pub const iobject = struct {
             };
             result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
             system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkCreateDescriptorPool(shape_color_2d_pipeline_set) : {d}", .{result});
-        } else if (self.*.get_ivertices(self).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
-            if (self.*.get_texture(self) == null) {
+        } else if (self.*.get_ivertices(self, 0).?.*.pipeline == &__vulkan.tex_2d_pipeline_set) {
+            if (self.*.get_texture(self, 0) == null) {
                 system.handle_error_msg2("iobject build need texture");
             }
             clean(self);
@@ -589,7 +585,7 @@ pub const iobject = struct {
             .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool = self.*.__descriptor_pool,
             .descriptorSetCount = 1,
-            .pSetLayouts = &self.*.get_ivertices(self).?.*.pipeline.*.descriptorSetLayout,
+            .pSetLayouts = &self.*.get_ivertices(self, 0).?.*.pipeline.*.descriptorSetLayout,
         };
         result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
         system.handle_error(result == vk.VK_SUCCESS, "iobject.build.vkAllocateDescriptorSets : {d}", .{result});
@@ -613,61 +609,125 @@ pub const iobject = struct {
         self.*.transform.clean();
     }
 };
-/// ! object는 deinit 필요없음 vertices, indices는 따로 해제
-pub fn object(comptime vertexT: type) type {
-    return object_(vertexT, DEF_IDX_TYPE_);
-}
-/// ! object는 deinit 필요없음 vertices, indices는 따로 해제
-pub fn object_(comptime vertexT: type, comptime _idx_type: index_type) type {
-    return struct {
-        const Self = @This();
 
-        vertices: ?*vertices(vertexT) = null,
-        indices: ?*indices_(_idx_type) = null,
-        texture: ?*texture = null,
-        interface: iobject,
+pub const shape = struct {
+    const Self = @This();
 
-        fn get_ivertices(_interface: *iobject) ?*ivertices {
-            const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return if (self.*.vertices != null) &self.*.vertices.?.*.interface else null;
-        }
-        fn get_iindices(_interface: *iobject) ?*iindices {
-            const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return if (self.*.indices != null) &self.*.indices.?.*.interface else null;
-        }
-        pub fn get_texture(_interface: *iobject) ?*texture {
-            const self = @as(*Self, @fieldParentPtr("interface", _interface));
-            return self.*.texture;
-        }
+    pub const source = struct {
+        vertices: ?*vertices(color_vertex_2d) = null,
+        indices: ?*indices32 = null,
+        curve_vertices: ?*vertices(shape_color_vertex_2d) = null,
+        curve_indices: ?*indices32 = null,
+        ///내부 vertices를 전부 포함하는 사각영역 렌더링 단계에서 마스크를 사용하여 사각형 렌더링
+        rect: math.rect = undefined,
 
-        pub fn init() Self {
-            var self = Self{
-                .interface = .{},
-            };
-            self.interface = iobject.init();
-            self.interface.get_ivertices = get_ivertices;
-            self.interface.get_iindices = get_iindices;
-            self.interface.get_texture = get_texture;
-
-            return self;
-        }
-        pub fn build(self: *Self, _flag: write_flag) void {
-            self.*.interface.build(_flag);
-        }
-        ///transform에 포함된 버퍼 값이 변경될때마다 호출한다. 리소스만 변경시에는 대신 map_update 호출
-        pub fn update(self: *Self) void {
-            self.*.interface.update();
-        }
-        pub fn deinit(self: *Self) void {
-            self.*.interface.deinit();
+        pub fn build_all(self: *source, _flag: write_flag) void {
+            if (self.*.vertices) self.*.vertices.?.build(_flag);
+            if (self.*.indices) self.*.indices.?.build(_flag);
+            if (self.*.curve_vertices) self.*.curve_vertices.?.build(_flag);
+            if (self.*.curve_indices) self.*.curve_indices.?.build(_flag);
         }
     };
-}
-pub const raw_polygon = struct {
-    vertices: []color_vertex_2d,
-    indices: []u32,
-    curve_vertices: []shape_color_vertex_2d,
-    curve_indices: []u32,
-    ///내부 vertices를 전부 포함하는 사각영역 렌더링 단계에서 마스크를 사용하여 사각형 렌더링
-    rect: math.rect,
+
+    src: *source = undefined,
+    interface: iobject,
+
+    fn get_ivertices(_interface: *iobject, idx: usize) ?*ivertices {
+        const self = @as(*Self, @fieldParentPtr("interface", _interface));
+        if (idx == 0) {
+            return if (self.*.src.*.vertices != null) &self.*.src.*.vertices.?.interface else null;
+        } else if (idx == 1) {
+            return if (self.*.src.*.curve_vertices != null) &self.*.src.*.curve_vertices.?.interface else null;
+        } else {
+            @branchHint(.unlikely);
+            system.print_error("shape.get_ivertices invaild idx", .{});
+            return if (self.*.src.*.vertices != null) &self.*.src.*.vertices.?.interface else null;
+        }
+    }
+    fn get_iindices(_interface: *iobject, idx: usize) ?*iindices {
+        const self = @as(*Self, @fieldParentPtr("interface", _interface));
+        if (idx == 0) {
+            return if (self.*.src.*.indices != null) &self.*.src.*.indices.?.interface else null;
+        } else if (idx == 1) {
+            return if (self.*.src.*.curve_indices != null) &self.*.src.*.curve_indices.?.interface else null;
+        } else {
+            @branchHint(.unlikely);
+            system.print_error("shape.get_iindices invaild idx", .{});
+            return if (self.*.src.*.indices != null) &self.*.src.*.indices.?.interface else null;
+        }
+    }
+    pub fn get_texture(_interface: *iobject, idx: usize) ?*texture {
+        _ = _interface;
+        _ = idx;
+        system.print_error("shape.get_texture invaild", .{});
+        return null;
+    }
+
+    pub fn init() Self {
+        var self = Self{
+            .interface = .{},
+        };
+        self.interface = iobject.init();
+        self.interface.get_ivertices = get_ivertices;
+        self.interface.get_iindices = get_iindices;
+        self.interface.get_texture = get_texture;
+
+        return self;
+    }
+};
+
+pub const image = struct {
+    const Self = @This();
+
+    pub const source = struct {
+        vertices: vertices(tex_vertex_2d),
+        indices: indices32,
+        texture: ?*texture = null,
+    };
+
+    src: *source = undefined,
+    interface: iobject,
+
+    fn get_ivertices(_interface: *iobject, idx: usize) ?*ivertices {
+        const self = @as(*Self, @fieldParentPtr("interface", _interface));
+        if (idx == 0) {
+            return if (self.*.src.*.vertice != null) &self.*.src.*.vertices.?.interface else null;
+        } else {
+            @branchHint(.unlikely);
+            system.print_error("image.get_ivertices invaild idx", .{});
+            return if (self.*.src.*.vertice != null) &self.*.src.*.vertices.?.interface else null;
+        }
+    }
+    fn get_iindices(_interface: *iobject, idx: usize) ?*iindices {
+        const self = @as(*Self, @fieldParentPtr("interface", _interface));
+        if (idx == 0) {
+            return if (self.*.src.*.indices != null) &self.*.src.*.indices.?.interface else null;
+        } else {
+            @branchHint(.unlikely);
+            system.print_error("image.get_iindices invaild idx", .{});
+            return if (self.*.src.*.indices != null) &self.*.src.*.indices.?.interface else null;
+        }
+    }
+    pub fn get_texture(_interface: *iobject, idx: usize) ?*texture {
+        const self = @as(*Self, @fieldParentPtr("interface", _interface));
+        if (idx != 0) {
+            @branchHint(.unlikely);
+            system.print_error("image.get_texture invaild idx", .{});
+            return self.*.src.*.texture;
+        } else {
+            return self.*.src.*.texture;
+        }
+    }
+
+    pub fn init() Self {
+        var self = Self{
+            .interface = .{},
+        };
+        self.interface = iobject.init();
+        self.interface.get_ivertices = get_ivertices;
+        self.interface.get_iindices = get_iindices;
+        self.interface.get_texture = get_texture;
+
+        return self;
+    }
 };

@@ -155,18 +155,18 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
     if (graphics.scene != null) {
         for (graphics.scene.?.*) |value| {
-            const ivertices = value.*.get_ivertices(value) orelse continue;
+            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
             vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
 
             vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
             vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
-            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.pipeline.*.pipelineLayout, 0, 1, &value.__descriptor_set, 0, null);
+            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.__descriptor_set, 0, null);
 
             const offsets: vk.VkDeviceSize = 0;
             vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.res, &offsets);
 
-            const iindices = value.*.get_iindices(value);
+            const iindices = value.*.get_iindices(value, 0);
             if (iindices != null) {
                 vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
                     .U16 => vk.VK_INDEX_TYPE_UINT16,
