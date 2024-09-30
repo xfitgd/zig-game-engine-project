@@ -24,12 +24,7 @@ pub const font_error = error{
 } || std.mem.Allocator.Error;
 
 pub const char_data = struct {
-    raw_p: ?struct {
-        vertices: []graphics.color_vertex_2d,
-        indices: []u32,
-        curve_vertices: []graphics.shape_color_vertex_2d,
-        curve_indices: []u32,
-    } = null,
+    raw_p: ?geometry.raw_polygon = null,
     advance: point,
     left: f32,
     top: f32,
@@ -189,21 +184,14 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         } else {
             poly.lines[data.idx - 1] = try allocator.realloc(poly.lines[data.idx - 1], data.idx2);
 
-            var vertices_array = std.ArrayList(graphics.color_vertex_2d).init(allocator);
-            var indices_array = std.ArrayList(u32).init(allocator);
-            defer {
-                vertices_array.deinit();
-                indices_array.deinit();
-            }
+            char_d2.raw_p = .{
+                .curve_vertices = try allocator.alloc(graphics.shape_color_vertex_2d, 0),
+                .vertices = try allocator.alloc(graphics.color_vertex_2d, 0),
+                .curve_indices = try allocator.alloc(u32, 0),
+                .indices = try allocator.alloc(u32, 0),
+            };
 
-            //try poly.compute_polygon(allocator, &vertices_array, &indices_array);
-
-            // char_d2.raw_p = .{
-            //     .vertices = try allocator.alloc(graphics.color_vertex_2d, vertices_array.items.len),
-            //     .indices = try allocator.alloc(u32, indices_array.items.len),
-            // };
-            @memcpy(char_d2.raw_p.?.vertices, vertices_array.items);
-            @memcpy(char_d2.raw_p.?.indices, indices_array.items);
+            try poly.compute_polygon(allocator, &char_d2.raw_p.?);
         }
         char_d2.advance[0] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.x)) / 64.0;
         char_d2.advance[1] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.y)) / 64.0;
@@ -211,7 +199,13 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         char_d2.top = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.bitmap_top)) / 64.0;
 
         char_d2.allocator = allocator;
-        try self.*.__char_array.put(char, char_d2);
+        self.*.__char_array.put(char, char_d2) catch |e| {
+            allocator.free(char_d2.raw_p.?.vertices);
+            allocator.free(char_d2.raw_p.?.indices);
+            allocator.free(char_d2.raw_p.?.curve_vertices);
+            allocator.free(char_d2.raw_p.?.curve_indices);
+            return e;
+        };
         char_d = &char_d2;
     }
     if (area != null and offset.*[0] + char_d.?.*.advance[0] * scale[0] >= area.?[0]) {
@@ -220,21 +214,37 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         if (offset.*[1] <= -area.?[1]) return;
     }
     if (char_d.?.raw_p == null) {} else {
-        const len = out_shape_src.*.vertices.len;
-        out_shape_src.*.vertices = try allocator.realloc(out_shape_src.*.vertices, len + char_d.?.raw_p.?.vertices.len);
-        @memcpy(out_shape_src.*.vertices[len..], char_d.?.raw_p.?.vertices);
+        const len = out_shape_src.*.vertices.?.*.array.?.len;
+        out_shape_src.*.vertices.?.*.array.? = try allocator.realloc(out_shape_src.*.vertices.?.*.array.?, len + char_d.?.raw_p.?.vertices.len);
+        @memcpy(out_shape_src.*.vertices.?.*.array.?[len..], char_d.?.raw_p.?.vertices);
         var i: usize = len;
-        while (i < out_shape_src.*.vertices.len) : (i += 1) {
-            out_shape_src.*.vertices[i].pos *= scale;
-            out_shape_src.*.vertices[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
-            out_shape_src.*.vertices[i].color = color;
+        while (i < out_shape_src.*.vertices.?.*.array.?.len) : (i += 1) {
+            out_shape_src.*.vertices.?.*.array.?[i].pos *= scale;
+            out_shape_src.*.vertices.?.*.array.?[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
+            out_shape_src.*.vertices.?.*.array.?[i].color = color;
         }
-        const ilen = out_shape_src.*.indices.len;
-        out_shape_src.*.indices = try allocator.realloc(out_shape_src.*.indices, ilen + char_d.?.raw_p.?.indices.len);
-        @memcpy(out_shape_src.*.indices[ilen..], char_d.?.raw_p.?.indices);
+        const ilen = out_shape_src.*.indices.?.*.array.?.len;
+        out_shape_src.*.indices.?.*.array = try allocator.realloc(out_shape_src.*.indices.?.*.array.?, ilen + char_d.?.raw_p.?.indices.len);
+        @memcpy(out_shape_src.*.indices.?.*.array.?[ilen..], char_d.?.raw_p.?.indices);
         i = ilen;
-        while (i < out_shape_src.*.indices.len) : (i += 1) {
-            out_shape_src.*.indices[i] += @intCast(len);
+        while (i < out_shape_src.*.indices.?.*.array.?.len) : (i += 1) {
+            out_shape_src.*.indices.?.*.array.?[i] += @intCast(len);
+        }
+        const len2 = out_shape_src.*.curve_vertices.?.*.array.?.len;
+        out_shape_src.*.curve_vertices.?.*.array.? = try allocator.realloc(out_shape_src.*.curve_vertices.?.*.array.?, len2 + char_d.?.raw_p.?.curve_vertices.len);
+        @memcpy(out_shape_src.*.curve_vertices.?.*.array.?[len2..], char_d.?.raw_p.?.curve_vertices);
+        i = len2;
+        while (i < out_shape_src.*.curve_vertices.?.*.array.?.len) : (i += 1) {
+            out_shape_src.*.curve_vertices.?.*.array.?[i].pos *= scale;
+            out_shape_src.*.curve_vertices.?.*.array.?[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
+            out_shape_src.*.curve_vertices.?.*.array.?[i].color = color;
+        }
+        const ilen2 = out_shape_src.*.curve_indices.?.*.array.?.len;
+        out_shape_src.*.curve_indices.?.*.array = try allocator.realloc(out_shape_src.*.curve_indices.?.*.array.?, ilen2 + char_d.?.raw_p.?.curve_indices.len);
+        @memcpy(out_shape_src.*.curve_indices.?.*.array.?[ilen2..], char_d.?.raw_p.?.curve_indices);
+        i = ilen2;
+        while (i < out_shape_src.*.curve_indices.?.*.array.?.len) : (i += 1) {
+            out_shape_src.*.curve_indices.?.*.array.?[i] += @intCast(len);
         }
     }
     offset.*[0] += char_d.?.*.advance[0] * scale[0];

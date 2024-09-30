@@ -73,7 +73,7 @@ pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_sett
     monitors = ArrayList(system.monitor_info).init(allocator);
     init_set = init_setting.*;
 
-    title = allocator.dupeZ(u8, init_set.window_title.?) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
+    title = allocator.dupeZ(u8, init_set.window_title) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
 }
 
 pub fn loop() void {

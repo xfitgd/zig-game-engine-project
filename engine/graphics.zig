@@ -35,7 +35,7 @@ pub const dummy_indices = [@sizeOf(indices)]u8;
 pub const dummy_object = [@sizeOf(shape)]u8;
 
 pub fn take_vertices(dest_type: type, src_ptrmempool: anytype) !dest_type {
-    return mem.align_ptr_cast(dest_type, try src_ptrmempool.*.create());
+    return @as(dest_type, @alignCast(@ptrCast(try src_ptrmempool.*.create())));
 }
 pub const take_indices = take_vertices;
 pub const take_object = take_vertices;
@@ -122,7 +122,7 @@ pub fn vertices(comptime vertexT: type) type {
     return struct {
         const Self = @This();
 
-        array: ?[]vertexT = undefined,
+        array: ?[]vertexT = null,
         interface: ivertices = .{},
         allocator: std.mem.Allocator = undefined,
 
@@ -171,7 +171,7 @@ pub fn vertices(comptime vertexT: type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.?.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
             const prop: vk.VkMemoryPropertyFlags =
                 switch (_flag) {
@@ -179,7 +179,7 @@ pub fn vertices(comptime vertexT: type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array));
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
@@ -199,7 +199,7 @@ pub fn indices_(comptime _type: index_type) type {
             .U32 => u32,
         };
 
-        array: ?[]idxT = undefined,
+        array: ?[]idxT = null,
         interface: iindices = .{},
         allocator: std.mem.Allocator = undefined,
 
@@ -246,7 +246,7 @@ pub fn indices_(comptime _type: index_type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.len, .usage = vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.?.len, .usage = vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
             const prop: vk.VkMemoryPropertyFlags =
                 switch (_flag) {
@@ -254,7 +254,7 @@ pub fn indices_(comptime _type: index_type) type {
                 .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             };
 
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array));
+            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
@@ -319,7 +319,7 @@ pub const projection = struct {
             .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -358,7 +358,7 @@ pub const camera = struct {
             .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, mem.u8arr(@as([*]matrix, @ptrCast(&self.*.view))[0..1]));
+        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.view))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -387,7 +387,7 @@ pub const transform = struct {
         clean(self);
         const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
-        __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, mem.u8arr(self.*.model));
+        __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.model))[0..1]));
     }
     ///write_flag가 readwrite_cpu일때만 호출
     pub fn map_update(self: *Self) void {
@@ -437,7 +437,7 @@ pub const texture = struct {
             .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
-        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels));
+        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?));
     }
 };
 
@@ -622,10 +622,10 @@ pub const shape = struct {
         rect: math.rect = undefined,
 
         pub fn build_all(self: *source, _flag: write_flag) void {
-            if (self.*.vertices) self.*.vertices.?.build(_flag);
-            if (self.*.indices) self.*.indices.?.build(_flag);
-            if (self.*.curve_vertices) self.*.curve_vertices.?.build(_flag);
-            if (self.*.curve_indices) self.*.curve_indices.?.build(_flag);
+            if (self.*.vertices != null) self.*.vertices.?.build(_flag);
+            if (self.*.indices != null) self.*.indices.?.build(_flag);
+            if (self.*.curve_vertices != null) self.*.curve_vertices.?.build(_flag);
+            if (self.*.curve_indices != null) self.*.curve_indices.?.build(_flag);
         }
     };
 

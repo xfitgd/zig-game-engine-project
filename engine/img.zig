@@ -22,8 +22,8 @@ pub inline fn bit(fmt: color_format) u32 {
 }
 
 pub fn cut(_src: anytype, _fmt: color_format, _src_width: u32, _src_height: u32, _dest: anytype, _dest_x: u32, _dest_y: u32, _dest_width: u32, _dest_height: u32) img_error!void {
-    const src = mem.u8arr(_src);
-    const dest = mem.u8arr(_dest);
+    const src = std.mem.sliceAsBytes(_src);
+    const dest = std.mem.sliceAsBytes(_dest);
     const pixel_size: u32 = bit(_fmt) >> 3;
     if (_src_height * _src_width * pixel_size > src.len) return img_error.src_too_small;
     if (_dest_height * _dest_width * pixel_size > dest.len) return img_error.dest_too_small;

@@ -81,8 +81,7 @@ pub fn xfit_init() void {
     for ([_]*graphics.shape{object}) |value| {
         value.*.interface.transform.camera = &g_camera;
         value.*.interface.transform.projection = &g_proj;
-        value.*.src.*.vertices = vertices;
-        value.*.src.*.indices = indices;
+        value.*.src = &shape_src;
         value.*.interface.build(.readwrite_cpu);
 
         value.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-1, 0, 0));

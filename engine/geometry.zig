@@ -6,7 +6,6 @@ const graphics = @import("graphics.zig");
 
 const point = math.point;
 const vector = math.vector;
-const raw_polygon = graphics.raw_polygon;
 
 const dot3 = math.dot3;
 const cross3 = math.cross3;
@@ -158,92 +157,71 @@ pub const polygon = struct {
     lines: [][]line,
     colors: ?[]vector = null,
 
-    pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, _input: ?*raw_polygon) polygon_error!*raw_polygon {
-        if (self.lines[0].len < 3) return polygon_error.is_not_polygon;
-        var raw: *raw_polygon = undefined;
-        if (_input == null) {
-            raw = try allocator.create(raw_polygon);
-            errdefer allocator.destroy(raw);
-        } else {
-            raw = _input.?;
-        }
-        var i: u32 = 0;
-        var count: u32 = 0;
-        var curve_vertice_len: u32 = 0;
-        var vertice_len: u32 = 0;
-        var curve_indices_len: u32 = 0;
-        var indices_len: u32 = 0;
+    ///raw_polygon elements need alloc
+    pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon) polygon_error!void {
+        var i: usize = 0;
+        var count: usize = 0;
+        var curve_vertice_len: usize = 0;
+        var vertice_len: usize = 0;
+        var curve_indices_len: usize = 0;
+        var indices_len: usize = 0;
 
         count = 0;
         while (count < self.lines.len) : (count += 1) {
+            if (self.lines[count].len < 3) return polygon_error.is_not_polygon;
             i = 0;
             vertice_len += 1;
             while (i < self.lines[count].len) : (i += 1) {
-                if (self.lines[count][i].curve_type == .line) {
-                    curve_vertice_len += 1;
-                } else {
-                    curve_vertice_len += 3;
+                if (self.lines[count][i].curve_type != .line) {
+                    curve_vertice_len += 4;
                 }
                 vertice_len += 1;
             }
         }
-        //갯수는 대충 최대값
-        if (_input == null) {
-            raw.*.curve_vertices = try allocator.alloc(graphics.shape_color_vertex_2d, curve_vertice_len);
-            errdefer allocator.free(raw.*.curve_vertices);
-            raw.*.curve_indices = try allocator.alloc(u32, curve_vertice_len * 3);
-            errdefer allocator.free(raw.*.curve_indices);
 
-            raw.*.vertices = try allocator.alloc(graphics.color_vertex_2d, vertice_len);
-            errdefer allocator.free(raw.*.vertices);
-            raw.*.indices = try allocator.alloc(u32, vertice_len * 3);
-            errdefer allocator.free(raw.*.indices);
+        const vertice_len2 = _inout.*.vertices.len;
+        _inout.*.vertices = try allocator.realloc(_inout.*.vertices, vertice_len2 + vertice_len);
+        vertice_len = vertice_len2;
 
-            curve_vertice_len = 0;
-            vertice_len = 0;
-        } else {
-            const curve_vertice_len2 = raw.*.curve_vertices.len;
-            const vertice_len2 = raw.*.vertices.len;
-            raw.*.curve_vertices = try allocator.realloc(raw.*.curve_vertices, curve_vertice_len2 + curve_vertice_len);
-            raw.*.curve_indices = try allocator.realloc(raw.*.curve_indices, (curve_vertice_len2 + curve_vertice_len) * 3);
+        const curve_vertice_len2 = _inout.*.curve_vertices.len;
+        _inout.*.curve_vertices = try allocator.realloc(_inout.*.curve_vertices, curve_vertice_len2 + curve_vertice_len * 2);
+        curve_vertice_len = curve_vertice_len2;
+        //인덱스 갯수는 대충 최대값
 
-            raw.*.vertices = try allocator.realloc(raw.*.vertices, vertice_len2 + vertice_len);
-            raw.*.indices = try allocator.realloc(raw.*.indices, (vertice_len2 + vertice_len) * 3);
-
-            curve_vertice_len = curve_vertice_len2;
-            vertice_len = vertice_len2;
-        }
+        _inout.*.indices = try allocator.realloc(_inout.*.indices, _inout.*.vertices.len * 3);
+        _inout.*.curve_indices = try allocator.realloc(_inout.*.curve_indices, _inout.*.curve_vertices.len * 3);
 
         count = 0;
         while (count < self.lines.len) : (count += 1) {
             i = 0;
             const first_vertex = vertice_len;
-            raw.*.vertices[first_vertex].pos = .{ std.math.floatMax(f32), std.math.floatMin(f32) };
+            _inout.*.vertices[first_vertex].pos = .{ std.math.floatMax(f32), std.math.floatMin(f32) };
             vertice_len += 1;
             while (i < self.lines[count].len) : (i += 1) {
-                try self.lines[count][i].compute_curve(raw.*.curve_vertices, raw.*.curve_indices, &curve_vertice_len, &curve_indices_len);
-                raw.*.vertices[vertice_len].pos = self.lines[count][i].start;
+                try self.lines[count][i].compute_curve(_inout.*.curve_vertices, _inout.*.curve_indices, &curve_vertice_len, &curve_indices_len);
+                _inout.*.vertices[vertice_len].pos = self.lines[count][i].start;
                 vertice_len += 1;
             }
             i = first_vertex + 1;
             var maxX: f32 = std.math.floatMin(f32);
             var minY: f32 = std.math.floatMax(f32);
             while (i < vertice_len) : (i += 1) {
-                if (raw.*.vertices[first_vertex].pos[0] > raw.*.vertices[i].pos[0]) raw.*.vertices[first_vertex].pos[0] = raw.*.vertices[i].pos[0];
-                if (raw.*.vertices[first_vertex].pos[1] < raw.*.vertices[i].pos[1]) raw.*.vertices[first_vertex].pos[1] = raw.*.vertices[i].pos[1];
-                if (maxX < raw.*.vertices[i].pos[0]) maxX = raw.*.vertices[i].pos[0];
-                if (minY > raw.*.vertices[i].pos[1]) minY = raw.*.vertices[i].pos[1];
+                if (_inout.*.vertices[first_vertex].pos[0] > _inout.*.vertices[i].pos[0]) _inout.*.vertices[first_vertex].pos[0] = _inout.*.vertices[i].pos[0];
+                if (_inout.*.vertices[first_vertex].pos[1] < _inout.*.vertices[i].pos[1]) _inout.*.vertices[first_vertex].pos[1] = _inout.*.vertices[i].pos[1];
+                if (maxX < _inout.*.vertices[i].pos[0]) maxX = _inout.*.vertices[i].pos[0];
+                if (minY > _inout.*.vertices[i].pos[1]) minY = _inout.*.vertices[i].pos[1];
 
-                raw.*.indices[indices_len] = first_vertex;
-                raw.*.indices[indices_len + 1] = i;
-                raw.*.indices[indices_len + 2] = if (i < vertice_len - 1) i + 1 else first_vertex + 1;
+                _inout.*.indices[indices_len] = @intCast(first_vertex);
+                _inout.*.indices[indices_len + 1] = @intCast(i);
+                _inout.*.indices[indices_len + 2] = if (i < vertice_len - 1) @intCast(i + 1) else @intCast(first_vertex + 1);
                 indices_len += 3;
             }
-            raw.*.vertices[first_vertex].pos[0] -= (maxX - raw.*.vertices[first_vertex].pos[0]) / 2;
-            raw.*.vertices[first_vertex].pos[1] += (raw.*.vertices[first_vertex].pos[1] - minY) / 2;
+            _inout.*.vertices[first_vertex].pos[0] -= (maxX - _inout.*.vertices[first_vertex].pos[0]) / 2;
+            _inout.*.vertices[first_vertex].pos[1] += (_inout.*.vertices[first_vertex].pos[1] - minY) / 2;
         }
-        raw.*.indices = try allocator.realloc(raw.*.indices, indices_len);
-        raw.*.curve_indices = try allocator.realloc(raw.*.curve_indices, curve_indices_len);
+        _inout.*.curve_vertices = try allocator.realloc(_inout.*.curve_vertices, curve_vertice_len);
+        _inout.*.indices = try allocator.realloc(_inout.*.indices, indices_len);
+        _inout.*.curve_indices = try allocator.realloc(_inout.*.curve_indices, curve_indices_len);
     }
 };
 
@@ -285,11 +263,11 @@ pub const line = struct {
     }
 
     /// out_vertices type is []shape_vertex_type, out_indices type is []idx_type
-    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *u32, in_out_indices_len: *u32) line_error!void {
+    pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *usize, in_out_indices_len: *usize) line_error!void {
         return try __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, -1);
     }
     /// https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
-    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *u32, in_out_indices_len: *u32, repeat: i32) line_error!void {
+    fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *usize, in_out_indices_len: *usize, repeat: i32) line_error!void {
         var d1: f64 = undefined;
         var d2: f64 = undefined;
         var d3: f64 = undefined;
@@ -524,51 +502,51 @@ pub const line = struct {
 
         if (lines_intersect(_start, _control1, _control0, _end, null)) {
             if (math.length_pow(_control1, _start) < math.length_pow(_end, _control0)) {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 3;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 3);
             } else {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 3;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 3;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 3);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 3);
             }
         } else if (lines_intersect(_start, _end, _control0, _control1, null)) {
             if (math.length_pow(_end, _start) < math.length_pow(_control1, _control0)) {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 3;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 3;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 2;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 3);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 3);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 2);
             } else {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 3;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 3);
             }
         } else {
             if (math.length_pow(_control0, _start) < math.length_pow(_end, _control1)) {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 1;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 3;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 3);
             } else {
-                out_indices[in_out_indices_len.*] = in_out_vertice_len.*;
-                out_indices[in_out_indices_len.* + 1] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 2] = in_out_vertice_len.* + 3;
-                out_indices[in_out_indices_len.* + 3] = in_out_vertice_len.* + 3;
-                out_indices[in_out_indices_len.* + 4] = in_out_vertice_len.* + 2;
-                out_indices[in_out_indices_len.* + 5] = in_out_vertice_len.* + 1;
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 3);
+                out_indices[in_out_indices_len.* + 3] = @intCast(in_out_vertice_len.* + 3);
+                out_indices[in_out_indices_len.* + 4] = @intCast(in_out_vertice_len.* + 2);
+                out_indices[in_out_indices_len.* + 5] = @intCast(in_out_vertice_len.* + 1);
             }
         }
         in_out_indices_len.* += 6;
@@ -623,4 +601,11 @@ pub const line = struct {
         if (discr > 0) return curve_TYPE.serpentine;
         return curve_TYPE.loop;
     }
+};
+
+pub const raw_polygon = struct {
+    vertices: []graphics.color_vertex_2d,
+    indices: []u32,
+    curve_vertices: []graphics.shape_color_vertex_2d,
+    curve_indices: []u32,
 };
