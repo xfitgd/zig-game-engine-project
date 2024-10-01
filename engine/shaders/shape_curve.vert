@@ -12,7 +12,7 @@ layout(binding = 2) uniform UniformBufferObject2 {
 
 //#extension GL_EXT_debug_printf : enable
 layout(location = 0) in vec2 inPosition;
-layout(location = 2) in vec3 inUv;
+layout(location = 1) in vec3 inUv;
 layout(location = 1) out vec3 fragUv;
 
 
