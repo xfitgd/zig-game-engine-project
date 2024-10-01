@@ -10,6 +10,7 @@ pub const XfitPlatform = enum(u32) { windows, android, linux, mac, end };
 const ANDROID_PATH = "C:/Android";
 const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.11718014", .{ANDROID_PATH});
 const ANDROID_VER = 34;
+const ANDROID_BUILD_TOOL_VER = "34.0.0";
 ///(기본값)상대 경로 또는 절대 경로로 설정하기
 
 //keystore 없으면 생성
@@ -29,7 +30,7 @@ inline fn get_arch_text(arch: std.Target.Cpu.Arch) []const u8 {
     };
 }
 
-pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine_path:[]const u8,PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
+pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine_path: []const u8, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
     var pro = std.process.Child.init(&[_][]const u8{ engine_path ++ "/shader_compile", engine_path }, b.allocator);
     _ = pro.spawnAndWait() catch unreachable;
 
@@ -105,7 +106,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
             result.linkSystemLibrary("log");
 
             result.addCSourceFile(.{
-                .file = b.path("zig-game-engine-project/lib/android/libc.c"),
+                .file = b.path(engine_path ++ "/lib/android/libc.c"),
                 .flags = &.{
                     "-O3", "-D__clang__", "-U_MSC_VER",
                 },
@@ -161,7 +162,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {
-        cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}) });
+        cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}), ANDROID_BUILD_TOOL_VER });
     } else {
         cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path });
     }
