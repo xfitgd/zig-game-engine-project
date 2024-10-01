@@ -81,16 +81,27 @@ pub fn loop() void {
         var start = false;
         var now: Timer = undefined;
     };
+    const ispause = system.pause();
     if (!S.start) {
         S.now = Timer.start() catch |e| system.handle_error3("S.now = Timer.start()", e);
         S.start = true;
     } else {
         delta_time = S.now.lap();
-        const maxframe: u64 = system.get_maxframe_u64();
+        var maxframe: u64 = system.get_maxframe_u64();
+
+        if (ispause and maxframe == 0) {
+            maxframe = system.sec_to_nano_sec(60, 0);
+        }
 
         if (maxframe > 0) {
-            const maxf: u64 = @divTrunc((1000000000 * 1000000000), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
-            if (maxf > delta_time) system.sleep(maxf - delta_time);
+            const maxf: u64 = @divTrunc((system.sec_to_nano_sec(1, 0) * system.sec_to_nano_sec(1, 0)), maxframe); //1000000000 / (maxframe / 1000000000); 나눗셈을 한번 줄임
+            if (maxf > delta_time) {
+                if (ispause) {
+                    std.time.sleep(maxf - delta_time); //대기상태라 정확도가 적어도 괜찮다.
+                } else {
+                    system.sleep(maxf - delta_time);
+                }
+            }
             delta_time = maxf;
         }
     }
@@ -103,8 +114,9 @@ pub fn loop() void {
     }
     root.xfit_update();
 
-    if (!system.pause()) __vulkan.drawFrame();
-
+    if (!ispause) {
+        __vulkan.drawFrame();
+    }
     //system.print_debug("rendering {d}", .{system.delta_time()});
 }
 
