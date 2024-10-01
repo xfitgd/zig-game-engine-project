@@ -36,8 +36,6 @@ pub var screen_mode: system.screen_mode = system.screen_mode.WINDOW;
 pub var current_monitor: ?*system.monitor_info = null;
 pub var current_resolution: ?*system.screen_info = null;
 
-pub var timer: win32.HANDLE = undefined;
-
 var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
@@ -92,8 +90,6 @@ pub fn system_windows_start() void {
 
 pub fn windows_start() void {
     hInstance = win32.GetModuleHandleA(null) orelse system.handle_error2("windows_start.GetModuleHandleA {d}", .{win32.GetLastError()});
-
-    timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse system.handle_error2("windows_start.CreateWaitableTimerA {d}", .{win32.GetLastError()});
 
     const CLASS_NAME = "Xfit Window Class";
 
@@ -188,7 +184,6 @@ fn render_thread() void {
     __vulkan.vulkan_destroy();
 
     render_sem.post();
-    _ = win32.CloseHandle(timer);
 }
 
 pub fn windows_loop() void {
@@ -329,6 +324,12 @@ pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.sc
 }
 
 pub fn nanosleep(ns: u64) void {
+    const timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse {
+        system.print("WARN nanosleep.CreateWaitableTimerA FAILED Code {}\n", .{win32.GetLastError()});
+        std.time.sleep(ns);
+        return;
+    };
+
     if (win32.SetWaitableTimer(timer, &win32.LARGE_INTEGER{ .QuadPart = -@as(i64, @intCast(@divTrunc(ns, 100))) }, 0, null, null, FALSE) == FALSE) {
         system.print("WARN nanosleep.SetWaitableTimer FAILED Code {}\n", .{win32.GetLastError()});
         std.time.sleep(ns);
@@ -339,6 +340,7 @@ pub fn nanosleep(ns: u64) void {
         std.time.sleep(ns);
         return;
     }
+    _ = win32.CloseHandle(timer);
 }
 
 //TODO IME 입력 이벤트는 에디트 박스 구현할때 같이 하기

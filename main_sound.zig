@@ -22,10 +22,16 @@ const timer_callback = @import("engine/timer_callback.zig");
 const file_ = if (system.platform == .android) asset_file else file;
 
 var bg_source: *sound.sound_source = undefined;
+var bg_snd: *sound = undefined;
 var sfx_source: *sound.sound_source = undefined;
 
 pub fn sfx_callback() void {
-    _ = sfx_source.play_sound_memory(1.0, false) catch |e| system.handle_error3("sfx.play_sound_memory", e);
+    _ = sfx_source.play_sound_memory(0.5, false) catch |e| system.handle_error3("sfx.play_sound_memory", e);
+}
+
+pub fn pl_callback() void {
+    bg_snd.*.pause();
+    //bg_snd.*.resume_();
 }
 
 pub fn xfit_init() void {
@@ -33,12 +39,15 @@ pub fn xfit_init() void {
 
     const snd = sound.play_sound("BG.opus", 0.2, true) catch |e| system.handle_error3("bg.play_sound", e) orelse system.handle_error_msg2("bg.play_sound null");
     bg_source = snd.*.source.?;
+    bg_snd = snd;
+    system.print("playtime : {d}\n", .{bg_snd.*.get_length_in_sec()});
 
     const data = file_.read_file("SFX.ogg", allocator) catch |e| system.handle_error3("sfx.read_file", e);
     defer allocator.free(data);
     sfx_source = sound.decode_sound_memory(data) catch |e| system.handle_error3("sfx.decode_sound_memory", e);
 
     _ = timer_callback.start(1000000000, 0, sfx_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+    _ = timer_callback.start(10000000000, 1, pl_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
 }
 
 ///윈도우 크기 바뀔때 xfit_update 바로 전 호출

@@ -232,6 +232,53 @@ pub fn play_sound(path: []const u8, volume: f32, loop: bool) !?*Self {
     return self;
 }
 
+pub fn set_volume(self: *Self, _volume: f32) void {
+    miniaudio.ma_sound_set_volume(&self.*.__sound.?, _volume);
+}
+
+pub fn set_speed(self: *Self, _pitch: f32) void {
+    miniaudio.ma_sound_set_pitch(&self.*.__sound.?, _pitch);
+}
+
+pub fn pause(self: *Self) void {
+    _ = miniaudio.ma_sound_stop(&self.*.__sound.?);
+}
+pub fn resume_(self: *Self) void {
+    _ = miniaudio.ma_sound_start(&self.*.__sound.?);
+}
+pub fn get_length_in_sec(self: *Self) f32 {
+    var res: f32 = undefined;
+    _ = miniaudio.ma_sound_get_length_in_seconds(&self.*.__sound.?, &res);
+    return res;
+}
+pub fn get_length_in(self: *Self) u64 {
+    var res: u64 = undefined;
+    _ = miniaudio.ma_sound_get_length_in_pcm_frames(&self.*.__sound.?, &res);
+    return res;
+}
+pub fn get_pos(self: *Self) u64 {
+    var res: u64 = undefined;
+    _ = miniaudio.ma_sound_get_cursor_in_pcm_frames(&self.*.__sound.?, &res);
+    return res;
+}
+pub fn get_pos_in_sec(self: *Self) f32 {
+    var res: f32 = undefined;
+    _ = miniaudio.ma_sound_get_cursor_in_seconds(&self.*.__sound.?, &res);
+    return res;
+}
+pub fn set_pos(self: *Self, pos: u64) void {
+    _ = miniaudio.ma_sound_seek_to_pcm_frame(&self.*.__sound.?, pos);
+}
+pub fn set_looping(self: *Self, loop: bool) void {
+    _ = miniaudio.ma_sound_set_looping(&self.*.__sound.?, if (loop) miniaudio.MA_TRUE else miniaudio.MA_FALSE);
+}
+pub fn is_looping(self: *Self) bool {
+    return miniaudio.ma_sound_is_looping(&self.*.__sound.?) == miniaudio.MA_TRUE;
+}
+pub fn is_playing(self: *Self) bool {
+    return miniaudio.ma_sound_is_playing(&self.*.__sound.?) == miniaudio.MA_TRUE;
+}
+
 pub fn decode_sound_memory(data: []const u8) !*sound_source {
     if (!@atomicLoad(bool, &__system.sound_started, .acquire)) return std.posix.UnexpectedError.Unexpected;
 
