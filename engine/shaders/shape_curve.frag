@@ -1,8 +1,8 @@
 #version 450
 
-layout(location = 0) in vec4 fragColor;
+
 layout(location = 1) in vec3 fragUv;
-layout(location = 0) out vec4 outColor;
+
 
 void main() {
     // vec3 dx = dFdx(fragUv);
@@ -14,6 +14,5 @@ void main() {
     // float alpha = 0.5 - sd;
     // TODO antialising
 
-    outColor = vec4(fragColor.xyz, fragColor.w * step(0, pow(fragUv.x, 3) - fragUv.y * fragUv.z));
-
+    if ((pow(fragUv.x, 3) - fragUv.y * fragUv.z) <= 0) discard;
 }

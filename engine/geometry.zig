@@ -266,7 +266,8 @@ pub const line = struct {
     pub fn compute_curve(self: *Self, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *usize, in_out_indices_len: *usize) line_error!void {
         return try __compute_curve(self, self.start, self.control0, self.control1, self.end, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, -1);
     }
-    /// https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
+
+    /// TODO 테스트 해보면서 개선 필요 https://github.com/azer89/GPU_Curve_Rendering/blob/master/QtTestShader/CurveRenderer.cpp
     fn __compute_curve(self: *Self, _start: point, _control0: point, _control1: point, _end: point, out_vertices: anytype, out_indices: anytype, in_out_vertice_len: *usize, in_out_indices_len: *usize, repeat: i32) line_error!void {
         var d1: f64 = undefined;
         var d2: f64 = undefined;
@@ -309,8 +310,8 @@ pub const line = struct {
                 mat.e[3][1] = @floatCast(-(ltMinusLs * ltMinusLs * ltMinusLs));
                 mat.e[3][2] = @floatCast(-(mtMinusMs * mtMinusMs * mtMinusMs));
 
-                flip = d1 < 0.0;
-                system.print_debug("serpentine {}", .{flip});
+                if (mat.e[0][0] > 0) flip = true;
+                system.print_debug("serpentine {} {d}", .{ flip, mat.e[0][0] });
             },
             .loop => {
                 const t1 = sqrt(4.0 * d1 * d3 - 3.0 * d2 * d2);
@@ -349,7 +350,7 @@ pub const line = struct {
                     mat.e[3][1] = @floatCast(-(ltMinusLs * ltMinusLs) * mtMinusMs);
                     mat.e[3][2] = @floatCast(-ltMinusLs * mtMinusMs * mtMinusMs);
 
-                    if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
+                    //if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
                     system.print_debug("loop flip {}", .{flip});
                 }
             },
@@ -393,7 +394,7 @@ pub const line = struct {
                 mat.e[3][1] = -1;
                 mat.e[3][2] = 1;
 
-                if (math.cross2(_control0 - _start, _control1 - _control0) < 0) flip = true;
+                //if (math.cross2(_control0 - _start, _control1 - _control0) < 0) flip = true;
                 system.print_debug("quadratic {}", .{flip});
             },
             .line => {
@@ -422,12 +423,29 @@ pub const line = struct {
             const x0123 = (x123 - x012) * subdiv + x012;
             const y0123 = (y123 - y012) * subdiv + y012;
 
+            if (!((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0))) {
+                out_vertices[in_out_vertice_len.*].pos = _start;
+                out_vertices[in_out_vertice_len.* + 1].pos = .{ x0123, y0123 };
+                out_vertices[in_out_vertice_len.* + 2].pos = _end;
+
+                out_vertices[in_out_vertice_len.*].uvw = .{ 1, 0, 0 };
+                out_vertices[in_out_vertice_len.* + 1].uvw = .{ 1, 0, 0 };
+                out_vertices[in_out_vertice_len.* + 2].uvw = .{ 1, 0, 0 };
+
+                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 2);
+
+                in_out_vertice_len.* += 3;
+                in_out_indices_len.* += 3;
+            }
+
             _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, if (artifact == 1) 0 else 1);
             _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, if (artifact == 1) 1 else 0);
 
             return;
         }
-        if (repeat == 1) flip = !flip;
+        //if (repeat == 1) flip = !flip;
 
         if (flip) {
             mat.e[0][0] *= -1;
@@ -449,56 +467,56 @@ pub const line = struct {
         out_vertices[in_out_vertice_len.* + 2].uvw = .{ mat.e[2][0], mat.e[2][1], mat.e[2][2] };
         out_vertices[in_out_vertice_len.* + 3].uvw = .{ mat.e[3][0], mat.e[3][1], mat.e[3][2] };
 
-        // {
-        //     var i: u32 = 0;
-        //     while (i < 4) : (i += 1) {
-        //         var j: u32 = i + 1;
-        //         while (j < 4) : (j += 1) {
-        //             if (math.compare(out_vertices[in_out_vertice_len.* + i].pos, out_vertices[in_out_vertice_len.* + j].pos)) {
-        //                 var indices: [3]u32 = .{ in_out_vertice_len.*, in_out_vertice_len.*, in_out_vertice_len.* };
-        //                 var index: u32 = 0;
-        //                 var k: u32 = 0;
-        //                 while (k < 4) : (k += 1) {
-        //                     if (k != j) {
-        //                         indices[index] += @intCast(k);
-        //                         index += 1;
-        //                     }
-        //                 }
-        //                 out_indices[in_out_indices_len.*] = indices[0];
-        //                 out_indices[in_out_indices_len.* + 1] = indices[1];
-        //                 out_indices[in_out_indices_len.* + 2] = indices[2];
-        //                 in_out_vertice_len.* += 4;
-        //                 in_out_indices_len.* += 3;
-        //                 return;
-        //             }
-        //         }
-        //     }
-        // }
-        // {
-        //     var i: usize = 0;
-        //     while (i < 4) : (i += 1) {
-        //         var indices: [3]u32 = .{ in_out_vertice_len.*, in_out_vertice_len.*, in_out_vertice_len.* };
-        //         var index: usize = 0;
-        //         var j: usize = 0;
-        //         while (j < 4) : (j += 1) {
-        //             if (i != j) {
-        //                 indices[index] += @intCast(j);
-        //                 index += 1;
-        //             }
-        //         }
-        //         if (point_in_triangle(out_vertices[in_out_vertice_len.* + i].pos, out_vertices[indices[0]].pos, out_vertices[indices[1]].pos, out_vertices[indices[2]].pos)) {
-        //             var k: usize = 0;
-        //             while (k < 3) : (k += 1) {
-        //                 out_indices[in_out_indices_len.*] = indices[k];
-        //                 out_indices[in_out_indices_len.* + 1] = indices[(k + 1) % 3];
-        //                 out_indices[in_out_indices_len.* + 2] = indices[in_out_vertice_len.* + i];
-        //                 in_out_indices_len.* += 3;
-        //             }
-        //             in_out_vertice_len.* += 4;
-        //             return;
-        //         }
-        //     }
-        // }
+        {
+            var i: u32 = 0;
+            while (i < 4) : (i += 1) {
+                var j: u32 = i + 1;
+                while (j < 4) : (j += 1) {
+                    if (math.compare(out_vertices[in_out_vertice_len.* + i].pos, out_vertices[in_out_vertice_len.* + j].pos)) {
+                        var indices: [3]usize = .{ in_out_vertice_len.*, in_out_vertice_len.*, in_out_vertice_len.* };
+                        var index: u32 = 0;
+                        var k: u32 = 0;
+                        while (k < 4) : (k += 1) {
+                            if (k != j) {
+                                indices[index] += @intCast(k);
+                                index += 1;
+                            }
+                        }
+                        out_indices[in_out_indices_len.*] = @intCast(indices[0]);
+                        out_indices[in_out_indices_len.* + 1] = @intCast(indices[1]);
+                        out_indices[in_out_indices_len.* + 2] = @intCast(indices[2]);
+                        in_out_vertice_len.* += 4;
+                        in_out_indices_len.* += 3;
+                        return;
+                    }
+                }
+            }
+        }
+        {
+            var i: usize = 0;
+            while (i < 4) : (i += 1) {
+                var indices: [3]usize = .{ in_out_vertice_len.*, in_out_vertice_len.*, in_out_vertice_len.* };
+                var index: usize = 0;
+                var j: usize = 0;
+                while (j < 4) : (j += 1) {
+                    if (i != j) {
+                        indices[index] += @intCast(j);
+                        index += 1;
+                    }
+                }
+                if (point_in_triangle(out_vertices[in_out_vertice_len.* + i].pos, out_vertices[indices[0]].pos, out_vertices[indices[1]].pos, out_vertices[indices[2]].pos)) {
+                    var k: usize = 0;
+                    while (k < 3) : (k += 1) {
+                        out_indices[in_out_indices_len.*] = @intCast(indices[k]);
+                        out_indices[in_out_indices_len.* + 1] = @intCast(indices[(k + 1) % 3]);
+                        out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + i);
+                        in_out_indices_len.* += 3;
+                    }
+                    in_out_vertice_len.* += 4;
+                    return;
+                }
+            }
+        }
 
         if (lines_intersect(_start, _control1, _control0, _end, null)) {
             if (math.length_pow(_control1, _start) < math.length_pow(_end, _control0)) {
@@ -587,16 +605,16 @@ pub const line = struct {
             return line_error.is_point_not_line;
         }
 
-        if (std.math.approxEqAbs(f64, discr, 0, std.math.floatEps(f64))) {
-            if (std.math.approxEqAbs(f64, out_d1.*, 0, std.math.floatEps(f64))) {
-                if (std.math.approxEqAbs(f64, out_d2.*, 0, std.math.floatEps(f64))) {
-                    if (std.math.approxEqAbs(f64, out_d3.*, 0, std.math.floatEps(f64))) return curve_TYPE.line;
+        if (std.math.approxEqAbs(f64, discr, 0, std.math.floatEps(f32))) {
+            if (std.math.approxEqAbs(f64, out_d1.*, 0, std.math.floatEps(f32))) {
+                if (std.math.approxEqAbs(f64, out_d2.*, 0, std.math.floatEps(f32))) {
+                    if (std.math.approxEqAbs(f64, out_d3.*, 0, std.math.floatEps(f32))) return curve_TYPE.line;
                     return curve_TYPE.quadratic;
                 }
-            } else {
-                return curve_TYPE.cusp;
             }
-            if (D < 0) return curve_TYPE.loop;
+            return curve_TYPE.cusp;
+        } else {
+            if (std.math.approxEqAbs(f64, out_d1.*, 0, std.math.floatEps(f32))) return curve_TYPE.cusp;
         }
         if (discr > 0) return curve_TYPE.serpentine;
         return curve_TYPE.loop;

@@ -2,11 +2,11 @@
 
 layout(location = 0) out vec4 outColor;
 
-layout(binding = 3) uniform UniformBufferObject0 {
-    vec4 fragColor;
-} color;
-
+layout( push_constant ) uniform constants
+{
+	vec4 color;
+} PushConstants;
 
 void main() {
-    outColor = color.fragColor;
+    outColor = PushConstants.color;
 }

@@ -102,7 +102,8 @@ pub fn loop() void {
         root.xfit_size_update();
     }
     root.xfit_update();
-    __vulkan.drawFrame();
+
+    if (!system.pause()) __vulkan.drawFrame();
 
     //system.print_debug("rendering {d}", .{system.delta_time()});
 }

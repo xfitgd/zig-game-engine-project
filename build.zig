@@ -10,17 +10,15 @@ pub const XfitPlatform = engine.XfitPlatform;
 const PLATFORM = XfitPlatform.windows;
 const OPTIMIZE = std.builtin.OptimizeMode.Debug;
 
-const EXAMPLE: EXAMPLES = EXAMPLES.SHAPE2D;
+const EXAMPLE: EXAMPLES = EXAMPLES.GRAPHICS2D;
 //*
 
 const examples = [_][]const u8{
     "main.zig",
-    "main_shape2d.zig",
     "main_sound.zig",
 };
 const EXAMPLES = enum(usize) {
-    IMAGE,
-    SHAPE2D,
+    GRAPHICS2D,
     SOUND,
 };
 

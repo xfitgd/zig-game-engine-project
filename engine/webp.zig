@@ -53,7 +53,7 @@ pub fn decode(self: *Self, out_fmt: img.color_format, data: []const u8, out_data
         else => return webp_error.unsupport_decode_fmt_error,
     }
     self.*.config.decode.output.u.RGBA.rgba = out_data.ptr;
-    self.*.config.decode.output.u.RGBA.stride = self.*.config.decode.input.width * bit;
+    self.*.config.decode.output.u.RGBA.stride = self.*.config.decode.input.width * @as(c_int, @intCast(bit));
     self.*.config.decode.output.u.RGBA.size = @max(0, self.*.config.decode.output.u.RGBA.stride * self.*.config.decode.input.height);
     self.*.config.decode.output.is_external_memory = 1;
 

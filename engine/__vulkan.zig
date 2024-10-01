@@ -43,8 +43,14 @@ pub const pipeline_set = struct {
     pub fn deinit(self: *pipeline_set) void {
         if (self.*.pipeline != null) {
             vk.vkDestroyPipeline(vkDevice, self.*.pipeline, null);
-            vk.vkDestroyPipelineLayout(vkDevice, self.*.pipelineLayout, null);
-            vk.vkDestroyDescriptorSetLayout(vkDevice, self.*.descriptorSetLayout, null);
+            // if (self.*.pipelineLayout != null) { //서로 공유 하는 경우
+            //     vk.vkDestroyPipelineLayout(vkDevice, self.*.pipelineLayout, null);
+            //     self.*.pipelineLayout = null;
+            // }
+            // if (self.*.descriptorSetLayout != null) { //서로 공유 하는 경우
+            //     vk.vkDestroyDescriptorSetLayout(vkDevice, self.*.descriptorSetLayout, null);
+            //     self.*.descriptorSetLayout = null;
+            // }
         }
     }
 };
@@ -117,7 +123,7 @@ var vkInstance: vk.VkInstance = undefined;
 pub var vkDevice: vk.VkDevice = undefined;
 var vkSurface: vk.VkSurfaceKHR = undefined;
 var vkRenderPass: vk.VkRenderPass = undefined;
-var vkSwapchain: vk.VkSwapchainKHR = undefined;
+var vkSwapchain: vk.VkSwapchainKHR = null;
 
 var vkCommandPool: vk.VkCommandPool = undefined;
 var vkCommandBuffer: vk.VkCommandBuffer = undefined;
@@ -148,6 +154,8 @@ var format: vk.VkSurfaceFormatKHR = undefined;
 pub var linear_sampler: vk.VkSampler = undefined;
 pub var nearest_sampler: vk.VkSampler = undefined;
 
+pub var depth_stencil_image = __vulkan_allocator.vulkan_res_node(.image){};
+
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
     const createInfo: vk.VkShaderModuleCreateInfo = .{ .codeSize = code.len, .pCode = code.ptr };
 
@@ -165,9 +173,19 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
     var result = vk.vkBeginCommandBuffer(commandBuffer, &beginInfo);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
 
-    const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
+    const clearColor: vk.VkClearValue = .{
+        .color = .{ .float32 = .{ 0, 0, 0, 0 } },
+    };
+    const clearDeathStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
 
-    const renderPassInfo: vk.VkRenderPassBeginInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = vkRenderPass, .framebuffer = vk_swapchain_frame_buffers[imageIndex], .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent }, .clearValueCount = 1, .pClearValues = @ptrCast(&clearColor) };
+    const renderPassInfo: vk.VkRenderPassBeginInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = vkRenderPass,
+        .framebuffer = vk_swapchain_frame_buffers[imageIndex],
+        .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent },
+        .clearValueCount = 2,
+        .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDeathStencil },
+    };
 
     vk.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
 
@@ -183,26 +201,108 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
 
     if (graphics.scene != null) {
         for (graphics.scene.?.*) |value| {
-            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
-            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
+            const ivertices1 = value.*.get_ivertices(value, 1);
+            if (ivertices1 != null and ivertices1.?.*.pipeline == &shape_color_2d_pipeline_set) {
+                const ivertices = value.*.get_ivertices(value, 0) orelse continue;
 
-            vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
-            vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
+                vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
+                vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
-            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.__descriptor_set, 0, null);
+                vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
 
-            const offsets: vk.VkDeviceSize = 0;
-            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.res, &offsets);
+                var i: usize = 0;
+                for ([_]*graphics.ivertices{ ivertices, ivertices1.? }) |v| {
+                    vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
 
-            const iindices = value.*.get_iindices(value, 0);
-            if (iindices != null) {
-                vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
-                    .U16 => vk.VK_INDEX_TYPE_UINT16,
-                    .U32 => vk.VK_INDEX_TYPE_UINT32,
-                });
-                vk.vkCmdDrawIndexed(commandBuffer, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
+                    const offsets: vk.VkDeviceSize = 0;
+                    vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &v.*.node.res, &offsets);
+
+                    const iindices = value.*.get_iindices(value, i);
+                    if (iindices != null) {
+                        vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
+                            .U16 => vk.VK_INDEX_TYPE_UINT16,
+                            .U32 => vk.VK_INDEX_TYPE_UINT32,
+                        });
+                        vk.vkCmdDrawIndexed(commandBuffer, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
+                    } else {
+                        vk.vkCmdDraw(commandBuffer, @intCast(v.*.get_vertices_len(v)), 1, 0, 0);
+                    }
+                    i += 1;
+                }
+                vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
+
+                vk.vkCmdPushConstants(
+                    commandBuffer,
+                    quad_shape_2d_pipeline_set.pipelineLayout,
+                    vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    @sizeOf(math.vector),
+                    &@as(*graphics.shape.source, @alignCast(@ptrCast(value.*.get_source(value).?))).*.color,
+                );
+
+                vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+
+                const extra = @as(?[]*graphics.shape.source, @ptrCast(value.*.get_extra_sources(value)));
+                if (extra != null) {
+                    if (extra.?.len > 0) vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+                    for (extra.?) |src| {
+                        for (
+                            [_]*graphics.ivertices{ &src.*.vertices.interface, &src.*.curve_vertices.interface },
+                            [_]?*graphics.iindices{ &src.*.indices.interface, &src.*.curve_indices.interface },
+                        ) |v, in| {
+                            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
+
+                            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+
+                            const offsets: vk.VkDeviceSize = 0;
+                            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &v.*.node.res, &offsets);
+
+                            if (in != null) {
+                                vk.vkCmdBindIndexBuffer(commandBuffer, in.?.*.node.res, 0, switch (in.?.*.idx_type) {
+                                    .U16 => vk.VK_INDEX_TYPE_UINT16,
+                                    .U32 => vk.VK_INDEX_TYPE_UINT32,
+                                });
+                                vk.vkCmdDrawIndexed(commandBuffer, @intCast(in.?.*.get_indices_len(in.?)), 1, 0, 0, 0);
+                            } else {
+                                vk.vkCmdDraw(commandBuffer, @intCast(v.*.get_vertices_len(v)), 1, 0, 0);
+                            }
+                        }
+                        vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
+
+                        vk.vkCmdPushConstants(
+                            commandBuffer,
+                            quad_shape_2d_pipeline_set.pipelineLayout,
+                            vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                            0,
+                            @sizeOf(math.vector),
+                            &src.*.color,
+                        );
+
+                        vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+                    }
+                }
             } else {
-                vk.vkCmdDraw(commandBuffer, @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
+                const ivertices = value.*.get_ivertices(value, 0) orelse continue;
+                vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
+
+                vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
+                vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
+
+                vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+
+                const offsets: vk.VkDeviceSize = 0;
+                vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.res, &offsets);
+
+                const iindices = value.*.get_iindices(value, 0);
+                if (iindices != null) {
+                    vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
+                        .U16 => vk.VK_INDEX_TYPE_UINT16,
+                        .U32 => vk.VK_INDEX_TYPE_UINT32,
+                    });
+                    vk.vkCmdDrawIndexed(commandBuffer, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
+                } else {
+                    vk.vkCmdDraw(commandBuffer, @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
+                }
             }
         }
     }
@@ -499,15 +599,6 @@ pub fn vulkan_start() void {
         .alphaBlendOp = vk.VK_BLEND_OP_ADD,
     };
 
-    const colorBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .logicOpEnable = vk.VK_FALSE,
-        .logicOp = vk.VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = @ptrCast(&colorBlendAttachment),
-        .blendConstants = .{ 0, 0, 0, 0 },
-    };
-
     const colorAlphaBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
         .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
         .blendEnable = vk.VK_TRUE,
@@ -519,12 +610,41 @@ pub fn vulkan_start() void {
         .alphaBlendOp = vk.VK_BLEND_OP_ADD,
     };
 
+    const noBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
+        .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
+        .blendEnable = vk.VK_FALSE,
+        .srcColorBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = vk.VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = vk.VK_BLEND_OP_ADD,
+    };
+
+    const colorBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = vk.VK_FALSE,
+        .logicOp = vk.VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = @ptrCast(&colorBlendAttachment),
+        .blendConstants = .{ 0, 0, 0, 0 },
+    };
+
     const colorAlphaBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .logicOpEnable = vk.VK_FALSE,
         .logicOp = vk.VK_LOGIC_OP_COPY,
         .attachmentCount = 1,
         .pAttachments = @ptrCast(&colorAlphaBlendAttachment),
+        .blendConstants = .{ 0, 0, 0, 0 },
+    };
+
+    const noBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = vk.VK_FALSE,
+        .logicOp = vk.VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = @ptrCast(&noBlendAttachment),
         .blendConstants = .{ 0, 0, 0, 0 },
     };
     //_ = colorAlphaBlending;
@@ -534,26 +654,50 @@ pub fn vulkan_start() void {
         .samples = vk.VK_SAMPLE_COUNT_1_BIT,
         .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
         .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     };
 
+    const depthAttachment: vk.VkAttachmentDescription = .{
+        .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
     const colorAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 0, .layout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    const depthAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 1, .layout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
 
     const subpass: vk.VkSubpassDescription = .{
         .pipelineBindPoint = vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
         .pColorAttachments = @ptrCast(&colorAttachmentRef),
+        .pDepthStencilAttachment = @ptrCast(&depthAttachmentRef),
+    };
+
+    const dependency: vk.VkSubpassDependency = .{
+        .srcSubpass = vk.VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .srcAccessMask = 0,
+        .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
 
     const renderPassInfo: vk.VkRenderPassCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = @ptrCast(&colorAttachment),
+        .attachmentCount = 2,
+        .pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachment, depthAttachment },
         .subpassCount = 1,
         .pSubpasses = @ptrCast(&subpass),
+        .pDependencies = &dependency,
+        .dependencyCount = 1,
     };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
@@ -576,33 +720,12 @@ pub fn vulkan_start() void {
 
     //quad_shape_2d_pipeline
     {
-        const uboLayoutBinding = [4]vk.VkDescriptorSetLayoutBinding{
+        const uboLayoutBinding = [1]vk.VkDescriptorSetLayoutBinding{
             vk.VkDescriptorSetLayoutBinding{
                 .binding = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 1,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 2,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 3,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
                 .pImmutableSamplers = null,
             },
         };
@@ -614,27 +737,64 @@ pub fn vulkan_start() void {
         result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &quad_shape_2d_pipeline_set.descriptorSetLayout);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout quad_shape_shader_stages.descriptorSetLayout : {d}", .{result});
 
+        const pushRange = vk.VkPushConstantRange{
+            .offset = 0,
+            .size = @sizeOf(math.vector),
+            .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+        };
+
         const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .setLayoutCount = 1,
             .pSetLayouts = &quad_shape_2d_pipeline_set.descriptorSetLayout,
-            .pushConstantRangeCount = 0,
-            .pPushConstantRanges = null,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &pushRange,
         };
 
         result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &quad_shape_2d_pipeline_set.pipelineLayout);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout quad_shape_shader_stages.pipelineLayout : {d}", .{result});
 
+        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 0,
+            .vertexAttributeDescriptionCount = 0,
+            .pVertexBindingDescriptions = null,
+            .pVertexAttributeDescriptions = null,
+        };
+
+        const stencilOp = vk.VkStencilOpState{
+            .compareMask = 0xff,
+            .writeMask = 0xff,
+            .compareOp = vk.VK_COMPARE_OP_EQUAL,
+            .depthFailOp = vk.VK_STENCIL_OP_ZERO,
+            .passOp = vk.VK_STENCIL_OP_ZERO,
+            .failOp = vk.VK_STENCIL_OP_ZERO,
+            .reference = 0xff,
+        };
+
+        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
+            .stencilTestEnable = vk.VK_TRUE,
+            .depthTestEnable = vk.VK_FALSE,
+            .depthWriteEnable = vk.VK_FALSE,
+            .depthBoundsTestEnable = vk.VK_FALSE,
+            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
+            .flags = 0,
+            .maxDepthBounds = 0,
+            .minDepthBounds = 0,
+            .back = stencilOp,
+            .front = stencilOp,
+        };
+
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount = 2,
             .pStages = &quad_shape_shader_stages,
-            .pVertexInputState = null,
-            .pInputAssemblyState = null,
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
-            .pDepthStencilState = null,
+            .pDepthStencilState = &depthStencilState,
             .pColorBlendState = &colorAlphaBlending,
             .pDynamicState = &dynamicState,
             .layout = quad_shape_2d_pipeline_set.pipelineLayout,
@@ -644,8 +804,8 @@ pub fn vulkan_start() void {
             .basePipelineIndex = -1,
         };
 
-        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines shape_color_2d_pipeline_set.pipeline : {d}", .{result});
+        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &quad_shape_2d_pipeline_set.pipeline);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines quad_shape_2d_pipeline_set.pipeline : {d}", .{result});
     }
     //create_color_2d_pipeline
     {
@@ -693,12 +853,11 @@ pub fn vulkan_start() void {
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
-            .stride = @sizeOf(f32) * (2 + 4),
+            .stride = @sizeOf(f32) * (2),
             .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{
+        const attributeDescriptions: [1]vk.VkVertexInputAttributeDescription = .{
             .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 },
-            .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 },
         };
 
         const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
@@ -707,6 +866,28 @@ pub fn vulkan_start() void {
             .vertexAttributeDescriptionCount = attributeDescriptions.len,
             .pVertexBindingDescriptions = &bindingDescription,
             .pVertexAttributeDescriptions = &attributeDescriptions,
+        };
+
+        const stencilOp = vk.VkStencilOpState{
+            .compareMask = 0xff,
+            .writeMask = 0xff,
+            .compareOp = vk.VK_COMPARE_OP_ALWAYS,
+            .depthFailOp = vk.VK_STENCIL_OP_ZERO,
+            .passOp = vk.VK_STENCIL_OP_INVERT,
+            .failOp = vk.VK_STENCIL_OP_ZERO,
+            .reference = 0xff,
+        };
+        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
+            .stencilTestEnable = vk.VK_TRUE,
+            .depthTestEnable = vk.VK_FALSE,
+            .depthWriteEnable = vk.VK_FALSE,
+            .depthBoundsTestEnable = vk.VK_FALSE,
+            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
+            .flags = 0,
+            .maxDepthBounds = 0,
+            .minDepthBounds = 0,
+            .back = stencilOp,
+            .front = stencilOp,
         };
 
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
@@ -718,10 +899,10 @@ pub fn vulkan_start() void {
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
-            .pDepthStencilState = null,
-            .pColorBlendState = &colorAlphaBlending,
+            .pDepthStencilState = &depthStencilState,
+            .pColorBlendState = &noBlending,
             .pDynamicState = &dynamicState,
-            .layout = shape_color_2d_pipeline_set.pipelineLayout,
+            .layout = color_2d_pipeline_set.pipelineLayout,
             .renderPass = vkRenderPass,
             .subpass = 0,
             .basePipelineHandle = null,
@@ -729,61 +910,21 @@ pub fn vulkan_start() void {
         };
 
         result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines shape_color_2d_pipeline_set.pipeline : {d}", .{result});
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline_set.pipeline : {d}", .{result});
     }
     //create_shape_color_2d_pipeline
     {
-        const uboLayoutBinding = [3]vk.VkDescriptorSetLayoutBinding{
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 0,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 1,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-            vk.VkDescriptorSetLayoutBinding{
-                .binding = 2,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .pImmutableSamplers = null,
-            },
-        };
-        const set_layout_info: vk.VkDescriptorSetLayoutCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount = uboLayoutBinding.len,
-            .pBindings = &uboLayoutBinding,
-        };
-        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &shape_color_2d_pipeline_set.descriptorSetLayout);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout shape_color_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
-
-        const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount = 1,
-            .pSetLayouts = &shape_color_2d_pipeline_set.descriptorSetLayout,
-            .pushConstantRangeCount = 0,
-            .pPushConstantRanges = null,
-        };
-
-        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &shape_color_2d_pipeline_set.pipelineLayout);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout shape_color_2d_pipeline_set.pipelineLayout : {d}", .{result});
+        shape_color_2d_pipeline_set.descriptorSetLayout = color_2d_pipeline_set.descriptorSetLayout;
+        shape_color_2d_pipeline_set.pipelineLayout = color_2d_pipeline_set.pipelineLayout;
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
-            .stride = @sizeOf(f32) * (2 + 3 + 4),
+            .stride = @sizeOf(f32) * (2 + 3),
             .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        const attributeDescriptions: [3]vk.VkVertexInputAttributeDescription = .{
+        const attributeDescriptions: [2]vk.VkVertexInputAttributeDescription = .{
             .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 },
-            .{ .binding = 0, .location = 1, .format = vk.VK_FORMAT_R32G32B32A32_SFLOAT, .offset = @sizeOf(f32) * 2 },
-            .{ .binding = 0, .location = 2, .format = vk.VK_FORMAT_R32G32B32_SFLOAT, .offset = @sizeOf(f32) * (2 + 4) },
+            .{ .binding = 0, .location = 2, .format = vk.VK_FORMAT_R32G32B32_SFLOAT, .offset = @sizeOf(f32) * (2) },
         };
 
         const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
@@ -792,6 +933,28 @@ pub fn vulkan_start() void {
             .vertexAttributeDescriptionCount = attributeDescriptions.len,
             .pVertexBindingDescriptions = &bindingDescription,
             .pVertexAttributeDescriptions = &attributeDescriptions,
+        };
+
+        const stencilOp = vk.VkStencilOpState{
+            .compareMask = 0xff,
+            .writeMask = 0xff,
+            .compareOp = vk.VK_COMPARE_OP_ALWAYS,
+            .depthFailOp = vk.VK_STENCIL_OP_ZERO,
+            .passOp = vk.VK_STENCIL_OP_INVERT,
+            .failOp = vk.VK_STENCIL_OP_ZERO,
+            .reference = 0xff,
+        };
+        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
+            .stencilTestEnable = vk.VK_TRUE,
+            .depthTestEnable = vk.VK_FALSE,
+            .depthWriteEnable = vk.VK_FALSE,
+            .depthBoundsTestEnable = vk.VK_FALSE,
+            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
+            .flags = 0,
+            .maxDepthBounds = 0,
+            .minDepthBounds = 0,
+            .back = stencilOp,
+            .front = stencilOp,
         };
 
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
@@ -803,8 +966,8 @@ pub fn vulkan_start() void {
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
-            .pDepthStencilState = null,
-            .pColorBlendState = &colorAlphaBlending,
+            .pDepthStencilState = &depthStencilState,
+            .pColorBlendState = &noBlending,
             .pDynamicState = &dynamicState,
             .layout = shape_color_2d_pipeline_set.pipelineLayout,
             .renderPass = vkRenderPass,
@@ -968,6 +1131,15 @@ pub fn vulkan_destroy() void {
     color_2d_pipeline_set.deinit();
     tex_2d_pipeline_set.deinit();
 
+    vk.vkDestroyPipelineLayout(vkDevice, quad_shape_2d_pipeline_set.pipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, quad_shape_2d_pipeline_set.descriptorSetLayout, null);
+
+    vk.vkDestroyPipelineLayout(vkDevice, color_2d_pipeline_set.pipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, color_2d_pipeline_set.descriptorSetLayout, null);
+
+    vk.vkDestroyPipelineLayout(vkDevice, tex_2d_pipeline_set.pipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, tex_2d_pipeline_set.descriptorSetLayout, null);
+
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
 
     vk.vkDestroySurfaceKHR(vkInstance, vkSurface, null);
@@ -981,32 +1153,54 @@ pub fn vulkan_destroy() void {
 }
 
 fn cleanup_swapchain() void {
-    var i: usize = 0;
-    while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
-        vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
-    }
-    __system.allocator.free(vk_swapchain_frame_buffers);
-    i = 0;
-    while (i < vk_swapchain_image_views.len) : (i += 1) {
-        vk.vkDestroyImageView(vkDevice, vk_swapchain_image_views[i], null);
-    }
-    __system.allocator.free(vk_swapchain_image_views);
-    vk.vkDestroySwapchainKHR(vkDevice, vkSwapchain, null);
+    if (vkSwapchain != null) {
+        var i: usize = 0;
+        while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
+            vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
+        }
+        depth_stencil_image.clean();
+        if (depth_stencil_image.pvulkan_buffer.*.is_empty()) depth_stencil_image.pvulkan_buffer.*.deinit();
+        __system.allocator.free(vk_swapchain_frame_buffers);
+        i = 0;
+        while (i < vk_swapchain_image_views.len) : (i += 1) {
+            vk.vkDestroyImageView(vkDevice, vk_swapchain_image_views[i], null);
+        }
+        __system.allocator.free(vk_swapchain_image_views);
+        vk.vkDestroySwapchainKHR(vkDevice, vkSwapchain, null);
+        vkSwapchain = null;
 
-    __system.allocator.free(formats);
+        __system.allocator.free(formats);
+    }
 }
 
 fn create_framebuffer() void {
     vk_swapchain_frame_buffers = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch
         system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory");
 
+    const img_info: vk.VkImageCreateInfo = .{
+        .arrayLayers = 1,
+        .extent = .{ .width = vkExtent.width, .height = vkExtent.height, .depth = 1 },
+        .flags = 0,
+        .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
+        .imageType = vk.VK_IMAGE_TYPE_2D,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .mipLevels = 1,
+        .pQueueFamilyIndices = null,
+        .queueFamilyIndexCount = 0,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
+        .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
+        .usage = vk.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+    };
+    vk_allocator.create_image(&img_info, &depth_stencil_image, null, 0);
+
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
-        const attachments = [_]vk.VkImageView{vk_swapchain_image_views[i]};
+        const attachments = [_]vk.VkImageView{ vk_swapchain_image_views[i], depth_stencil_image.__image_view };
         const frameBufferInfo: vk.VkFramebufferCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = vkRenderPass,
-            .attachmentCount = 1,
+            .attachmentCount = 2,
             .pAttachments = &attachments,
             .width = vkExtent.width,
             .height = vkExtent.height,
@@ -1014,7 +1208,7 @@ fn create_framebuffer() void {
         };
 
         const result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer.vkCreateFence vkCreateFramebuffer : {d}", .{result});
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer vkCreateFramebuffer : {d}", .{result});
     }
 }
 
@@ -1050,6 +1244,10 @@ fn create_swapchain_and_imageviews() void {
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceCapabilitiesKHR : {d}", .{result});
 
     vkExtent = chooseSwapExtent(surfaceCap);
+    if (vkExtent.width <= 0) {
+        __system.allocator.free(formats);
+        return;
+    }
     format = chooseSwapSurfaceFormat(formats);
     const presentMode = chooseSwapPresentMode(presentModes, __system.init_set.vSync);
 
@@ -1171,6 +1369,7 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
 
     cleanup_swapchain();
     create_swapchain_and_imageviews();
+    if (vkExtent.width <= 0) return;
     create_framebuffer();
 }
 
@@ -1183,6 +1382,11 @@ pub fn drawFrame() void {
     wait_for_fences();
 
     var imageIndex: u32 = undefined;
+
+    if (vkExtent.width <= 0) {
+        recreate_swapchain(false);
+        if (vkExtent.width <= 0) return;
+    }
 
     var result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, std.mem.zeroes(vk.VkFence), &imageIndex);
     if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
