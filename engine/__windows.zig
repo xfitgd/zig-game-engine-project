@@ -181,9 +181,7 @@ fn render_thread() void {
     }
 
     __vulkan.render_mutex.lock();
-    const result = __vulkan.vk.vkDeviceWaitIdle(__vulkan.vkDevice);
-    if (result != __vulkan.vk.VK_SUCCESS) system.print_error("__windows.vkDeviceWaitIdle : {d}", .{result});
-
+    __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
     __vulkan.render_mutex.unlock();

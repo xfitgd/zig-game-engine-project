@@ -136,9 +136,11 @@ fn draw_android() void {
 }
 
 fn destroy_android() void {
-    __vulkan.wait_for_fences();
+    __vulkan.render_mutex.lock();
+    __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
+    __vulkan.render_mutex.unlock();
 
     __system.destroy();
 }

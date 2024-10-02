@@ -62,8 +62,7 @@ pub fn lock_for_update() ERROR!void {
     if (__vulkan.vkInFlightFence == null) {
         return ERROR.IsDestroying;
     }
-    const result = vk.vkWaitForFences(__vulkan.vkDevice, 1, &__vulkan.vkInFlightFence, vk.VK_TRUE, std.math.maxInt(u64));
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
+    __vulkan.wait_for_fences();
 }
 
 pub fn unlock_for_update() void {

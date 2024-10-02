@@ -1342,8 +1342,7 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
     if (system.platform == .android and _recreate_window) {
         __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
     }
-    const result = vk.vkDeviceWaitIdle(vkDevice);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recreate_swapchain.vkDeviceWaitIdle : {d}", .{result});
+    wait_device_idle();
 
     cleanup_swapchain();
     create_swapchain_and_imageviews();
@@ -1445,8 +1444,7 @@ pub fn drawFrame() void {
             .pImageIndices = &imageIndex,
         };
 
-        result = vk.vkWaitForFences(vkDevice, 1, &vkInFlightFence, vk.VK_TRUE, std.math.maxInt(u64));
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
+        wait_for_fences();
 
         result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
 
@@ -1456,6 +1454,16 @@ pub fn drawFrame() void {
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
         }
     }
+}
+
+pub fn wait_for_fences() void {
+    const result = vk.vkWaitForFences(vkDevice, 1, &vkInFlightFence, vk.VK_TRUE, std.math.maxInt(u64));
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
+}
+
+pub fn wait_device_idle() void {
+    const result = vk.vkDeviceWaitIdle(vkDevice);
+    if (result != vk.VK_SUCCESS) system.print_error("__vulkan.vkDeviceWaitIdle : {d}", .{result});
 }
 
 pub fn transition_image_layout(image: vk.VkImage, image_info: *vk.VkImageCreateInfo, old_layout: vk.VkImageLayout, new_layout: vk.VkImageLayout) void {
