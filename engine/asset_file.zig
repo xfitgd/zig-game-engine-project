@@ -66,9 +66,6 @@ pub inline fn getPos(self: *Self) !u64 {
 pub inline fn size(self: *Self) u64 {
     return @intCast(__android.android.AAsset_getLength64(self.handle));
 }
-pub inline fn readA(self: *Self, T: type, a: *T) !usize {
-    return try self.hFile.read(@as(u8[@sizeOf(T)], @ptrCast(a)));
-}
 
 pub fn read_file(path: []const u8, allocator: std.mem.Allocator) ![]u8 {
     var __size: usize = 0;

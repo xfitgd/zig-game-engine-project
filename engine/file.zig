@@ -50,12 +50,6 @@ pub inline fn getPos(self: *Self) !u64 {
 pub inline fn size(self: *Self) !u64 {
     try self.hFile.getEndPos();
 }
-pub inline fn readA(self: *Self, T: type, a: *T) !usize {
-    return try self.hFile.read(@as(u8[@sizeOf(T)], @ptrCast(a)));
-}
-pub inline fn writeA(self: *Self, T: type, a: *const T) !usize {
-    return try self.hFile.write(@as(u8[@sizeOf(T)], @ptrCast(a)));
-}
 
 pub fn read_file(path: []const u8, allocator: std.mem.Allocator) ![]u8 {
     var buffer: []u8 = undefined;
