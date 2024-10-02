@@ -51,14 +51,6 @@ pub const shape_color_vertex_2d = extern struct {
     }
 };
 
-pub const color_vertex_2d = extern struct {
-    pos: point align(1),
-
-    pub inline fn get_pipeline() *__vulkan.pipeline_set {
-        return &__vulkan.color_2d_pipeline_set;
-    }
-};
-
 pub const tex_vertex_2d = extern struct {
     pos: point align(1),
     uv: point align(1),
@@ -476,45 +468,33 @@ pub const shape = struct {
     const Self = @This();
 
     pub const source = struct {
-        vertices: vertices(color_vertex_2d),
+        vertices: vertices(shape_color_vertex_2d),
         indices: indices32,
-        curve_vertices: vertices(shape_color_vertex_2d),
-        curve_indices: indices32,
         color: vector = undefined,
 
         pub fn init() source {
             return .{
-                .vertices = vertices(color_vertex_2d).init(),
+                .vertices = vertices(shape_color_vertex_2d).init(),
                 .indices = indices32.init(),
-                .curve_vertices = vertices(shape_color_vertex_2d).init(),
-                .curve_indices = indices32.init(),
             };
         }
         pub fn init_for_alloc(__allocator: std.mem.Allocator) source {
             return .{
-                .vertices = vertices(color_vertex_2d).init_for_alloc(__allocator),
+                .vertices = vertices(shape_color_vertex_2d).init_for_alloc(__allocator),
                 .indices = indices32.init_for_alloc(__allocator),
-                .curve_vertices = vertices(shape_color_vertex_2d).init_for_alloc(__allocator),
-                .curve_indices = indices32.init_for_alloc(__allocator),
             };
         }
         pub fn build(self: *source, _flag: write_flag) void {
             self.*.vertices.build(_flag);
             self.*.indices.build(_flag);
-            self.*.curve_vertices.build(_flag);
-            self.*.curve_indices.build(_flag);
         }
         pub fn deinit(self: *source) void {
             self.*.vertices.deinit();
             self.*.indices.deinit();
-            self.*.curve_vertices.deinit();
-            self.*.curve_indices.deinit();
         }
         pub fn deinit_for_alloc(self: *source) void {
             self.*.vertices.deinit_for_alloc();
             self.*.indices.deinit_for_alloc();
-            self.*.curve_vertices.deinit_for_alloc();
-            self.*.curve_indices.deinit_for_alloc();
         }
     };
 
@@ -532,8 +512,6 @@ pub const shape = struct {
         const self = @as(*Self, @fieldParentPtr("interface", _interface));
         if (idx == 0) {
             return &self.*.src.vertices.interface;
-        } else if (idx == 1) {
-            return &self.*.src.curve_vertices.interface;
         } else {
             return null;
         }
@@ -550,8 +528,6 @@ pub const shape = struct {
         const self = @as(*Self, @fieldParentPtr("interface", _interface));
         if (idx == 0) {
             return &self.*.src.*.indices.interface;
-        } else if (idx == 1) {
-            return &self.*.src.*.curve_indices.interface;
         } else {
             return null;
         }

@@ -67,8 +67,6 @@ pub fn deinit(self: *Self) void {
         if (v.*.raw_p != null) {
             v.*.allocator.free(v.*.raw_p.?.vertices);
             v.*.allocator.free(v.*.raw_p.?.indices);
-            v.*.allocator.free(v.*.raw_p.?.curve_vertices);
-            v.*.allocator.free(v.*.raw_p.?.curve_indices);
         }
     }
     self.*.__char_array.deinit();
@@ -93,10 +91,8 @@ fn load_glyph(self: *Self, _char: u21) font_error!void {
 }
 
 fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
-    if (out_shape_src.vertices.array == null) out_shape_src.*.vertices.array = try allocator.alloc(graphics.color_vertex_2d, 0);
+    if (out_shape_src.vertices.array == null) out_shape_src.*.vertices.array = try allocator.alloc(graphics.shape_color_vertex_2d, 0);
     if (out_shape_src.indices.array == null) out_shape_src.*.indices.array = try allocator.alloc(u32, 0);
-    if (out_shape_src.curve_vertices.array == null) out_shape_src.*.curve_vertices.array = try allocator.alloc(graphics.shape_color_vertex_2d, 0);
-    if (out_shape_src.curve_indices.array == null) out_shape_src.*.curve_indices.array = try allocator.alloc(u32, 0);
 }
 
 pub fn render_string(self: *Self, _str: []const u8, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
@@ -187,12 +183,9 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
             poly.lines[data.idx - 1] = try allocator.realloc(poly.lines[data.idx - 1], data.idx2);
 
             char_d2.raw_p = .{
-                .curve_vertices = try allocator.alloc(graphics.shape_color_vertex_2d, 0),
-                .vertices = try allocator.alloc(graphics.color_vertex_2d, 0),
-                .curve_indices = try allocator.alloc(u32, 0),
+                .vertices = try allocator.alloc(graphics.shape_color_vertex_2d, 0),
                 .indices = try allocator.alloc(u32, 0),
             };
-
             try poly.compute_polygon(allocator, &char_d2.raw_p.?);
         }
         char_d2.advance[0] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.x)) / 64.0;
@@ -204,8 +197,6 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         self.*.__char_array.put(char, char_d2) catch |e| {
             allocator.free(char_d2.raw_p.?.vertices);
             allocator.free(char_d2.raw_p.?.indices);
-            allocator.free(char_d2.raw_p.?.curve_vertices);
-            allocator.free(char_d2.raw_p.?.curve_indices);
             return e;
         };
         char_d = &char_d2;
@@ -230,21 +221,6 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         i = ilen;
         while (i < out_shape_src.*.indices.array.?.len) : (i += 1) {
             out_shape_src.*.indices.array.?[i] += @intCast(len);
-        }
-        const len2 = out_shape_src.*.curve_vertices.array.?.len;
-        out_shape_src.*.curve_vertices.array.? = try allocator.realloc(out_shape_src.*.curve_vertices.array.?, len2 + char_d.?.raw_p.?.curve_vertices.len);
-        @memcpy(out_shape_src.*.curve_vertices.array.?[len2..], char_d.?.raw_p.?.curve_vertices);
-        i = len2;
-        while (i < out_shape_src.*.curve_vertices.array.?.len) : (i += 1) {
-            out_shape_src.*.curve_vertices.array.?[i].pos *= scale;
-            out_shape_src.*.curve_vertices.array.?[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
-        }
-        const ilen2 = out_shape_src.*.curve_indices.array.?.len;
-        out_shape_src.*.curve_indices.array = try allocator.realloc(out_shape_src.*.curve_indices.array.?, ilen2 + char_d.?.raw_p.?.curve_indices.len);
-        @memcpy(out_shape_src.*.curve_indices.array.?[ilen2..], char_d.?.raw_p.?.curve_indices);
-        i = ilen2;
-        while (i < out_shape_src.*.curve_indices.array.?.len) : (i += 1) {
-            out_shape_src.*.curve_indices.array.?[i] += @intCast(len2);
         }
     }
     offset.*[0] += char_d.?.*.advance[0] * scale[0];

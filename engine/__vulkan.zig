@@ -15,10 +15,10 @@ pub var vk_allocator: __vulkan_allocator = undefined;
 
 pub const vk = @import("include/vulkan.zig");
 
-const shape_vert = @embedFile("shaders/out/shape_vert.spv");
-const shape_frag = @embedFile("shaders/out/shape_frag.spv");
-var shape_vert_shader: vk.VkShaderModule = undefined;
-var shape_frag_shader: vk.VkShaderModule = undefined;
+// const shape_vert = @embedFile("shaders/out/shape_vert.spv");
+// const shape_frag = @embedFile("shaders/out/shape_frag.spv");
+// var shape_vert_shader: vk.VkShaderModule = undefined;
+// var shape_frag_shader: vk.VkShaderModule = undefined;
 
 const shape_curve_vert = @embedFile("shaders/out/shape_curve_vert.spv");
 const shape_curve_frag = @embedFile("shaders/out/shape_curve_frag.spv");
@@ -57,7 +57,7 @@ pub const pipeline_set = struct {
 
 //Predefined Pipelines
 pub var shape_color_2d_pipeline_set: pipeline_set = .{};
-pub var color_2d_pipeline_set: pipeline_set = .{};
+//pub var color_2d_pipeline_set: pipeline_set = .{};
 pub var tex_2d_pipeline_set: pipeline_set = .{};
 pub var quad_shape_2d_pipeline_set: pipeline_set = .{};
 //
@@ -207,18 +207,16 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
     const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
 
     for (graphics.scene.?.*) |value| {
-        const ivertices1 = value.*.get_ivertices(value, 1);
-        if (ivertices1 != null and ivertices1.?.*.pipeline == &shape_color_2d_pipeline_set) {
-            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
-
+        const ivertices = value.*.get_ivertices(value, 0) orelse continue;
+        if (ivertices.*.pipeline == &shape_color_2d_pipeline_set) {
             vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
             vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
 
             vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
 
             for (
-                [_]*graphics.ivertices{ ivertices, ivertices1.? },
-                [_]*graphics.iindices{ value.*.get_iindices(value, 0).?, value.*.get_iindices(value, 1).? },
+                [_]*graphics.ivertices{ivertices},
+                [_]*graphics.iindices{value.*.get_iindices(value, 0).?},
             ) |v, in| {
                 vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
 
@@ -246,8 +244,8 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
                 if (extra.?.len > 0) vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
                 for (extra.?) |src| {
                     for (
-                        [_]*graphics.ivertices{ &src.*.vertices.interface, &src.*.curve_vertices.interface },
-                        [_]*graphics.iindices{ &src.*.indices.interface, &src.*.curve_indices.interface },
+                        [_]*graphics.ivertices{&src.*.vertices.interface},
+                        [_]*graphics.iindices{&src.*.indices.interface},
                     ) |v, in| {
                         vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
 
@@ -274,7 +272,6 @@ fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void 
                 }
             }
         } else {
-            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
             vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
 
             vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
@@ -696,8 +693,8 @@ pub fn vulkan_start() void {
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkDepthRenderPass : {d}", .{result});
 
     //create_shader_stages
-    shape_vert_shader = createShaderModule(shape_vert);
-    shape_frag_shader = createShaderModule(shape_frag);
+    //shape_vert_shader = createShaderModule(shape_vert);
+    //shape_frag_shader = createShaderModule(shape_frag);
     shape_curve_vert_shader = createShaderModule(shape_curve_vert);
     shape_curve_frag_shader = createShaderModule(shape_curve_frag);
     quad_shape_vert_shader = createShaderModule(quad_shape_vert);
@@ -705,7 +702,7 @@ pub fn vulkan_start() void {
     tex_vert_shader = createShaderModule(tex_vert);
     tex_frag_shader = createShaderModule(tex_frag);
 
-    const shape_shader_stages = create_shader_state(shape_vert_shader, shape_frag_shader);
+    //const shape_shader_stages = create_shader_state(shape_vert_shader, shape_frag_shader);
     const shape_curve_shader_stages = create_shader_state(shape_curve_vert_shader, shape_curve_frag_shader);
     const quad_shape_shader_stages = create_shader_state(quad_shape_vert_shader, quad_shape_frag_shader);
     const tex_shader_stages = create_shader_state(tex_vert_shader, tex_frag_shader);
@@ -799,7 +796,7 @@ pub fn vulkan_start() void {
         result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &quad_shape_2d_pipeline_set.pipeline);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines quad_shape_2d_pipeline_set.pipeline : {d}", .{result});
     }
-    //create_color_2d_pipeline
+    //create_shape_color_2d_pipeline
     {
         const uboLayoutBinding = [3]vk.VkDescriptorSetLayoutBinding{
             vk.VkDescriptorSetLayoutBinding{
@@ -829,85 +826,19 @@ pub fn vulkan_start() void {
             .bindingCount = uboLayoutBinding.len,
             .pBindings = &uboLayoutBinding,
         };
-        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &color_2d_pipeline_set.descriptorSetLayout);
+        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info, null, &shape_color_2d_pipeline_set.descriptorSetLayout);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout color_2d_pipeline_set.descriptorSetLayout : {d}", .{result});
 
         const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .setLayoutCount = 1,
-            .pSetLayouts = &color_2d_pipeline_set.descriptorSetLayout,
+            .pSetLayouts = &shape_color_2d_pipeline_set.descriptorSetLayout,
             .pushConstantRangeCount = 0,
             .pPushConstantRanges = null,
         };
 
-        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &color_2d_pipeline_set.pipelineLayout);
+        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &shape_color_2d_pipeline_set.pipelineLayout);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout color_2d_pipeline_set.pipelineLayout : {d}", .{result});
-
-        const bindingDescription: vk.VkVertexInputBindingDescription = .{
-            .binding = 0,
-            .stride = @sizeOf(f32) * (2),
-            .inputRate = vk.VK_VERTEX_INPUT_RATE_VERTEX,
-        };
-        const attributeDescriptions: [1]vk.VkVertexInputAttributeDescription = .{
-            .{ .binding = 0, .location = 0, .format = vk.VK_FORMAT_R32G32_SFLOAT, .offset = 0 },
-        };
-
-        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            .vertexBindingDescriptionCount = 1,
-            .vertexAttributeDescriptionCount = attributeDescriptions.len,
-            .pVertexBindingDescriptions = &bindingDescription,
-            .pVertexAttributeDescriptions = &attributeDescriptions,
-        };
-
-        const stencilOp = vk.VkStencilOpState{
-            .compareMask = 0xff,
-            .writeMask = 0xff,
-            .compareOp = vk.VK_COMPARE_OP_ALWAYS,
-            .depthFailOp = vk.VK_STENCIL_OP_ZERO,
-            .passOp = vk.VK_STENCIL_OP_INVERT,
-            .failOp = vk.VK_STENCIL_OP_ZERO,
-            .reference = 0xff,
-        };
-        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
-            .stencilTestEnable = vk.VK_TRUE,
-            .depthTestEnable = vk.VK_FALSE,
-            .depthWriteEnable = vk.VK_FALSE,
-            .depthBoundsTestEnable = vk.VK_FALSE,
-            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
-            .flags = 0,
-            .maxDepthBounds = 0,
-            .minDepthBounds = 0,
-            .back = stencilOp,
-            .front = stencilOp,
-        };
-
-        const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            .stageCount = 2,
-            .pStages = &shape_shader_stages,
-            .pVertexInputState = &vertexInputInfo,
-            .pInputAssemblyState = &inputAssembly,
-            .pViewportState = &viewportState,
-            .pRasterizationState = &rasterizer,
-            .pMultisampleState = &multisampling,
-            .pDepthStencilState = &depthStencilState,
-            .pColorBlendState = &noBlending,
-            .pDynamicState = &dynamicState,
-            .layout = color_2d_pipeline_set.pipelineLayout,
-            .renderPass = vkRenderPass,
-            .subpass = 0,
-            .basePipelineHandle = null,
-            .basePipelineIndex = -1,
-        };
-
-        result = vk.vkCreateGraphicsPipelines(vkDevice, std.mem.zeroes(vk.VkPipelineCache), 1, &pipelineInfo, null, &color_2d_pipeline_set.pipeline);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines color_2d_pipeline_set.pipeline : {d}", .{result});
-    }
-    //create_shape_color_2d_pipeline
-    {
-        shape_color_2d_pipeline_set.descriptorSetLayout = color_2d_pipeline_set.descriptorSetLayout;
-        shape_color_2d_pipeline_set.pipelineLayout = color_2d_pipeline_set.pipelineLayout;
 
         const bindingDescription: vk.VkVertexInputBindingDescription = .{
             .binding = 0,
@@ -1131,8 +1062,8 @@ pub fn vulkan_destroy() void {
     vk.vkDestroySampler(vkDevice, linear_sampler, null);
     vk.vkDestroySampler(vkDevice, nearest_sampler, null);
 
-    vk.vkDestroyShaderModule(vkDevice, shape_vert_shader, null);
-    vk.vkDestroyShaderModule(vkDevice, shape_frag_shader, null);
+    // vk.vkDestroyShaderModule(vkDevice, shape_vert_shader, null);
+    // vk.vkDestroyShaderModule(vkDevice, shape_frag_shader, null);
     vk.vkDestroyShaderModule(vkDevice, quad_shape_vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, quad_shape_frag_shader, null);
     vk.vkDestroyShaderModule(vkDevice, shape_curve_vert_shader, null);
@@ -1142,14 +1073,14 @@ pub fn vulkan_destroy() void {
 
     shape_color_2d_pipeline_set.deinit();
     quad_shape_2d_pipeline_set.deinit();
-    color_2d_pipeline_set.deinit();
+    //color_2d_pipeline_set.deinit();
     tex_2d_pipeline_set.deinit();
 
     vk.vkDestroyPipelineLayout(vkDevice, quad_shape_2d_pipeline_set.pipelineLayout, null);
     vk.vkDestroyDescriptorSetLayout(vkDevice, quad_shape_2d_pipeline_set.descriptorSetLayout, null);
 
-    vk.vkDestroyPipelineLayout(vkDevice, color_2d_pipeline_set.pipelineLayout, null);
-    vk.vkDestroyDescriptorSetLayout(vkDevice, color_2d_pipeline_set.descriptorSetLayout, null);
+    vk.vkDestroyPipelineLayout(vkDevice, shape_color_2d_pipeline_set.pipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, shape_color_2d_pipeline_set.descriptorSetLayout, null);
 
     vk.vkDestroyPipelineLayout(vkDevice, tex_2d_pipeline_set.pipelineLayout, null);
     vk.vkDestroyDescriptorSetLayout(vkDevice, tex_2d_pipeline_set.descriptorSetLayout, null);

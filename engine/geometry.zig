@@ -163,7 +163,6 @@ pub const polygon = struct {
         var count: usize = 0;
         var curve_vertice_len: usize = 0;
         var vertice_len: usize = 0;
-        var curve_indices_len: usize = 0;
         var indices_len: usize = 0;
 
         count = 0;
@@ -173,32 +172,25 @@ pub const polygon = struct {
             vertice_len += 1;
             while (i < self.lines[count].len) : (i += 1) {
                 if (self.lines[count][i].curve_type != .line) {
-                    curve_vertice_len += 4;
+                    curve_vertice_len += 8;
                 }
                 vertice_len += 1;
             }
         }
 
-        const vertice_len2 = _inout.*.vertices.len;
-        _inout.*.vertices = try allocator.realloc(_inout.*.vertices, vertice_len2 + vertice_len);
-        vertice_len = vertice_len2;
-
-        const curve_vertice_len2 = _inout.*.curve_vertices.len;
-        _inout.*.curve_vertices = try allocator.realloc(_inout.*.curve_vertices, curve_vertice_len2 + curve_vertice_len * 2);
-        curve_vertice_len = curve_vertice_len2;
+        _inout.*.vertices = try allocator.realloc(_inout.*.vertices, _inout.*.vertices.len + vertice_len + curve_vertice_len);
         //인덱스 갯수는 대충 최대값
-
         _inout.*.indices = try allocator.realloc(_inout.*.indices, _inout.*.vertices.len * 3);
-        _inout.*.curve_indices = try allocator.realloc(_inout.*.curve_indices, _inout.*.curve_vertices.len * 3);
+        vertice_len = 0;
 
         count = 0;
         while (count < self.lines.len) : (count += 1) {
             i = 0;
             const first_vertex = vertice_len;
             _inout.*.vertices[first_vertex].pos = .{ std.math.floatMax(f32), std.math.floatMin(f32) };
+            _inout.*.vertices[first_vertex].uvw = .{ 1, 0, 0 };
             vertice_len += 1;
             while (i < self.lines[count].len) : (i += 1) {
-                try self.lines[count][i].compute_curve(_inout.*.curve_vertices, _inout.*.curve_indices, &curve_vertice_len, &curve_indices_len);
                 _inout.*.vertices[vertice_len].pos = self.lines[count][i].start;
                 vertice_len += 1;
             }
@@ -211,6 +203,8 @@ pub const polygon = struct {
                 if (maxX < _inout.*.vertices[i].pos[0]) maxX = _inout.*.vertices[i].pos[0];
                 if (minY > _inout.*.vertices[i].pos[1]) minY = _inout.*.vertices[i].pos[1];
 
+                _inout.*.vertices[i].uvw = .{ 1, 0, 0 };
+
                 _inout.*.indices[indices_len] = @intCast(first_vertex);
                 _inout.*.indices[indices_len + 1] = @intCast(i);
                 _inout.*.indices[indices_len + 2] = if (i < vertice_len - 1) @intCast(i + 1) else @intCast(first_vertex + 1);
@@ -219,9 +213,15 @@ pub const polygon = struct {
             _inout.*.vertices[first_vertex].pos[0] -= (maxX - _inout.*.vertices[first_vertex].pos[0]) / 2;
             _inout.*.vertices[first_vertex].pos[1] += (_inout.*.vertices[first_vertex].pos[1] - minY) / 2;
         }
-        _inout.*.curve_vertices = try allocator.realloc(_inout.*.curve_vertices, curve_vertice_len);
+        count = 0;
+        while (count < self.lines.len) : (count += 1) {
+            i = 0;
+            while (i < self.lines[count].len) : (i += 1) {
+                try self.lines[count][i].compute_curve(_inout.*.vertices, _inout.*.indices, &vertice_len, &indices_len);
+            }
+        }
+        _inout.*.vertices = try allocator.realloc(_inout.*.vertices, vertice_len);
         _inout.*.indices = try allocator.realloc(_inout.*.indices, indices_len);
-        _inout.*.curve_indices = try allocator.realloc(_inout.*.curve_indices, curve_indices_len);
     }
 };
 
@@ -622,8 +622,6 @@ pub const line = struct {
 };
 
 pub const raw_polygon = struct {
-    vertices: []graphics.color_vertex_2d,
+    vertices: []graphics.shape_color_vertex_2d,
     indices: []u32,
-    curve_vertices: []graphics.shape_color_vertex_2d,
-    curve_indices: []u32,
 };
