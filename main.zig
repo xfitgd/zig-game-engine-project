@@ -16,6 +16,8 @@ const asset_file = @import("engine/asset_file.zig");
 const webp = @import("engine/webp.zig");
 const img = @import("engine/img.zig");
 
+const timer_callback = @import("engine/timer_callback.zig");
+
 const file_ = if (system.platform == .android) asset_file else file;
 
 const ArrayList = std.ArrayList;
@@ -26,6 +28,7 @@ var allocator: std.mem.Allocator = undefined;
 const math = @import("engine/math.zig");
 const mem = @import("engine/mem.zig");
 const graphics = @import("engine/graphics.zig");
+const render_command = @import("engine/render_command.zig");
 const geometry = @import("engine/geometry.zig");
 
 const matrix = math.matrix;
@@ -47,6 +50,9 @@ var shape_src: graphics.shape.source = undefined;
 // var shape_src2: graphics.shape.source = undefined;
 // var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.image.source = undefined;
+var cmd: render_command = undefined;
+var cmd2: render_command = undefined;
+var cmds = [_]*render_command{ &cmd, &cmd2 };
 
 pub fn xfit_init() void {
     font.start();
@@ -63,7 +69,7 @@ pub fn xfit_init() void {
 
     object.* = graphics.shape.init();
     shape_src = graphics.shape.source.init_for_alloc(allocator);
-    shape_src.color = .{ 1, 1, 1, 1 };
+    shape_src.color = .{ 1, 1, 1, 0.5 };
 
     //shape_src2 = graphics.shape.source.init_for_alloc(allocator);
     //shape_src2.color = .{ 1, 0, 1, 1 };
@@ -132,34 +138,45 @@ pub fn xfit_init() void {
     object.*.interface.transform.projection = &g_proj;
     object.*.src = &shape_src;
     //object.*.extra_src = extra_src[0..1];
+    object.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2, 0, 0));
     object.*.interface.build(&object.*.interface, .readwrite_cpu);
-
-    object.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-1, 0, 0));
-    object.*.interface.transform.map_update();
 
     object2.*.interface.transform.camera = &g_camera;
     object2.*.interface.transform.projection = &g_proj;
     object2.*.interface.build(&object2.*.interface, .readwrite_cpu);
 
-    // object2.*.interface.transform.model = matrix.translation(-1, 0, 0);
-    // object2.*.interface.transform.map_update();
-
     objects.append(&object2.*.interface) catch system.handle_error_msg2("objects.append(&object2s.*.interface)");
     objects.append(&object.*.interface) catch system.handle_error_msg2("objects.append(&object.*.interface)");
 
-    graphics.scene = &objects.items;
+    cmd = render_command.init();
+    cmd.scene = objects.items[0..1];
+    cmd.refresh();
+
+    cmd2 = render_command.init();
+    cmd2.scene = objects.items[1..2];
+    cmd2.refresh();
+
+    graphics.render_commands = cmds[0..cmds.len];
+
+    _ = timer_callback.start(10000000, 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+}
+//다른 스레드에서 테스트 xfit_update에서 해도됨.
+fn move_callback() void {
+    render_command.lock_for_update() catch return; // 다른 스레드에서 호출시킬때 필요
+    cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
+    cmd2.scene.?[0].*.transform.map_update();
+    dx += @floatCast(system.dt() / 10);
+    if (dx >= 3) dx = 0;
+    render_command.unlock_for_update();
 }
 
-///윈도우 크기 바뀔때 xfit_update 바로 전 호출
-pub fn xfit_size_update() void {
-    //system.print_debug("size update", .{});
+var dx: f32 = 0;
+pub fn xfit_update() void {}
+
+pub fn xfit_size() void {
     g_proj.init_matrix(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error3("g_proj.init_matrix", e);
     g_proj.map_update();
 }
-
-pub fn xfit_update() void {}
-
-pub fn xfit_size() void {}
 
 ///before system clean
 pub fn xfit_destroy() void {
@@ -185,6 +202,9 @@ pub fn xfit_destroy() void {
     font0.deinit();
     allocator.free(font0_data);
     font.destroy();
+
+    cmd.deinit();
+    cmd2.deinit();
 }
 
 ///after system clean

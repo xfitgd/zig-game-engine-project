@@ -13,6 +13,8 @@ const math = @import("math.zig");
 const input = @import("input.zig");
 const mem = @import("mem.zig");
 
+const render_command = @import("render_command.zig");
+
 const root = @import("root");
 
 pub var prev_window: struct {
@@ -62,7 +64,7 @@ pub var key_up_func: ?*const fn (key_code: input.key()) void = null;
 
 pub var monitors: ArrayList(system.monitor_info) = undefined;
 pub var primary_monitor: *system.monitor_info = undefined;
-pub var size_update_sem: std.Thread.Semaphore = .{};
+//pub var size_update_sem: std.Thread.Semaphore = .{};
 
 //debug variables
 pub var sound_started: bool = false;
@@ -105,14 +107,16 @@ pub fn loop() void {
             delta_time = maxf;
         }
     }
-    var need_size_update = true;
-    size_update_sem.timedWait(0) catch {
-        need_size_update = false; //?need_size_update 변수를 안쓰는 방법이 있나..?
-    };
-    if (need_size_update) {
-        root.xfit_size_update();
-    }
+    // var need_size_update = true;
+    // size_update_sem.timedWait(0) catch {
+    //     need_size_update = false; //?need_size_update 변수를 안쓰는 방법이 있나..?
+    // };
+    render_command.lock_for_update() catch return;
+    // if (need_size_update) {
+    //     root.xfit_size_update();
+    // }
     root.xfit_update();
+    render_command.unlock_for_update();
 
     if (!ispause) {
         __vulkan.drawFrame();

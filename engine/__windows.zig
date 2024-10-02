@@ -7,6 +7,7 @@ const system = @import("system.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
+const render_command = @import("render_command.zig");
 const math = @import("math.zig");
 
 const root = @import("root");
@@ -178,10 +179,14 @@ fn render_thread() void {
     while (!exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
     }
-    __vulkan.wait_for_fences();
+
+    __vulkan.render_mutex.lock();
+    const result = __vulkan.vk.vkDeviceWaitIdle(__vulkan.vkDevice);
+    if (result != __vulkan.vk.VK_SUCCESS) system.print_error("__windows.vkDeviceWaitIdle : {d}", .{result});
 
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
+    __vulkan.render_mutex.unlock();
 
     render_sem.post();
 }
@@ -436,8 +441,11 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                     @atomicStore(i32, &__system.init_set.window_width, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
                     @atomicStore(i32, &__system.init_set.window_height, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
-                    __system.size_update_sem.post();
-                    root.xfit_size();
+                    render_command.lock_for_update() catch return 0;
+                    //__system.size_update_sem.post();
+
+                    if (__vulkan.vkInFlightFence != null) root.xfit_size();
+                    render_command.unlock_for_update();
                 }
 
                 S.sizeInited = true;

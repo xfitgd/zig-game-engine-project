@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const file = @import("file.zig");
 const system = @import("system.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
@@ -16,6 +15,7 @@ const vk = __vulkan.vk;
 
 const math = @import("math.zig");
 const geometry = @import("geometry.zig");
+const render_command = @import("render_command.zig");
 const line = geometry.line;
 const mem = @import("mem.zig");
 const point = math.point;
@@ -60,7 +60,7 @@ pub const tex_vertex_2d = extern struct {
     }
 };
 
-pub var scene: ?*[]*iobject = null;
+pub var render_commands: ?[]*render_command = null;
 
 pub const index_type = enum { U16, U32 };
 pub const DEF_IDX_TYPE_: index_type = .U32;

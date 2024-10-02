@@ -8,6 +8,7 @@ const system = @import("system.zig");
 const math = @import("math.zig");
 const matrix = math.matrix;
 const graphics = @import("graphics.zig");
+const render_command = @import("render_command.zig");
 const __system = @import("__system.zig");
 
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
@@ -125,21 +126,21 @@ var vkSurface: vk.VkSurfaceKHR = undefined;
 var vkRenderPass: vk.VkRenderPass = undefined;
 var vkSwapchain: vk.VkSwapchainKHR = null;
 
-var vkCommandPool: vk.VkCommandPool = undefined;
-var vkCommandBuffer: vk.VkCommandBuffer = undefined;
+pub var vkCommandPool: vk.VkCommandPool = undefined;
+pub var vkCommandBuffer: vk.VkCommandBuffer = undefined;
 
 var vkImageAvailableSemaphore: vk.VkSemaphore = null;
 var vkRenderFinishedSemaphore: vk.VkSemaphore = null;
 
-var vkInFlightFence: vk.VkFence = null;
+pub var vkInFlightFence: vk.VkFence = null;
 
 var vkDebugMessenger: vk.VkDebugUtilsMessengerEXT = null;
 
-var vkGraphicsQueue: vk.VkQueue = undefined;
+pub var vkGraphicsQueue: vk.VkQueue = undefined;
 var vkPresentQueue: vk.VkQueue = undefined;
 
 var vkExtent: vk.VkExtent2D = undefined;
-var vk_swapchain_frame_buffers: []vk.VkFramebuffer = undefined;
+pub var vk_swapchain_frame_buffers: []vk.VkFramebuffer = undefined;
 var vk_swapchain_image_views: []vk.VkImageView = undefined;
 
 pub var vk_physical_devices: []vk.VkPhysicalDevice = undefined;
@@ -167,138 +168,132 @@ fn createShaderModule(code: []const u8) vk.VkShaderModule {
     return shaderModule;
 }
 
-fn recordCommandBuffer(commandBuffer: vk.VkCommandBuffer, imageIndex: u32) void {
-    const beginInfo: vk.VkCommandBufferBeginInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = 0, .pInheritanceInfo = null };
-
-    var result = vk.vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
-
-    const clearColor: vk.VkClearValue = .{
-        .color = .{ .float32 = .{ 0, 0, 0, 0 } },
-    };
-    const clearDeathStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
-
-    const renderPassInfo: vk.VkRenderPassBeginInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = vkRenderPass,
-        .framebuffer = vk_swapchain_frame_buffers[imageIndex],
-        .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent },
-        .clearValueCount = 2,
-        .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDeathStencil },
-    };
-
-    vk.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
-
-    if (graphics.scene == null or graphics.scene.?.len == 0) {
-        vk.vkCmdEndRenderPass(commandBuffer);
-        result = vk.vkEndCommandBuffer(commandBuffer);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
+fn recordCommandBuffer(commandBuffer: *render_command) void {
+    if (commandBuffer.*.scene == null or commandBuffer.*.scene.?.len == 0) {
         return;
     }
+    var i: usize = 0;
+    while (i < get_swapchain_image_lenghth()) : (i += 1) {
+        const cmd = if (system.dbg) commandBuffer.*.__command_buffers.? else commandBuffer.*.__command_buffers;
+        var result = vk.vkResetCommandBuffer(cmd[i], 0);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkResetCommandBuffer : {d}", .{result});
 
-    const viewport: vk.VkViewport = .{
-        .x = 0,
-        .y = 0,
-        .width = @floatFromInt(vkExtent.width),
-        .height = @floatFromInt(vkExtent.height),
-        .maxDepth = 1,
-        .minDepth = 0,
-    };
-    const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+        const info = vk.VkCommandBufferInheritanceInfo{
+            .renderPass = vkRenderPass,
+            .framebuffer = null,
+            .occlusionQueryEnable = 0,
+            .queryFlags = 0,
+            .pipelineStatistics = 0,
+            .subpass = 0,
+        };
 
-    for (graphics.scene.?.*) |value| {
-        const ivertices = value.*.get_ivertices(value, 0) orelse continue;
-        if (ivertices.*.pipeline == &shape_color_2d_pipeline_set) {
-            vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
-            vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
+        const beginInfo: vk.VkCommandBufferBeginInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = vk.VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+            .pInheritanceInfo = &info,
+        };
 
-            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+        result = vk.vkBeginCommandBuffer(cmd[i], &beginInfo);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
 
-            for (
-                [_]*graphics.ivertices{ivertices},
-                [_]*graphics.iindices{value.*.get_iindices(value, 0).?},
-            ) |v, in| {
-                vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
+        const viewport: vk.VkViewport = .{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(vkExtent.width),
+            .height = @floatFromInt(vkExtent.height),
+            .maxDepth = 1,
+            .minDepth = 0,
+        };
+        const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+
+        vk.vkCmdSetViewport(cmd[i], 0, 1, @ptrCast(&viewport));
+        vk.vkCmdSetScissor(cmd[i], 0, 1, @ptrCast(&scissor));
+
+        for (commandBuffer.scene.?) |value| {
+            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
+            if (ivertices.*.pipeline == &shape_color_2d_pipeline_set) {
+                vk.vkCmdBindDescriptorSets(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+                for (
+                    [_]*graphics.ivertices{ivertices},
+                    [_]*graphics.iindices{value.*.get_iindices(value, 0).?},
+                ) |v, in| {
+                    vk.vkCmdBindPipeline(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
+
+                    const offsets: vk.VkDeviceSize = 0;
+                    vk.vkCmdBindVertexBuffers(cmd[i], 0, 1, &v.*.node.res, &offsets);
+
+                    vk.vkCmdBindIndexBuffer(cmd[i], in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
+                    vk.vkCmdDrawIndexed(cmd[i], @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
+                }
+                vk.vkCmdBindPipeline(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
+
+                vk.vkCmdPushConstants(
+                    cmd[i],
+                    quad_shape_2d_pipeline_set.pipelineLayout,
+                    vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                    0,
+                    @sizeOf(math.vector),
+                    &@as(*graphics.shape.source, @alignCast(@ptrCast(value.*.get_source(value).?))).*.color,
+                );
+
+                vk.vkCmdDraw(cmd[i], 6, 1, 0, 0);
+
+                const extra = @as(?[]*graphics.shape.source, @ptrCast(value.*.get_extra_sources(value)));
+                if (extra != null) {
+                    if (extra.?.len > 0) vk.vkCmdBindDescriptorSets(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+                    for (extra.?) |src| {
+                        for (
+                            [_]*graphics.ivertices{&src.*.vertices.interface},
+                            [_]*graphics.iindices{&src.*.indices.interface},
+                        ) |v, in| {
+                            vk.vkCmdBindPipeline(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
+
+                            vk.vkCmdBindDescriptorSets(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
+
+                            const offsets: vk.VkDeviceSize = 0;
+                            vk.vkCmdBindVertexBuffers(cmd[i], 0, 1, &v.*.node.res, &offsets);
+
+                            vk.vkCmdBindIndexBuffer(cmd[i], in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
+                            vk.vkCmdDrawIndexed(cmd[i], @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
+                        }
+                        vk.vkCmdBindPipeline(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
+
+                        vk.vkCmdPushConstants(
+                            cmd[i],
+                            quad_shape_2d_pipeline_set.pipelineLayout,
+                            vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                            0,
+                            @sizeOf(math.vector),
+                            &src.*.color,
+                        );
+
+                        vk.vkCmdDraw(cmd[i], 6, 1, 0, 0);
+                    }
+                }
+            } else {
+                vk.vkCmdBindPipeline(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
+
+                vk.vkCmdBindDescriptorSets(cmd[i], vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
 
                 const offsets: vk.VkDeviceSize = 0;
-                vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &v.*.node.res, &offsets);
+                vk.vkCmdBindVertexBuffers(cmd[i], 0, 1, &ivertices.*.node.res, &offsets);
 
-                vk.vkCmdBindIndexBuffer(commandBuffer, in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-                vk.vkCmdDrawIndexed(commandBuffer, @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
-            }
-            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
-
-            vk.vkCmdPushConstants(
-                commandBuffer,
-                quad_shape_2d_pipeline_set.pipelineLayout,
-                vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                0,
-                @sizeOf(math.vector),
-                &@as(*graphics.shape.source, @alignCast(@ptrCast(value.*.get_source(value).?))).*.color,
-            );
-
-            vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
-
-            const extra = @as(?[]*graphics.shape.source, @ptrCast(value.*.get_extra_sources(value)));
-            if (extra != null) {
-                if (extra.?.len > 0) vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
-                for (extra.?) |src| {
-                    for (
-                        [_]*graphics.ivertices{&src.*.vertices.interface},
-                        [_]*graphics.iindices{&src.*.indices.interface},
-                    ) |v, in| {
-                        vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
-
-                        vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
-
-                        const offsets: vk.VkDeviceSize = 0;
-                        vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &v.*.node.res, &offsets);
-
-                        vk.vkCmdBindIndexBuffer(commandBuffer, in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-                        vk.vkCmdDrawIndexed(commandBuffer, @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
-                    }
-                    vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
-
-                    vk.vkCmdPushConstants(
-                        commandBuffer,
-                        quad_shape_2d_pipeline_set.pipelineLayout,
-                        vk.VK_SHADER_STAGE_FRAGMENT_BIT,
-                        0,
-                        @sizeOf(math.vector),
-                        &src.*.color,
-                    );
-
-                    vk.vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+                const iindices = value.*.get_iindices(value, 0);
+                if (iindices != null) {
+                    vk.vkCmdBindIndexBuffer(cmd[i], iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
+                        .U16 => vk.VK_INDEX_TYPE_UINT16,
+                        .U32 => vk.VK_INDEX_TYPE_UINT32,
+                    });
+                    vk.vkCmdDrawIndexed(cmd[i], @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
+                } else {
+                    vk.vkCmdDraw(cmd[i], @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
                 }
             }
-        } else {
-            vk.vkCmdBindPipeline(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
-
-            vk.vkCmdSetViewport(commandBuffer, 0, 1, @ptrCast(&viewport));
-            vk.vkCmdSetScissor(commandBuffer, 0, 1, @ptrCast(&scissor));
-
-            vk.vkCmdBindDescriptorSets(commandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
-
-            const offsets: vk.VkDeviceSize = 0;
-            vk.vkCmdBindVertexBuffers(commandBuffer, 0, 1, &ivertices.*.node.res, &offsets);
-
-            const iindices = value.*.get_iindices(value, 0);
-            if (iindices != null) {
-                vk.vkCmdBindIndexBuffer(commandBuffer, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
-                    .U16 => vk.VK_INDEX_TYPE_UINT16,
-                    .U32 => vk.VK_INDEX_TYPE_UINT32,
-                });
-                vk.vkCmdDrawIndexed(commandBuffer, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
-            } else {
-                vk.vkCmdDraw(commandBuffer, @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
-            }
         }
+
+        result = vk.vkEndCommandBuffer(cmd[i]);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
     }
-
-    vk.vkCmdEndRenderPass(commandBuffer);
-
-    result = vk.vkEndCommandBuffer(commandBuffer);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
 }
 
 pub fn vkCreateDebugUtilsMessengerEXT(instance: vk.VkInstance, pCreateInfo: ?*const vk.VkDebugUtilsMessengerCreateInfoEXT, pAllocator: ?*const vk.VkAllocationCallbacks, pDebugMessenger: ?*vk.VkDebugUtilsMessengerEXT) vk.VkResult {
@@ -641,9 +636,9 @@ pub fn vulkan_start() void {
     const colorAttachment: vk.VkAttachmentDescription = .{
         .format = format.format,
         .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
         .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -652,9 +647,9 @@ pub fn vulkan_start() void {
     const depthAttachment: vk.VkAttachmentDescription = .{
         .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
         .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
         .finalLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -1053,6 +1048,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroySemaphore(vkDevice, vkImageAvailableSemaphore, null);
     vk.vkDestroySemaphore(vkDevice, vkRenderFinishedSemaphore, null);
     vk.vkDestroyFence(vkDevice, vkInFlightFence, null);
+    vkInFlightFence = null;
 
     vk.vkDestroyCommandPool(vkDevice, vkCommandPool, null);
 
@@ -1189,7 +1185,7 @@ fn create_swapchain_and_imageviews() void {
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_swapchain_and_imageviews.vkGetPhysicalDeviceSurfaceCapabilitiesKHR : {d}", .{result});
 
     vkExtent = chooseSwapExtent(surfaceCap);
-    if (vkExtent.width <= 0) {
+    if (vkExtent.width <= 0 or vkExtent.height <= 0) {
         __system.allocator.free(formats);
         return;
     }
@@ -1338,6 +1334,10 @@ pub fn copy_buffer(srcBuffer: vk.VkBuffer, dstBuffer: vk.VkBuffer, size: vk.VkDe
     end_single_time_commands(buf);
 }
 
+pub fn get_swapchain_image_lenghth() usize {
+    return vk_swapchain_image_views.len;
+}
+
 pub fn recreate_swapchain(_recreate_window: bool) void {
     if (system.platform == .android and _recreate_window) {
         __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
@@ -1347,57 +1347,114 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
 
     cleanup_swapchain();
     create_swapchain_and_imageviews();
-    if (vkExtent.width <= 0) return;
+    if (vkExtent.width <= 0 or vkExtent.height <= 0) return;
     create_framebuffer();
 }
 
-pub fn wait_for_fences() void {
-    const result = vk.vkWaitForFences(vkDevice, 1, @ptrCast(&vkInFlightFence), vk.VK_TRUE, std.math.maxInt(u64));
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
-}
+pub var render_mutex: std.Thread.Mutex = .{};
 
 pub fn drawFrame() void {
-    wait_for_fences();
-
     var imageIndex: u32 = undefined;
 
-    if (vkExtent.width <= 0) {
+    if (vkExtent.width <= 0 or vkExtent.height <= 0) {
         recreate_swapchain(false);
-        if (vkExtent.width <= 0) return;
+        if (vkExtent.width <= 0 or vkExtent.height <= 0) return;
     }
 
-    var result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, std.mem.zeroes(vk.VkFence), &imageIndex);
-    if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
-        recreate_swapchain(false);
-        return;
-    }
-    system.handle_error(!(result != vk.VK_SUCCESS and result != vk.VK_SUBOPTIMAL_KHR), "__vulkan.drawFrame.vkAcquireNextImageKHR : {d}", .{result});
+    if (graphics.render_commands != null) {
+        var result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, null, &imageIndex);
+        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
+            recreate_swapchain(false);
+            return;
+        }
+        system.handle_error(!(result != vk.VK_SUCCESS and result != vk.VK_SUBOPTIMAL_KHR), "__vulkan.drawFrame.vkAcquireNextImageKHR : {d}", .{result});
 
-    result = vk.vkResetFences(vkDevice, 1, @ptrCast(&vkInFlightFence));
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});
+        var cmds = ArrayList(vk.VkCommandBuffer).init(__system.allocator);
+        defer cmds.deinit();
 
-    result = vk.vkResetCommandBuffer(vkCommandBuffer, 0);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetCommandBuffer : {d}", .{result});
-    recordCommandBuffer(vkCommandBuffer, imageIndex);
+        render_mutex.lock(); // command 기록 중에 값이 바뀌면 안된다.
+        for (graphics.render_commands.?) |v| {
+            if (@atomicLoad(bool, &v.*.__refesh, .acquire)) {
+                @atomicStore(bool, &v.*.__refesh, false, .release);
+                recordCommandBuffer(v);
+            } else if (v.*.__refresh_framebuffer != vk_swapchain_frame_buffers[0]) { //TODO https://nvpro-samples.github.io/vk_inherited_viewport/docs/inherited.md.html 하면 안해도됨.
+                v.*.__refresh_framebuffer = vk_swapchain_frame_buffers[0];
+                recordCommandBuffer(v);
+            }
+            cmds.append(if (system.dbg) v.*.__command_buffers.?[imageIndex] else v.*.__command_buffers[imageIndex]) catch system.handle_error_msg2("__vulkan.drawFrame cmds.append");
+        }
+        render_mutex.unlock();
 
-    const waitSemaphores = [_]vk.VkSemaphore{vkImageAvailableSemaphore};
-    const signalSemaphores = [_]vk.VkSemaphore{vkRenderFinishedSemaphore};
-    const waitStages = [_]vk.VkPipelineStageFlags{vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
+        const clearDeathStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
 
-    const submitInfo: vk.VkSubmitInfo = .{ .waitSemaphoreCount = 1, .commandBufferCount = 1, .signalSemaphoreCount = 1, .pWaitSemaphores = &waitSemaphores, .pWaitDstStageMask = &waitStages, .pCommandBuffers = &vkCommandBuffer, .pSignalSemaphores = &signalSemaphores };
-    result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, vkInFlightFence);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueueSubmit : {d}", .{result});
+        const renderPassInfo: vk.VkRenderPassBeginInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = vkRenderPass,
+            .framebuffer = vk_swapchain_frame_buffers[imageIndex],
+            .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent },
+            .clearValueCount = 2,
+            .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDeathStencil },
+        };
 
-    const swapChains = [_]vk.VkSwapchainKHR{vkSwapchain};
+        const beginInfo: vk.VkCommandBufferBeginInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = 0,
+            .pInheritanceInfo = null,
+        };
 
-    const presentInfo: vk.VkPresentInfoKHR = .{ .sType = vk.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount = 1, .swapchainCount = 1, .pWaitSemaphores = &signalSemaphores, .pSwapchains = &swapChains, .pImageIndices = &imageIndex };
+        result = vk.vkBeginCommandBuffer(vkCommandBuffer, &beginInfo);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkBeginCommandBuffer : {d}", .{result});
 
-    result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
+        vk.vkCmdBeginRenderPass(vkCommandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-    if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
-        recreate_swapchain(false);
-    } else {
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
+        vk.vkCmdExecuteCommands(vkCommandBuffer, @intCast(cmds.items.len), cmds.items.ptr);
+
+        vk.vkCmdEndRenderPass(vkCommandBuffer);
+
+        result = vk.vkEndCommandBuffer(vkCommandBuffer);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkEndCommandBuffer : {d}", .{result});
+
+        const waitStages: u32 = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        const submitInfo: vk.VkSubmitInfo = .{
+            .waitSemaphoreCount = 1,
+            .commandBufferCount = 1,
+            .signalSemaphoreCount = 1,
+            .pWaitSemaphores = &vkImageAvailableSemaphore,
+            .pWaitDstStageMask = &waitStages,
+            .pCommandBuffers = &vkCommandBuffer,
+            .pSignalSemaphores = &vkRenderFinishedSemaphore,
+        };
+        render_mutex.lock(); // vkInFlightFence 동기화
+        result = vk.vkResetFences(vkDevice, 1, &vkInFlightFence);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});
+
+        result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, vkInFlightFence);
+
+        render_mutex.unlock();
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueueSubmit : {d}", .{result});
+
+        const swapChains = [_]vk.VkSwapchainKHR{vkSwapchain};
+
+        const presentInfo: vk.VkPresentInfoKHR = .{
+            .sType = vk.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .swapchainCount = 1,
+            .pWaitSemaphores = &vkRenderFinishedSemaphore,
+            .pSwapchains = &swapChains,
+            .pImageIndices = &imageIndex,
+        };
+
+        result = vk.vkWaitForFences(vkDevice, 1, &vkInFlightFence, vk.VK_TRUE, std.math.maxInt(u64));
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
+
+        result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
+
+        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
+            recreate_swapchain(false);
+        } else {
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
+        }
     }
 }
 
