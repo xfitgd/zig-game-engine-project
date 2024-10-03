@@ -1373,8 +1373,8 @@ pub fn drawFrame() void {
 
         render_mutex.lock(); // command 기록 중에 값이 바뀌면 안된다.
         for (graphics.render_commands.?) |v| {
-            if (@atomicLoad(bool, &v.*.__refesh, .acquire)) {
-                @atomicStore(bool, &v.*.__refesh, false, .release);
+            if (@atomicLoad(bool, &v.*.__refesh, .monotonic)) {
+                @atomicStore(bool, &v.*.__refesh, false, .monotonic);
                 recordCommandBuffer(v);
             } else if (v.*.__refresh_framebuffer != vk_swapchain_frame_buffers[0]) { //TODO https://nvpro-samples.github.io/vk_inherited_viewport/docs/inherited.md.html 하면 안해도됨.
                 v.*.__refresh_framebuffer = vk_swapchain_frame_buffers[0];

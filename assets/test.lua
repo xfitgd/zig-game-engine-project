@@ -1,3 +1,3 @@
-function printhello()
+function Printhello()
     print("hello")
 end

@@ -52,7 +52,7 @@ pub fn deinit(self: *Self) void {
 ///render_command안의 scene(구성)이 바뀔때 마다 호출(scene 내의 iobject 내부 리소스 값이 바뀔경우는 해당없음)
 pub fn refresh(self: *Self) void {
     if (dbg and self.*.__command_buffers == null) system.handle_error_msg2("render command.refresh commandbuffer null");
-    @atomicStore(bool, &self.*.__refesh, true, .release);
+    @atomicStore(bool, &self.*.__refesh, true, .monotonic); //__refesh를 읽는 렌더링 부분은 이미 뮤텍스에 감싸져 있음
 }
 
 const ERROR = error{IsDestroying};

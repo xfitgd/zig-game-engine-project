@@ -62,7 +62,7 @@ pub fn xfit_init() void {
     lua.c.luaL_openlibs(luaT);
     var ress = lua.c.luaL_loadfilex(luaT, "test.lua", null);
     ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
-    ress = lua.c.lua_getglobal(luaT, "printhello");
+    ress = lua.c.lua_getglobal(luaT, "Printhello");
     ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
 
     font.start();
