@@ -171,17 +171,18 @@ pub fn xfit_init() void {
     _ = timer_callback.start(system.sec_to_nano_sec2(0, 10, 0, 0), 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
-fn move_callback() void {
+fn move_callback() !bool {
     if (!system.exiting()) {
         cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
-    } else return;
+    } else return false;
 
-    render_command.lock_for_update() catch return; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
+    render_command.lock_for_update() catch return false; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
     cmd2.scene.?[0].*.transform.map_update();
     render_command.unlock_for_update();
 
     dx += @floatCast(system.dt() / 10);
-    if (dx >= 3) dx = 0;
+    if (dx >= 3) return false;
+    return true;
 }
 
 var dx: f32 = 0;
