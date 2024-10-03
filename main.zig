@@ -168,7 +168,7 @@ pub fn xfit_init() void {
 
     graphics.render_commands = cmds[0..cmds.len];
 
-    _ = timer_callback.start2(system.sec_to_nano_sec2(0, 10, 0, 0), 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+    _ = timer_callback.start(system.sec_to_nano_sec2(0, 10, 0, 0), 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() void {
