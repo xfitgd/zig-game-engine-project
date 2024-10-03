@@ -9,3 +9,4 @@
 - [libwebp](https://chromium.googlesource.com/webm/libwebp)
 - [miniaudio](https://github.com/mackron/miniaudio)
 - [zig-datetime](https://github.com/frmdstryr/zig-datetime)
+- [lua](https://github.com/lua/lua)

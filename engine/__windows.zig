@@ -37,8 +37,6 @@ pub var screen_mode: system.screen_mode = system.screen_mode.WINDOW;
 pub var current_monitor: ?*system.monitor_info = null;
 pub var current_resolution: ?*system.screen_info = null;
 
-var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
-
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
     const win32SurfaceCreateInfo: __vulkan.vk.VkWin32SurfaceCreateInfoKHR = .{
         .hwnd = hWnd,
@@ -176,7 +174,7 @@ fn render_thread() void {
 
     root.xfit_init();
 
-    while (!exiting.load(std.builtin.AtomicOrder.acquire)) {
+    while (!__system.exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
     }
 
@@ -207,11 +205,11 @@ pub fn set_window_mode() void {
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
 
     var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
-    win32.AdjustWindowRect(&rect, style, FALSE);
+    _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
-    win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
+    _ = win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, switch (__system.prev_window.state) {
         .Restore => win32.SW_RESTORE,
@@ -228,9 +226,9 @@ pub fn set_window_size(w: u32, h: u32) void {
         if (window.can_resizewindow()) win32.WS_THICKFRAME else 0) |
         if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
-    win32.AdjustWindowRect(&rect, style, FALSE);
+    _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
     __system.prev_window.width = @intCast(w);
     __system.prev_window.height = @intCast(h);
 }
@@ -244,9 +242,9 @@ pub fn set_window_pos(x: i32, y: i32) void {
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
 
     var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
-    win32.AdjustWindowRect(&rect, style, FALSE);
+    _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowPos(hWnd, 0, x, y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowPos(hWnd, 0, x, y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
     __system.prev_window.x = @intCast(x);
     __system.prev_window.y = @intCast(y);
 }
@@ -260,11 +258,11 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
         if (can_maximize) win32.WS_MAXIMIZEBOX else 0;
 
     var rect: RECT = .{ .left = 0, .top = 0, .right = @intCast(size.x), .bottom = @intCast(size.y) };
-    win32.AdjustWindowRect(&rect, style, FALSE);
+    _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
-    win32.SetWindowPos(hWnd, 0, pos.x, pos.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
+    _ = win32.SetWindowPos(hWnd, 0, pos.x, pos.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, switch (state) {
         .Restore => win32.SW_RESTORE,
@@ -275,16 +273,18 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
 
 pub fn set_window_title() void {
     //?window.set_window_title 참고
-    win32.SetWindowTextA(hWnd, __system.title);
+    if (FALSE == win32.SetWindowTextA(hWnd, __system.title)) {
+        system.print_error("WARN set_window_title.SetWindowTextA Failed Code : {}\n", .{win32.GetLastError()});
+    }
 }
 
 pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW);
 
-    win32.SetWindowPos(hWnd, 0, monitor.*.rect.left, monitor.*.rect.top, monitor.*.rect.right - monitor.*.rect.left, monitor.*.rect.bottom - monitor.*.rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowPos(hWnd, 0, monitor.*.rect.left, monitor.*.rect.top, monitor.*.rect.right - monitor.*.rect.left, monitor.*.rect.bottom - monitor.*.rect.top, win32.SWP_DRAWFRAME);
 
-    win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
+    _ = win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
 }
 
 pub fn get_window_state() window.window_state {
@@ -309,7 +309,10 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
     mode.dmDisplayFrequency = resolution.refleshrate;
 
     const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, win32.CDS_FULLSCREEN | win32.CDS_RESET, null);
-    _ = res;
+    if (res != win32.DISP_CHANGE_SUCCESSFUL) {
+        system.print("WARN change_fullscreen.ChangeDisplaySettingsExA FAILED Code {}\n", .{res});
+        return;
+    }
 
     current_monitor = monitor;
     current_resolution = resolution;
@@ -317,11 +320,11 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
 
 pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.screen_info) void {
     screen_mode = system.screen_mode.FULLSCREEN;
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
-    win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW | win32.WS_EX_TOPMOST);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW | win32.WS_EX_TOPMOST);
 
-    win32.SetWindowPos(hWnd, win32.HWND_TOPMOST, monitor.*.rect.left, monitor.*.rect.top, resolution.*.size.x, resolution.*.size.y, 0);
-    win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
+    _ = win32.SetWindowPos(hWnd, win32.HWND_TOPMOST, monitor.*.rect.left, monitor.*.rect.top, resolution.*.size.x, resolution.*.size.y, 0);
+    _ = win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
 
     change_fullscreen(monitor, resolution);
 }
@@ -356,32 +359,32 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
     switch (uMsg) {
         win32.WM_LBUTTONDOWN => {
             __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (__system.Lmouse_down_func != null) __system.Lmouse_down_func.?();
+            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?();
             return 0;
         },
         win32.WM_MBUTTONDOWN => {
             __system.Mmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (__system.Mmouse_down_func != null) __system.Mmouse_down_func.?();
+            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?();
             return 0;
         },
         win32.WM_RBUTTONDOWN => {
             __system.Rmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (__system.Rmouse_down_func != null) __system.Rmouse_down_func.?();
+            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?();
             return 0;
         },
         win32.WM_LBUTTONUP => {
             __system.Lmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (__system.Lmouse_up_func != null) __system.Lmouse_up_func.?();
+            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?();
             return 0;
         },
         win32.WM_MBUTTONUP => {
             __system.Mmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (__system.Mmouse_up_func != null) __system.Mmouse_up_func.?();
+            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?();
             return 0;
         },
         win32.WM_RBUTTONUP => {
             __system.Rmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (__system.Rmouse_up_func != null) __system.Rmouse_up_func.?();
+            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?();
             return 0;
         },
         win32.WM_KEYDOWN => {
@@ -389,10 +392,10 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                 if (!__system.keys[wParam].load(std.builtin.AtomicOrder.monotonic)) {
                     __system.keys[wParam].store(true, std.builtin.AtomicOrder.monotonic);
                     //system.print_debug("input key_down {d}", .{wParam});
-                    if (__system.key_down_func != null) __system.key_down_func.?(@enumFromInt(wParam));
+                    if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(wParam));
                 }
             } else {
-                system.print("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+                system.print_error("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
             }
             return 0;
         },
@@ -400,9 +403,9 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (wParam < __system.KEY_SIZE) {
                 __system.keys[wParam].store(false, std.builtin.AtomicOrder.monotonic);
                 //system.print_debug("input key_up {d}", .{wParam});
-                if (__system.key_up_func != null) __system.key_up_func.?(@enumFromInt(wParam));
+                if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(wParam));
             } else {
-                system.print("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+                system.print_error("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
             }
             return 0;
         },
@@ -439,11 +442,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                     @atomicStore(i32, &__system.init_set.window_width, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
                     @atomicStore(i32, &__system.init_set.window_height, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
-                    render_command.lock_for_update() catch return 0;
-                    //__system.size_update_sem.post();
-
-                    if (__vulkan.vkInFlightFence != null) root.xfit_size();
-                    render_command.unlock_for_update();
+                    root.xfit_size();
                 }
 
                 S.sizeInited = true;
@@ -454,13 +453,13 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
             @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
 
-            if (__system.window_move_func != null) __system.window_move_func.?();
+            if (system.a_fn(__system.window_move_func) != null) system.a_fn(__system.window_move_func).?();
             return 0;
         },
         win32.WM_MOUSEMOVE => {
             var mouse_event: win32.TRACKMOUSEEVENT = .{ .cbSize = @sizeOf(win32.TRACKMOUSEEVENT), .dwFlags = win32.TME_HOVER | win32.TME_LEAVE, .hwndTrack = hWnd, .dwHoverTime = 10 };
             if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
-                system.print("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
+                system.print_error("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
             }
             @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
             @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
@@ -482,7 +481,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (!root.xfit_closing()) return 0;
         },
         win32.WM_DESTROY => {
-            exiting.store(true, std.builtin.AtomicOrder.release);
+            __system.exiting.store(true, std.builtin.AtomicOrder.release);
             render_sem.wait();
             win32.PostQuitMessage(0);
             return 0;

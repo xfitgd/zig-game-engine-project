@@ -169,8 +169,8 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: syst
     }
 }
 pub inline fn set_window_move_func(_func: *const fn () void) void {
-    __system.window_move_func = _func;
+    @atomicStore(@TypeOf(__system.window_move_func), &__system.window_move_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_window_size_func(_func: *const fn () void) void {
-    __system.window_size_func = _func;
+    @atomicStore(@TypeOf(__system.window_size_func), &__system.window_size_func, _func, std.builtin.AtomicOrder.monotonic);
 }

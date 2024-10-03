@@ -458,28 +458,28 @@ pub fn key() type {
 }
 
 pub inline fn set_Lmouse_down_func(_func: *const fn () void) void {
-    __system.Lmouse_down_func = _func;
+    @atomicStore(@TypeOf(__system.Lmouse_down_func), &__system.Lmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_Rmouse_down_func(_func: *const fn () void) void {
-    __system.Rmouse_down_func = _func;
+    @atomicStore(@TypeOf(__system.Rmouse_down_func), &__system.Rmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_Mmouse_down_func(_func: *const fn () void) void {
-    __system.Mmouse_down_func = _func;
+    @atomicStore(@TypeOf(__system.Mmouse_down_func), &__system.Mmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_Lmouse_up_func(_func: *const fn () void) void {
-    __system.Lmouse_up_func = _func;
+    @atomicStore(@TypeOf(__system.Lmouse_up_func), &__system.Lmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_Rmouse_up_func(_func: *const fn () void) void {
-    __system.Rmouse_up_func = _func;
+    @atomicStore(@TypeOf(__system.Rmouse_up_func), &__system.Rmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_Mmouse_up_func(_func: *const fn () void) void {
-    __system.Mmouse_up_func = _func;
+    @atomicStore(@TypeOf(__system.Mmouse_up_func), &__system.Mmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_key_down_func(_func: *const fn (key()) void) void {
-    __system.key_down_func = _func;
+    @atomicStore(@TypeOf(__system.key_down_func), &__system.key_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_key_up_func(_func: *const fn (key()) void) void {
-    __system.key_up_func = _func;
+    @atomicStore(@TypeOf(__system.key_up_func), &__system.key_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn Lmouse_down() bool {

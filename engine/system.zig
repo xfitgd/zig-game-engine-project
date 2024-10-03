@@ -38,6 +38,14 @@ pub inline fn activated() bool {
     return __system.activated.load(std.builtin.AtomicOrder.monotonic);
 }
 
+pub inline fn exiting() bool {
+    return __system.exiting.load(std.builtin.AtomicOrder.acquire);
+}
+
+pub inline fn a_fn(func: anytype) @TypeOf(func) {
+    return @atomicLoad(@TypeOf(func), &func, std.builtin.AtomicOrder.monotonic);
+}
+
 pub const platform_version = struct {
     pub const android_api_level = enum(u32) {
         Nougat = 24,
@@ -85,8 +93,6 @@ pub const platform_version = struct {
 
 pub const platform = @import("build_options").platform;
 pub const XfitPlatform = @TypeOf(platform);
-
-pub const error_handling_func: ?*const fn (text: []u8, stack_trace: []u8) void = null;
 
 pub const screen_info = struct {
     monitor: *monitor_info,
@@ -137,8 +143,12 @@ pub const monitor_info = struct {
 };
 
 ///_int * 1000000000 + _dec
-pub inline fn sec_to_nano_sec(_int: anytype, _dec: anytype) @TypeOf(_int, _dec) {
-    return _int * 1000000000 + _dec;
+pub inline fn sec_to_nano_sec(_int: anytype, _dec: anytype) u64 {
+    return @intCast(_int * 1000000000 + _dec);
+}
+
+pub inline fn sec_to_nano_sec2(_sec: anytype, _milisec: anytype, _usec: anytype, _nsec: anytype) u64 {
+    return @intCast(_sec * 1000000000 + _milisec * 1000000 + _usec * 1000 + _nsec);
 }
 
 pub const init_setting = struct {
@@ -274,7 +284,7 @@ pub fn print_error(comptime fmt: []const u8, args: anytype) void {
         std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch unreachable2();
         std.debug.print("{s}\n{s}", .{ str, str2.items });
 
-        if (error_handling_func != null) error_handling_func.?(str, str2.items);
+        if (a_fn(__system.error_handling_func) != null) a_fn(__system.error_handling_func).?(str, str2.items);
         // fs.open("xfit_err.log", .{ .truncate = false }) catch fs.open("xfit_err.log", .{ .exclusive = true }) catch unreachable2();
     } else {
         const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt ++ " ", .{now_str} ++ args) catch unreachable2();
@@ -295,7 +305,7 @@ pub fn print_error(comptime fmt: []const u8, args: anytype) void {
         str2.append(0) catch unreachable2();
         _ = __android.LOGE(str2.items.ptr, .{});
 
-        if (error_handling_func != null) error_handling_func.?(str, str2.items);
+        if (a_fn(__system.error_handling_func) != null) a_fn(__system.error_handling_func).?(str, str2.items);
     }
     // fs.seekFromEnd(0) catch unreachable2();
     // _ = fs.write(str) catch unreachable2();
@@ -303,6 +313,10 @@ pub fn print_error(comptime fmt: []const u8, args: anytype) void {
     // std.debug.writeCurrentStackTrace(fs.writer(), debug_info, std.io.tty.detectConfig(fs.hFile), @returnAddress()) catch unreachable2();
 
     // _ = fs.write("\n") catch unreachable2();
+}
+
+pub inline fn set_error_handling_func(_func: *const fn (text: []u8, stack_trace: []u8) void) void {
+    @atomicStore(@TypeOf(__system.error_handling_func), &__system.error_handling_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn unreachable2() void {

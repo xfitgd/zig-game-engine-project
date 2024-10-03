@@ -16,6 +16,8 @@ const asset_file = @import("engine/asset_file.zig");
 const webp = @import("engine/webp.zig");
 const img = @import("engine/img.zig");
 
+const lua = @import("engine/lua.zig");
+
 const timer_callback = @import("engine/timer_callback.zig");
 
 const file_ = if (system.platform == .android) asset_file else file;
@@ -55,6 +57,14 @@ var cmd2: render_command = undefined;
 var cmds = [_]*render_command{ &cmd, &cmd2 };
 
 pub fn xfit_init() void {
+    const luaT = lua.c.luaL_newstate();
+    defer lua.c.lua_close(luaT);
+    lua.c.luaL_openlibs(luaT);
+    var ress = lua.c.luaL_loadfilex(luaT, "test.lua", null);
+    ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
+    ress = lua.c.lua_getglobal(luaT, "printhello");
+    ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
+
     font.start();
 
     objects = ArrayList(*graphics.iobject).init(allocator);
@@ -158,16 +168,18 @@ pub fn xfit_init() void {
 
     graphics.render_commands = cmds[0..cmds.len];
 
-    _ = timer_callback.start(10000000, 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+    _ = timer_callback.start(system.sec_to_nano_sec2(0, 10, 0, 0), 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() void {
-    render_command.lock_for_update() catch return; // 다른 스레드에서 호출시킬때 필요
-    cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
+    if (!system.exiting()) { //xfit_destroy 에서 해제된 후 호출되는걸 방지
+        cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
+    }
+    render_command.lock_for_update() catch return; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
     cmd2.scene.?[0].*.transform.map_update();
+    render_command.unlock_for_update();
     dx += @floatCast(system.dt() / 10);
     if (dx >= 3) dx = 0;
-    render_command.unlock_for_update();
 }
 
 var dx: f32 = 0;
@@ -175,7 +187,9 @@ pub fn xfit_update() void {}
 
 pub fn xfit_size() void {
     g_proj.init_matrix(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error3("g_proj.init_matrix", e);
+    render_command.lock_for_update() catch return;
     g_proj.map_update();
+    render_command.unlock_for_update();
 }
 
 ///before system clean

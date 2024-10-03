@@ -68,6 +68,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         "libvorbis.a",
         "libvorbisenc.a",
         "libvorbisfile.a",
+        "liblua.a",
     };
 
     var i: usize = 0;
@@ -77,8 +78,9 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         const build_options_module = build_options.createModule();
 
         if (PLATFORM == XfitPlatform.android) {
+            const target = b.resolveTargetQuery(targets[i]);
             result = b.addSharedLibrary(.{
-                .target = b.resolveTargetQuery(targets[i]),
+                .target = target,
                 .name = "XfitTest",
                 .root_source_file = root_source_file,
                 .optimize = OPTIMIZE,
@@ -117,6 +119,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
             }
 
             result.root_module.addImport("build_options", build_options_module);
+
             callback(result);
 
             install_step.dependOn(&b.addInstallArtifact(result, .{
@@ -138,7 +141,9 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
             for (lib_names) |name| {
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/windows/{s}/{s}", .{ engine_path, get_arch_text(target.result.cpu.arch), name }) catch unreachable));
             }
+
             callback(result);
+
             b.installArtifact(result);
         } else unreachable;
 
@@ -157,6 +162,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         result.addIncludePath(get_lazypath(b, engine_path ++ "/include/freetype"));
         result.addIncludePath(get_lazypath(b, engine_path ++ "/include/opus"));
         result.addIncludePath(get_lazypath(b, engine_path ++ "/include/opusfile"));
+
         if (PLATFORM != XfitPlatform.android) break;
     }
 
@@ -167,5 +173,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path });
     }
     cmd.step.dependOn(install_step);
+
     b.default_step.dependOn(&cmd.step);
 }
