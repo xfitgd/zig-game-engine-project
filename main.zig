@@ -172,14 +172,15 @@ pub fn xfit_init() void {
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() void {
-    if (!system.exiting()) { //xfit_destroy 에서 해제된 후 호출되는걸 방지
-        cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
-    }
     render_command.lock_for_update() catch return; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
+
+    cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
     cmd2.scene.?[0].*.transform.map_update();
-    render_command.unlock_for_update();
+
     dx += @floatCast(system.dt() / 10);
     if (dx >= 3) dx = 0;
+
+    render_command.unlock_for_update();
 }
 
 var dx: f32 = 0;

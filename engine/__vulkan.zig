@@ -1210,7 +1210,7 @@ fn create_swapchain_and_imageviews() void {
         .preTransform = surfaceCap.currentTransform,
         .compositeAlpha = vk.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .clipped = 1,
-        .oldSwapchain = std.mem.zeroes(vk.VkSwapchainKHR),
+        .oldSwapchain = null,
         .imageSharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
     };
 
