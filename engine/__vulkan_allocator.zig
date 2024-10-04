@@ -10,12 +10,15 @@ const __system = @import("__system.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
 
-const BLOCK_LEN = 128;
+const BLOCK_LEN = 8192;
+const NODE_SIZE = 512;
 
 ///버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
 const MINIMUM_SIZE_DIV_CELL = 0.5;
-const MINIMUM_SIZE = 128;
+const MINIMUM_SIZE = 1024;
 const Self = @This();
+
+pub const ERROR = error{device_memory_limit};
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
     var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
@@ -80,6 +83,7 @@ const vulkan_res = struct {
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
     this: *Self,
+    is_full: bool = false,
 
     ///! 따로 vulkan_res.deinit2를 호출하지 않는다.
     fn deinit2(self: *vulkan_res) void {
@@ -153,12 +157,17 @@ const vulkan_res = struct {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
     ///_buf 크기는 따로 확인하지 않는다. 호출 쪽에서 확인해서 오류가 없게한다.
-    fn bind_any(self: *vulkan_res, _buf: anytype) usize {
+    fn bind_any(self: *vulkan_res, _buf: anytype) ERROR!usize {
+        if (self.*.is_full) return ERROR.device_memory_limit;
+
         var count: u64 = 0;
         while (!self.*.is_free[self.*.cur]) {
             self.*.cur += 1;
             count += 1;
-            if (count >= self.*.len) system.unreachable2(); //TODO 버퍼 꽉찰시 버퍼 확장 또는 새버퍼에 넣기
+            if (count >= self.*.len) {
+                self.*.is_full = true;
+                return ERROR.device_memory_limit;
+            }
             if (self.*.cur >= self.*.len) self.*.cur = 0;
         }
         __bind_any(self, self.*.mem, _buf, self.*.cur);
@@ -200,7 +209,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
         if (max_size > value.*.cell_size or value.*.cell_size % _mem_require.*.alignment != 0 or (max_size > MINIMUM_SIZE and max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
-        _out_idx.* = value.*.bind_any(_res);
+        _out_idx.* = value.*.bind_any(_res) catch continue;
         res = value;
         break;
     }
@@ -209,9 +218,10 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffers.create\n", .{@errorName(err)});
             system.unreachable2();
         };
-        res.?.* = vulkan_res.init(math.ceil_up(max_size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop, self);
+        const cell = math.ceil_up(max_size, _mem_require.*.alignment);
+        res.?.* = vulkan_res.init(cell, std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1, _mem_require.*.memoryTypeBits, _prop, self);
 
-        _out_idx.* = res.?.*.bind_any(_res);
+        _out_idx.* = res.?.*.bind_any(_res) catch system.unreachable2(); //발생할수 없는 오류
         self.*.buffer_ids.append(res.?) catch |err| {
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
             system.unreachable2();
