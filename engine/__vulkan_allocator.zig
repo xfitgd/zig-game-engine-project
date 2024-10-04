@@ -198,7 +198,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
     }
     for (self.buffer_ids.items) |value| {
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
-        if (max_size > value.*.cell_size or (max_size > MINIMUM_SIZE and max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
+        if (max_size > value.*.cell_size or value.*.cell_size % _mem_require.*.alignment != 0 or (max_size > MINIMUM_SIZE and max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
         _out_idx.* = value.*.bind_any(_res);
         res = value;
@@ -209,7 +209,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffers.create\n", .{@errorName(err)});
             system.unreachable2();
         };
-        res.?.* = vulkan_res.init(math.round_up(max_size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop, self);
+        res.?.* = vulkan_res.init(math.ceil_up(max_size, _mem_require.*.alignment), BLOCK_LEN, _mem_require.*.memoryTypeBits, _prop, self);
 
         _out_idx.* = res.?.*.bind_any(_res);
         self.*.buffer_ids.append(res.?) catch |err| {

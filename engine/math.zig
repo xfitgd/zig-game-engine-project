@@ -3,8 +3,7 @@ const builtin = @import("builtin");
 
 //https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
 
-///_num에서 _multiple 배수 중 가까운 값을 구합니다.
-pub fn round_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
+pub fn ceil_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
     if (_multiple == 0)
         return _num;
 
@@ -12,11 +11,7 @@ pub fn round_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
     if (remainder == 0)
         return _num;
 
-    if (_num < 0) {
-        return -(@abs(_num) - remainder);
-    } else {
-        return _num + _multiple - remainder;
-    }
+    return @divFloor(_num, _multiple) * _multiple;
 }
 
 pub inline fn test_number_type(comptime T: type) void {

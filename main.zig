@@ -84,46 +84,14 @@ pub fn xfit_init() void {
     //shape_src2 = graphics.shape.source.init_for_alloc(allocator);
     //shape_src2.color = .{ 1, 0, 1, 1 };
 
-    const vertices2 = graphics.take_vertices(*graphics.vertices(graphics.tex_vertex_2d), &vertices_mem_pool) catch system.handle_error_msg2("vertices_mem_pool OutOfMemory");
-    const indices2 = graphics.take_indices(*graphics.indices, &indices_mem_pool) catch system.handle_error_msg2("indices_mem_pool OutOfMemory");
     object2.* = graphics.image.init();
-    vertices2.* = graphics.vertices(graphics.tex_vertex_2d).init_for_alloc(allocator);
-    indices2.* = graphics.indices.init_for_alloc(allocator);
-    vertices2.*.array = allocator.alloc(graphics.tex_vertex_2d, 4) catch system.handle_error_msg2("vertices.*.array OutOfMemory");
-    indices2.*.array = allocator.alloc(graphics.DEF_IDX_TYPE, 6) catch system.handle_error_msg2("indices.*.array OutOfMemory");
-
-    @memcpy(vertices2.*.array.?, &[_]graphics.tex_vertex_2d{
-        .{
-            .pos = .{ -0.5, 0.5 },
-            .uv = .{ 0, 0 },
-        },
-        .{
-            .pos = .{ 0.5, 0.5 },
-            .uv = .{ 1, 0 },
-        },
-        .{
-            .pos = .{ -0.5, -0.5 },
-            .uv = .{ 0, 1 },
-        },
-        .{
-            .pos = .{ 0.5, -0.5 },
-            .uv = .{ 1, 1 },
-        },
-    });
-    @memcpy(indices2.*.array.?, &[_]graphics.DEF_IDX_TYPE{ 0, 1, 2, 1, 3, 2 });
-    vertices2.*.build(.read_gpu);
-    indices2.*.build(.read_gpu);
 
     const data = file_.read_file("test.webp", allocator) catch |e| system.handle_error3("test.webp read_file", e);
     defer allocator.free(data);
     var img_decoder: webp = .{};
     img_decoder.load_header(data) catch |e| system.handle_error3("test.webp loadheader fail", e);
 
-    image_src = .{
-        .texture = .{},
-        .vertices = vertices2,
-        .indices = indices2,
-    };
+    image_src = graphics.image.source.init();
     image_src.texture.width = img_decoder.width();
     image_src.texture.height = img_decoder.height();
     image_src.texture.pixels = allocator.alloc(u8, img_decoder.width() * img_decoder.height() * 4) catch |e| system.handle_error3("_texture.pixels alloc", e);
@@ -200,8 +168,6 @@ pub fn xfit_destroy() void {
     shape_src.deinit_for_alloc();
     //shape_src2.deinit_for_alloc();
 
-    image_src.vertices.*.deinit_for_alloc();
-    image_src.indices.?.*.deinit_for_alloc();
     allocator.free(image_src.texture.pixels.?);
     image_src.texture.deinit();
 

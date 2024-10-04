@@ -646,6 +646,13 @@ pub const image = struct {
         vertices: *vertices(tex_vertex_2d),
         indices: ?*indices32,
         texture: texture,
+        pub fn init() source {
+            return .{
+                .vertices = &__vulkan.quad_image_vertices,
+                .indices = null,
+                .texture = .{},
+            };
+        }
     };
 
     src: *source = undefined,

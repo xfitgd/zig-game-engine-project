@@ -157,6 +157,34 @@ pub var nearest_sampler: vk.VkSampler = undefined;
 
 pub var depth_stencil_image = __vulkan_allocator.vulkan_res_node(.image){};
 
+pub var quad_image_vertices: graphics.vertices(graphics.tex_vertex_2d) = undefined;
+pub var quad_image_vertices_array: [6]graphics.tex_vertex_2d = .{
+    graphics.tex_vertex_2d{
+        .pos = .{ -0.5, 0.5 },
+        .uv = .{ 0, 0 },
+    },
+    graphics.tex_vertex_2d{
+        .pos = .{ 0.5, 0.5 },
+        .uv = .{ 1, 0 },
+    },
+    graphics.tex_vertex_2d{
+        .pos = .{ 0.5, -0.5 },
+        .uv = .{ 1, 1 },
+    },
+    graphics.tex_vertex_2d{
+        .pos = .{ 0.5, -0.5 },
+        .uv = .{ 1, 1 },
+    },
+    graphics.tex_vertex_2d{
+        .pos = .{ -0.5, -0.5 },
+        .uv = .{ 0, 1 },
+    },
+    graphics.tex_vertex_2d{
+        .pos = .{ -0.5, 0.5 },
+        .uv = .{ 0, 0 },
+    },
+};
+
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
     const createInfo: vk.VkShaderModuleCreateInfo = .{ .codeSize = code.len, .pCode = code.ptr };
 
@@ -1042,9 +1070,15 @@ pub fn vulkan_start() void {
 
     result = vk.vkCreateFence(vkDevice, &fenceInfo, null, &vkInFlightFence);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateFence vkInFlightFence : {d}", .{result});
+
+    quad_image_vertices = graphics.vertices(graphics.tex_vertex_2d).init();
+    quad_image_vertices.array = quad_image_vertices_array[0..quad_image_vertices_array.len];
+    quad_image_vertices.build(.read_gpu);
 }
 
 pub fn vulkan_destroy() void {
+    quad_image_vertices.deinit();
+
     vk.vkDestroySemaphore(vkDevice, vkImageAvailableSemaphore, null);
     vk.vkDestroySemaphore(vkDevice, vkRenderFinishedSemaphore, null);
     vk.vkDestroyFence(vkDevice, vkInFlightFence, null);
