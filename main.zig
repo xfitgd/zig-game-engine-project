@@ -56,6 +56,8 @@ var cmd: render_command = undefined;
 var cmd2: render_command = undefined;
 var cmds = [_]*render_command{ &cmd, &cmd2 };
 
+var color_trans: graphics.color_transform = undefined;
+
 pub fn xfit_init() void {
     const luaT = lua.c.luaL_newstate();
     defer lua.c.lua_close(luaT);
@@ -117,11 +119,21 @@ pub fn xfit_init() void {
     object.*.src = &shape_src;
     //object.*.extra_src = extra_src[0..1];
     object.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2, 0, 0));
-    object.*.interface.build(&object.*.interface, .readwrite_cpu);
+    object.*.interface.build(&object.*.interface);
 
+    color_trans = graphics.color_transform.init();
+    color_trans.color_mat.e = .{
+        .{ -1, 0, 0, 0 },
+        .{ 0, -1, 0, 0 },
+        .{ 0, 0, -1, 0 },
+        .{ 1, 1, 1, 1 },
+    };
+    color_trans.build();
+
+    object2.*.color_tran = &color_trans;
     object2.*.interface.transform.camera = &g_camera;
     object2.*.interface.transform.projection = &g_proj;
-    object2.*.interface.build(&object2.*.interface, .readwrite_cpu);
+    object2.*.interface.build(&object2.*.interface);
 
     objects.append(&object2.*.interface) catch system.handle_error_msg2("objects.append(&object2s.*.interface)");
     objects.append(&object.*.interface) catch system.handle_error_msg2("objects.append(&object.*.interface)");
@@ -146,6 +158,10 @@ fn move_callback() !bool {
 
     render_command.lock_for_update() catch return false; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
     cmd2.scene.?[0].*.transform.map_update();
+
+    shape_src.color[3] += 0.001;
+    if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
+    shape_src.map_color_update();
     render_command.unlock_for_update();
 
     dx += @floatCast(system.dt() / 10);
@@ -188,6 +204,7 @@ pub fn xfit_destroy() void {
 
     cmd.deinit();
     cmd2.deinit();
+    color_trans.deinit();
 }
 
 ///after system clean

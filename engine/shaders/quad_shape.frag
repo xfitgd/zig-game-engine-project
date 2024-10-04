@@ -2,11 +2,10 @@
 
 layout(location = 0) out vec4 outColor;
 
-layout( push_constant ) uniform constants
-{
-	vec4 color;
-} PushConstants;
+layout(binding = 0) uniform UniformBufferObject0 {
+    vec4 color;
+} cor;
 
 void main() {
-    outColor = PushConstants.color;
+    outColor = cor.color;
 }
