@@ -11,11 +11,11 @@ const system = @import("system.zig");
 const math = @import("math.zig");
 
 const BLOCK_LEN = 8192;
-const NODE_SIZE = 512;
+const NODE_SIZE = 2048;
 
 ///버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
 const MINIMUM_SIZE_DIV_CELL = 0.5;
-const MINIMUM_SIZE = 1024;
+const MINIMUM_SIZE = 32768;
 const Self = @This();
 
 pub const ERROR = error{device_memory_limit};
@@ -181,6 +181,7 @@ const vulkan_res = struct {
     ///bind_buffer에서 반환된 idx를 사용.
     fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) void {
         self.*.is_free[_idx] = true;
+        self.*.is_full = false;
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
             vk.VkImage => vk.vkDestroyImage(__vulkan.vkDevice, _buf, null),
@@ -207,7 +208,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
     }
     for (self.buffer_ids.items) |value| {
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
-        if (max_size > value.*.cell_size or value.*.cell_size % _mem_require.*.alignment != 0 or (max_size > MINIMUM_SIZE and max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
+        if (max_size > value.*.cell_size or value.*.cell_size % _mem_require.*.alignment != 0 or (max_size >= MINIMUM_SIZE and max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size)))))) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
         _out_idx.* = value.*.bind_any(_res) catch continue;
         res = value;
