@@ -593,7 +593,7 @@ pub const shape = struct {
             const buffer_info = [1]vk.VkDescriptorBufferInfo{vk.VkDescriptorBufferInfo{
                 .buffer = self.*.__uniform.res,
                 .offset = 0,
-                .range = @sizeOf(vector) * 1,
+                .range = @sizeOf(vector),
             }};
             const descriptorWrite = [_]vk.VkWriteDescriptorSet{
                 .{
@@ -622,9 +622,9 @@ pub const shape = struct {
             self.*.__uniform.clean();
         }
         pub fn map_color_update(self: *source) void {
-            var data: vector = undefined;
+            var data: ?*vector = undefined;
             self.*.__uniform.map(@ptrCast(&data));
-            mem.memcpy_nonarray(&data, &self.*.color);
+            mem.memcpy_nonarray(data.?, &self.*.color);
             self.*.__uniform.unmap();
         }
     };
