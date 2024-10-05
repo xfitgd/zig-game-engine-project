@@ -8,6 +8,7 @@ const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
 const render_command = @import("render_command.zig");
+const graphics = @import("graphics.zig");
 const math = @import("math.zig");
 
 const root = @import("root");
@@ -166,11 +167,21 @@ pub fn windows_start() void {
 
     _ = win32.RegisterTouchWindow(hWnd, 0);
 
-    _ = std.Thread.spawn(.{}, render_thread, .{}) catch |e| system.handle_error3("windows_start.std.Thread.spawn", e);
+    var start_sem: std.Thread.Semaphore = .{};
+    var start_sem2: std.Thread.Semaphore = .{};
+    _ = std.Thread.spawn(.{}, render_thread, .{ &start_sem, &start_sem2 }) catch |e| system.handle_error3("windows_start.std.Thread.spawn", e);
+
+    start_sem.wait();
+
+    graphics.check_vk_allocator();
+
+    start_sem2.post();
 }
 
-fn render_thread() void {
+fn render_thread(start_sem: *std.Thread.Semaphore, start_sem2: *std.Thread.Semaphore) void {
     __vulkan.vulkan_start();
+    start_sem.*.post();
+    start_sem2.*.wait();
 
     root.xfit_init();
 
@@ -178,11 +189,11 @@ fn render_thread() void {
         __system.loop();
     }
 
-    __vulkan.render_mutex.lock();
+    __vulkan.render_rwlock.lock();
     __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
-    __vulkan.render_mutex.unlock();
+    __vulkan.render_rwlock.unlock();
 
     render_sem.post();
 }

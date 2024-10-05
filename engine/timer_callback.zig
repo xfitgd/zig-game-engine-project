@@ -37,7 +37,45 @@ fn callback(wait_nanosec: u64, repeat: u64, comptime function: anytype, args: an
     }
 }
 
+fn callback2(
+    wait_nanosec: u64,
+    repeat: u64,
+    comptime function: anytype,
+    comptime start_func: anytype,
+    comptime end_func: anytype,
+    args: anytype,
+    start_args: anytype,
+    end_args: anytype,
+) void {
+    var re = repeat;
+    if (@TypeOf(start_func) != @TypeOf(null)) {
+        if (!callback_(start_func, start_args)) return;
+    }
+    if (re == 0) {
+        while (loop(wait_nanosec, function, args)) {}
+    } else {
+        while (re > 0 and loop(wait_nanosec, function, args)) : (re -= 1) {}
+    }
+    if (@TypeOf(end_func) != @TypeOf(null)) {
+        _ = callback_(end_func, end_args);
+    }
+}
+
 ///no spawn thread each callback function bool callback function return false or cause error -> exit timer
 pub fn start(wait_nanosec: u64, repeat: u64, comptime function: anytype, args: anytype) std.Thread.SpawnError!std.Thread {
     return try std.Thread.spawn(.{}, callback, .{ wait_nanosec, repeat, function, args });
+}
+
+///no spawn thread each callback function bool callback function return false or cause error -> exit timer
+pub fn start2(
+    wait_nanosec: u64,
+    repeat: u64,
+    comptime function: anytype,
+    args: anytype,
+    comptime start_func: anytype,
+    comptime end_func: anytype,
+    start_args: anytype,
+    end_args: anytype,
+) std.Thread.SpawnError!std.Thread {
+    return try std.Thread.spawn(.{}, callback2, .{ wait_nanosec, repeat, function, start_func, end_func, args, start_args, end_args });
 }

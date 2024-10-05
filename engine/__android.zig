@@ -128,11 +128,11 @@ pub fn vulkan_android_recreate_surface(vkInstance: __vulkan.vk.VkInstance, vkSur
 }
 
 fn destroy_android() void {
-    __vulkan.render_mutex.lock();
+    __vulkan.render_rwlock.lock();
     __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
-    __vulkan.render_mutex.unlock();
+    __vulkan.render_rwlock.unlock();
 
     __system.destroy();
 }
@@ -407,7 +407,7 @@ fn process_input(_source: ?*android_poll_source) void {
     _ = _source;
     var event: ?*android.AInputEvent = null;
     while (android.AInputQueue_getEvent(app.input_queue, &event) >= 0) {
-        if (system.dbg) _ = LOGV("New input event: type=%d", .{android.AInputEvent_getType(event)});
+        //if (system.dbg) _ = LOGV("New input event: type=%d", .{android.AInputEvent_getType(event)});
         if (android.AInputQueue_preDispatchEvent(app.input_queue, event) != 0) {
             continue;
         }
@@ -433,9 +433,6 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
                     __vulkan.recreate_swapchain(true);
                 }
             }
-        },
-        AppEvent.APP_CMD_WINDOW_RESIZED => {
-            __vulkan.recreate_swapchain(false);
         },
         AppEvent.APP_CMD_TERM_WINDOW => {},
         AppEvent.APP_CMD_GAINED_FOCUS => {

@@ -15,7 +15,7 @@ const vk = __vulkan.vk;
 const graphics = @import("graphics.zig");
 
 __refesh: bool = false,
-__command_buffers: if (dbg) ?[]vk.VkCommandBuffer else []vk.VkCommandBuffer = if (dbg) null else undefined,
+__command_buffers: []vk.VkCommandBuffer,
 __refresh_framebuffer: vk.VkFramebuffer = undefined,
 scene: ?[]*graphics.iobject = null,
 const Self = @This();
@@ -23,48 +23,43 @@ const Self = @This();
 pub fn init() Self {
     const self = Self{
         .__refresh_framebuffer = __vulkan.vk_swapchain_frame_buffers[0],
-        .__command_buffers = __system.allocator.alloc(vk.VkCommandBuffer, __vulkan.get_swapchain_image_lenghth()) catch |e| system.handle_error3("render_command alloc", e),
+        .__command_buffers = __system.allocator.alloc(vk.VkCommandBuffer, __vulkan.get_swapchain_image_length()) catch
+            system.handle_error_msg2("render_command.__command_buffers.alloc"),
     };
     const allocInfo: vk.VkCommandBufferAllocateInfo = .{
         .commandPool = __vulkan.vkCommandPool,
-        .level = vk.VK_COMMAND_BUFFER_LEVEL_SECONDARY,
-        .commandBufferCount = @intCast(__vulkan.get_swapchain_image_lenghth()),
+        .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = @intCast(__vulkan.get_swapchain_image_length()),
         .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     };
 
     const result = vk.vkAllocateCommandBuffers(
         __vulkan.vkDevice,
         &allocInfo,
-        if (dbg) self.__command_buffers.?.ptr else self.__command_buffers.ptr,
+        self.__command_buffers.ptr,
     );
     system.handle_error(result == vk.VK_SUCCESS, "render_command vkAllocateCommandBuffers vkCommandPool : {d}", .{result});
 
     return self;
 }
 pub fn deinit(self: *Self) void {
-    if (dbg and self.*.__command_buffers == null) system.handle_error_msg2("render command.free cant null commandbuffer free");
-    vk.vkFreeCommandBuffers(__vulkan.vkDevice, __vulkan.vkCommandPool, @intCast(__vulkan.get_swapchain_image_lenghth()), if (dbg) self.__command_buffers.?.ptr else self.__command_buffers.ptr);
-    __system.allocator.free(if (dbg) self.__command_buffers.? else self.*.__command_buffers);
-
-    if (dbg) self.*.__command_buffers = null;
+    vk.vkFreeCommandBuffers(__vulkan.vkDevice, __vulkan.vkCommandPool, @intCast(__vulkan.get_swapchain_image_length()), self.__command_buffers.ptr);
+    __system.allocator.free(self.__command_buffers);
 }
 
 ///render_command안의 scene(구성)이 바뀔때 마다 호출(scene 내의 iobject 내부 리소스 값이 바뀔경우는 해당없음)
 pub fn refresh(self: *Self) void {
-    if (dbg and self.*.__command_buffers == null) system.handle_error_msg2("render command.refresh commandbuffer null");
     @atomicStore(bool, &self.*.__refesh, true, .monotonic); //__refesh를 읽는 렌더링 부분은 이미 뮤텍스에 감싸져 있음
 }
 
 const ERROR = error{IsDestroying};
 
 pub fn lock_for_update() ERROR!void {
-    __vulkan.render_mutex.lock();
-    if (__vulkan.vkInFlightFence == null) {
-        return ERROR.IsDestroying;
-    }
-    __vulkan.wait_for_fences();
+    if (system.exiting()) return ERROR.IsDestroying;
+
+    __vulkan.render_rwlock.lock();
 }
 
 pub fn unlock_for_update() void {
-    __vulkan.render_mutex.unlock();
+    __vulkan.render_rwlock.unlock();
 }

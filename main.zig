@@ -53,19 +53,18 @@ var shape_src: graphics.shape.source = undefined;
 // var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.image.source = undefined;
 var cmd: render_command = undefined;
-var cmd2: render_command = undefined;
-var cmds = [_]*render_command{ &cmd, &cmd2 };
 
 var color_trans: graphics.color_transform = undefined;
 
 pub fn xfit_init() void {
-    const luaT = lua.c.luaL_newstate();
-    defer lua.c.lua_close(luaT);
-    lua.c.luaL_openlibs(luaT);
-    var ress = lua.c.luaL_loadfilex(luaT, "test.lua", null);
-    ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
-    ress = lua.c.lua_getglobal(luaT, "Printhello");
-    ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
+    // const luaT = lua.c.luaL_newstate();
+    // defer lua.c.lua_close(luaT);
+    // lua.c.luaL_openlibs(luaT);
+
+    // var ress = lua.c.luaL_loadfilex(luaT, "test.lua", null);
+    // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
+    // ress = lua.c.lua_getglobal(luaT, "Printhello");
+    // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
 
     font.start();
 
@@ -111,7 +110,6 @@ pub fn xfit_init() void {
     //font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
     //font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, .{ 0, 1, 1, 1 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    shape_src.build(.read_gpu);
     //shape_src2.build(.read_gpu);
 
     object.*.interface.transform.camera = &g_camera;
@@ -119,7 +117,7 @@ pub fn xfit_init() void {
     object.*.src = &shape_src;
     //object.*.extra_src = extra_src[0..1];
     object.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2, 0, 0));
-    object.*.interface.build(&object.*.interface);
+    //object.*.interface.build(&object.*.interface);
 
     color_trans = graphics.color_transform.init();
     color_trans.color_mat.e = .{
@@ -128,44 +126,66 @@ pub fn xfit_init() void {
         .{ 0, 0, -1, 0 },
         .{ 1, 1, 1, 1 },
     };
-    color_trans.build();
+    color_trans.build(.read_gpu);
 
     object2.*.color_tran = &color_trans;
     object2.*.interface.transform.camera = &g_camera;
     object2.*.interface.transform.projection = &g_proj;
     object2.*.interface.build(&object2.*.interface);
 
-    objects.append(&object2.*.interface) catch system.handle_error_msg2("objects.append(&object2s.*.interface)");
+    objects.append(&object2.*.interface) catch system.handle_error_msg2("objects.append(&object2.*.interface)");
     objects.append(&object.*.interface) catch system.handle_error_msg2("objects.append(&object.*.interface)");
 
     cmd = render_command.init();
-    cmd.scene = objects.items[0..1];
+    cmd.scene = objects.items[0..objects.items.len];
     cmd.refresh();
 
-    cmd2 = render_command.init();
-    cmd2.scene = objects.items[1..2];
-    cmd2.refresh();
+    graphics.render_cmd = &cmd;
 
-    graphics.render_commands = cmds[0..cmds.len];
+    var start_sem: std.Thread.Semaphore = .{};
 
-    _ = timer_callback.start(system.sec_to_nano_sec2(0, 10, 0, 0), 0, move_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+    _ = timer_callback.start2(
+        system.sec_to_nano_sec2(0, 10, 0, 0),
+        0,
+        move_callback,
+        .{},
+        move_start_callback,
+        move_end_callback,
+        .{&start_sem},
+        .{},
+    ) catch |e| system.handle_error3("timer_callback.start", e);
+
+    start_sem.wait();
+}
+fn move_start_callback(start_sem: *std.Thread.Semaphore) bool {
+    shape_src.build(.read_gpu);
+    cmd.scene.?[1].*.build(cmd.scene.?[1]);
+
+    start_sem.*.post();
+    return true;
+}
+fn move_end_callback() void {
+    graphics.deinit_vk_allocator_thread();
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {
     if (!system.exiting()) {
-        cmd2.scene.?[0].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
+        cmd.scene.?[1].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
     } else return false;
-
-    render_command.lock_for_update() catch return false; // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
-    cmd2.scene.?[0].*.transform.map_update();
 
     shape_src.color[3] += 0.001;
     if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
+
+    // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
+    render_command.lock_for_update() catch return false;
+
+    cmd.scene.?[1].*.transform.map_update();
     shape_src.map_color_update();
+
     render_command.unlock_for_update();
 
     dx += @floatCast(system.dt() / 10);
-    if (dx >= 3) return false;
+    if (dx >= 3) dx = 0;
     return true;
 }
 
@@ -174,6 +194,7 @@ pub fn xfit_update() void {}
 
 pub fn xfit_size() void {
     g_proj.init_matrix(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error3("g_proj.init_matrix", e);
+
     render_command.lock_for_update() catch return;
     g_proj.map_update();
     render_command.unlock_for_update();
@@ -203,7 +224,6 @@ pub fn xfit_destroy() void {
     font.destroy();
 
     cmd.deinit();
-    cmd2.deinit();
     color_trans.deinit();
 }
 

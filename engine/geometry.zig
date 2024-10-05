@@ -273,7 +273,7 @@ pub const line = struct {
         var d2: f64 = undefined;
         var d3: f64 = undefined;
         if (self.*.curve_type == .line) {
-            system.print_debug("line", .{});
+            //system.print_debug("line", .{});
             return;
         }
         const cur_type = if (self.*.curve_type == .quadratic) .quadratic else try __get_curve_type(_start, _control0, _control1, _end, &d1, &d2, &d3);
@@ -311,7 +311,7 @@ pub const line = struct {
                 mat.e[3][2] = @floatCast(-(mtMinusMs * mtMinusMs * mtMinusMs));
 
                 if (mat.e[0][0] > 0) flip = true;
-                system.print_debug("serpentine {} {d}", .{ flip, mat.e[0][0] });
+                //system.print_debug("serpentine {} {d}", .{ flip, mat.e[0][0] });
             },
             .loop => {
                 const t1 = sqrt(4.0 * d1 * d3 - 3.0 * d2 * d2);
@@ -325,11 +325,11 @@ pub const line = struct {
                 if (repeat == -1 and 0.0 < ql and ql < 1.0) {
                     artifact = 1;
                     subdiv = @floatCast(ql);
-                    system.print_debug("loop(1)", .{});
+                    //system.print_debug("loop(1)", .{});
                 } else if (repeat == -1 and 0.0 < qm and qm < 1.0) {
                     artifact = 2;
                     subdiv = @floatCast(ql);
-                    system.print_debug("loop(2)", .{});
+                    //system.print_debug("loop(2)", .{});
                 } else {
                     const ltMinusLs = lt - ls;
                     const mtMinusMs = mt - ms;
@@ -351,7 +351,7 @@ pub const line = struct {
                     mat.e[3][2] = @floatCast(-ltMinusLs * mtMinusMs * mtMinusMs);
 
                     //if (repeat == -1) flip = ((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0));
-                    system.print_debug("loop flip {}", .{flip});
+                    //system.print_debug("loop flip {}", .{flip});
                 }
             },
             .cusp => {
@@ -375,7 +375,7 @@ pub const line = struct {
                 mat.e[3][1] = @floatCast(lsMinusLt * lsMinusLt * lsMinusLt);
                 mat.e[3][2] = 1;
 
-                system.print_debug("cusp {}", .{flip});
+                //system.print_debug("cusp {}", .{flip});
             },
             .quadratic => {
                 mat.e[0][0] = 0;
@@ -395,10 +395,10 @@ pub const line = struct {
                 mat.e[3][2] = 1;
 
                 //if (math.cross2(_control0 - _start, _control1 - _control0) < 0) flip = true;
-                system.print_debug("quadratic {}", .{flip});
+                //system.print_debug("quadratic {}", .{flip});
             },
             .line => {
-                system.print_debug("line", .{});
+                //system.print_debug("line", .{});
                 return;
             },
             else => return line_error.is_not_curve,
@@ -423,22 +423,20 @@ pub const line = struct {
             const x0123 = (x123 - x012) * subdiv + x012;
             const y0123 = (y123 - y012) * subdiv + y012;
 
-            if (!((d1 > 0 and mat.e[0][0] < 0) or (d1 < 0 and mat.e[0][0] > 0))) {
-                out_vertices[in_out_vertice_len.*].pos = _start;
-                out_vertices[in_out_vertice_len.* + 1].pos = .{ x0123, y0123 };
-                out_vertices[in_out_vertice_len.* + 2].pos = _end;
+            out_vertices[in_out_vertice_len.*].pos = _start;
+            out_vertices[in_out_vertice_len.* + 1].pos = .{ x0123, y0123 };
+            out_vertices[in_out_vertice_len.* + 2].pos = _end;
 
-                out_vertices[in_out_vertice_len.*].uvw = .{ 1, 0, 0 };
-                out_vertices[in_out_vertice_len.* + 1].uvw = .{ 1, 0, 0 };
-                out_vertices[in_out_vertice_len.* + 2].uvw = .{ 1, 0, 0 };
+            out_vertices[in_out_vertice_len.*].uvw = .{ 1, 0, 0 };
+            out_vertices[in_out_vertice_len.* + 1].uvw = .{ 1, 0, 0 };
+            out_vertices[in_out_vertice_len.* + 2].uvw = .{ 1, 0, 0 };
 
-                out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
-                out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
-                out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 2);
+            out_indices[in_out_indices_len.*] = @intCast(in_out_vertice_len.*);
+            out_indices[in_out_indices_len.* + 1] = @intCast(in_out_vertice_len.* + 1);
+            out_indices[in_out_indices_len.* + 2] = @intCast(in_out_vertice_len.* + 2);
 
-                in_out_vertice_len.* += 3;
-                in_out_indices_len.* += 3;
-            }
+            in_out_vertice_len.* += 3;
+            in_out_indices_len.* += 3;
 
             _ = try __compute_curve(self, _start, .{ x01, y01 }, .{ x012, y012 }, .{ x0123, y0123 }, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, if (artifact == 1) 0 else 1);
             _ = try __compute_curve(self, .{ x0123, y0123 }, .{ x123, y123 }, .{ x23, y23 }, _end, out_vertices, out_indices, in_out_vertice_len, in_out_indices_len, if (artifact == 1) 1 else 0);

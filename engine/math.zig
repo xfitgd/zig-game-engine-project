@@ -11,7 +11,11 @@ pub fn ceil_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
     if (remainder == 0)
         return _num;
 
-    return @divFloor(_num, _multiple) * _multiple;
+    if (_num < 0) {
+        return -(@abs(_num) - remainder);
+    } else {
+        return _num + _multiple - remainder;
+    }
 }
 
 pub inline fn test_number_type(comptime T: type) void {

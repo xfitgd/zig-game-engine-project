@@ -142,17 +142,17 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
             allocator.free(poly.lines);
         }
 
-        if (system.dbg) {
-            var d: usize = 0;
-            while (d < self.__face.*.glyph.*.outline.n_points) : (d += 1) {
-                system.print_debug("[{d}] {d},{d} tag {d}", .{
-                    d,
-                    @as(f32, @floatFromInt(self.*.__face.*.glyph.*.outline.points[d].x)) / 64.0,
-                    @as(f32, @floatFromInt(self.*.__face.*.glyph.*.outline.points[d].y)) / 64.0,
-                    self.*.__face.*.glyph.*.outline.tags[d],
-                });
-            }
-        }
+        // if (system.dbg) {
+        //     var d: usize = 0;
+        //     while (d < self.__face.*.glyph.*.outline.n_points) : (d += 1) {
+        //         system.print_debug("[{d}] {d},{d} tag {d}", .{
+        //             d,
+        //             @as(f32, @floatFromInt(self.*.__face.*.glyph.*.outline.points[d].x)) / 64.0,
+        //             @as(f32, @floatFromInt(self.*.__face.*.glyph.*.outline.points[d].y)) / 64.0,
+        //             self.*.__face.*.glyph.*.outline.tags[d],
+        //         });
+        //     }
+        // }
 
         const funcs: freetype.FT_Outline_Funcs = .{
             .line_to = line_to,

@@ -102,8 +102,11 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
 
             result.addLibraryPath(.{ .cwd_relative = std.fmt.allocPrint(b.allocator, "{s}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/{s}/{d}", .{ ANDROID_NDK_PATH, arch_text[i], ANDROID_VER }) catch unreachable });
 
+            // result.addLibraryPath(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/android/{s}", .{ engine_path, get_arch_text(targets[i].cpu_arch.?) }) catch unreachable));
+
             result.linkSystemLibrary("android");
             result.linkSystemLibrary("vulkan");
+            // result.linkSystemLibrary("VkLayer_khronos_validation");
             result.linkSystemLibrary("c");
             result.linkSystemLibrary("log");
 

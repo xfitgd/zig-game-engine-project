@@ -60,7 +60,7 @@ pub const tex_vertex_2d = extern struct {
     }
 };
 
-pub var render_commands: ?[]*render_command = null;
+pub var render_cmd: ?*render_command = null;
 
 pub const index_type = enum { U16, U32 };
 pub const DEF_IDX_TYPE_: index_type = .U32;
@@ -161,15 +161,7 @@ pub fn vertices(comptime vertexT: type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vertexT) * self.*.array.?.len, .usage = vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-            const prop: vk.VkMemoryPropertyFlags =
-                switch (_flag) {
-                .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            };
-
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
+            create_buffer(vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, _flag, @sizeOf(vertexT) * self.*.array.?.len, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
@@ -179,6 +171,81 @@ pub fn vertices(comptime vertexT: type) type {
             self.*.interface.node.unmap();
         }
     };
+}
+
+pub fn check_vk_allocator() void {
+    if (__vulkan.vk_allocator == null) {
+        __vulkan.vk_allocator_mutex.lock();
+        if (__vulkan.vk_allocator_use_free) {
+            for (__vulkan.vk_allocators.items) |v| {
+                if (v.*.is_free) {
+                    __vulkan.vk_allocator = &v.*.alloc;
+                    v.*.is_free = false;
+                    break;
+                }
+            }
+            __vulkan.vk_allocator_free_count -= 1;
+            if (__vulkan.vk_allocator_free_count == 0) {
+                __vulkan.vk_allocator_use_free = false;
+            }
+        } else {
+            const res = __vulkan.pvk_allocators.create() catch |e| system.handle_error3("graphics.check_vk_allocator.pvk_allocators.create()", e);
+            res.*.alloc = __vulkan_allocator.init();
+            res.*.is_free = false;
+            __vulkan.vk_allocators.append(res) catch |e| system.handle_error3("graphics.check_vk_allocator.vk_allocators.append()", e);
+            __vulkan.vk_allocator = &res.*.alloc;
+        }
+        __vulkan.vk_allocator_mutex.unlock();
+    }
+}
+
+///다른 스레드에서 graphics 개체.build 함수를 호출해서 메모리를 할당한적이 있을때 호출합니다. -> 안했으면 null 검사로 넘어감.
+pub fn deinit_vk_allocator_thread() void {
+    if (__vulkan.vk_allocator != null) {
+        __vulkan.vk_allocator_mutex.lock();
+        defer __vulkan.vk_allocator_mutex.unlock();
+        if (__vulkan.vk_allocator_is_destroyed) return;
+        if (dbg) {
+            if (__vulkan.vk_allocator == &__vulkan.vk_allocators.items[0].alloc) { //0번은 메인스레드라 지우면 안됩니다.
+                system.print_error("WARN cant deinit main thread vk_allocators.items[0]\n", .{});
+                return;
+            }
+            if (system.platform == .windows and __vulkan.vk_allocator == &__vulkan.vk_allocators.items[1].alloc) { //윈도우즈 환경일때 1번은 메인스레드라 지우면 안됩니다.
+                system.print_error("WARN cant deinit main thread vk_allocators.items[1]\n", .{});
+                return;
+            }
+        }
+
+        var i: usize = 0;
+        for (__vulkan.vk_allocators.items) |v| {
+            if (&v.*.alloc == __vulkan.vk_allocator) {
+                if (__vulkan.vk_allocators.items.len > __vulkan.vk_allocator_FREE_MAX) {
+                    v.*.alloc.deinit();
+                    _ = __vulkan.vk_allocators.orderedRemove(i);
+                } else {
+                    v.*.is_free = true;
+                    __vulkan.vk_allocator_free_count += 1;
+
+                    if (__vulkan.vk_allocator_free_count >= __vulkan.vk_allocator_FREE_MAX) __vulkan.vk_allocator_use_free = true;
+                }
+                break;
+            }
+            i += 1;
+        }
+        __vulkan.vk_allocator = null;
+    }
+}
+
+pub fn create_buffer(usage: vk.VkBufferUsageFlags, _flag: write_flag, size: u64, _out_vulkan_buffer_node: *vulkan_res_node(.buffer), _data: ?[]const u8) void {
+    const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = usage, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+
+    const prop: vk.VkMemoryPropertyFlags =
+        switch (_flag) {
+        .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    };
+    check_vk_allocator();
+    __vulkan.vk_allocator.?.*.create_buffer(&buf_info, prop, _out_vulkan_buffer_node, _data);
 }
 
 pub fn indices_(comptime _type: index_type) type {
@@ -236,15 +303,8 @@ pub fn indices_(comptime _type: index_type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             clean(self);
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(idxT) * self.*.array.?.len, .usage = vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
 
-            const prop: vk.VkMemoryPropertyFlags =
-                switch (_flag) {
-                .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            };
-
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
+            create_buffer(vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, _flag, @sizeOf(idxT) * self.*.array.?.len, &self.*.interface.node, std.mem.sliceAsBytes(self.*.array.?));
         }
         ///write_flag가 readwrite_cpu만 호출
         pub fn map_update(self: *Self) void {
@@ -293,23 +353,13 @@ pub const projection = struct {
             .perspective => try matrix.perspectiveFovLhVulkan(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), near, far),
         };
     }
-    pub inline fn is_inited(self: *Self) bool {
-        return self.*.__uniform.is_build();
-    }
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
 
         if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
     fn build(self: *Self, _flag: write_flag) void {
-        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-        const prop: vk.VkMemoryPropertyFlags =
-            switch (_flag) {
-            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -332,23 +382,13 @@ pub const camera = struct {
         if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("camera alloc __check_alloc", e);
         return res;
     }
-    pub inline fn is_inited(self: *Self) bool {
-        return self.*.__uniform.is_build();
-    }
     pub inline fn deinit(self: *Self) void {
         self.*.__uniform.clean();
 
         if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
     fn build(self: *Self, _flag: write_flag) void {
-        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-        const prop: vk.VkMemoryPropertyFlags =
-            switch (_flag) {
-            .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        };
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.view))[0..1]));
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.view))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         var data: ?*matrix = undefined;
@@ -379,12 +419,9 @@ pub const color_transform = struct {
 
         if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
-    pub fn build(self: *Self) void {
+    pub fn build(self: *Self, _flag: write_flag) void {
         if (dbg) self.*.__check_alloc[0] = false;
-        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-        const prop: vk.VkMemoryPropertyFlags = vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.color_mat))[0..1]));
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.color_mat))[0..1]));
     }
     pub fn map_update(self: *Self) void {
         if (dbg) self.*.__check_alloc[0] = false;
@@ -405,16 +442,14 @@ pub const transform = struct {
     projection: ?*projection = null,
     __model_uniform: vulkan_res_node(.buffer) = .{},
     pub inline fn is_build(self: *Self) bool {
-        return self.*.__model_uniform.is_build() and self.*.camera != null and self.*.projection != null and self.*.camera.?.*.is_inited() and self.*.projection.?.*.is_inited();
+        return self.*.__model_uniform.is_build() and self.*.camera != null and self.*.projection != null and self.*.camera.?.*.__uniform.is_build() and self.*.projection.?.*.__uniform.is_build();
     }
     pub inline fn clean(self: *Self) void {
         self.*.__model_uniform.clean();
     }
     pub fn build(self: *Self) void {
         clean(self);
-        const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(matrix), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-        __vulkan.vk_allocator.create_buffer(&buf_info, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &self.*.__model_uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.model))[0..1]));
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(matrix), &self.*.__model_uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.model))[0..1]));
     }
     ///write_flag가 readwrite_cpu일때만 호출
     pub fn map_update(self: *Self) void {
@@ -464,7 +499,8 @@ pub const texture = struct {
             .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
-        __vulkan.vk_allocator.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
+        check_vk_allocator();
+        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
     }
 };
 
@@ -528,10 +564,7 @@ pub const shape = struct {
             self.*.vertices.build(_flag);
             self.*.indices.build(_flag);
 
-            const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = @sizeOf(vector), .usage = vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-            const prop: vk.VkMemoryPropertyFlags = vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            __vulkan.vk_allocator.create_buffer(&buf_info, prop, &self.*.__uniform, std.mem.sliceAsBytes(@as([*]vector, @ptrCast(&self.*.color))[0..1]));
+            create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(vector), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]vector, @ptrCast(&self.*.color))[0..1]));
 
             const pool_size: [1]vk.VkDescriptorPoolSize = .{.{
                 .descriptorCount = 1,
@@ -544,6 +577,7 @@ pub const shape = struct {
                 .maxSets = 1,
             };
             var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
+            system.handle_error(result == vk.VK_SUCCESS, "shape.source.build.vkCreateDescriptorPool : {d}", .{result});
 
             const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
                 .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -559,7 +593,7 @@ pub const shape = struct {
             const buffer_info = [1]vk.VkDescriptorBufferInfo{vk.VkDescriptorBufferInfo{
                 .buffer = self.*.__uniform.res,
                 .offset = 0,
-                .range = @sizeOf(vector),
+                .range = @sizeOf(vector) * 1,
             }};
             const descriptorWrite = [_]vk.VkWriteDescriptorSet{
                 .{
@@ -588,9 +622,9 @@ pub const shape = struct {
             self.*.__uniform.clean();
         }
         pub fn map_color_update(self: *source) void {
-            var data: *vector = undefined;
+            var data: vector = undefined;
             self.*.__uniform.map(@ptrCast(&data));
-            mem.memcpy_nonarray(data, &self.*.color);
+            mem.memcpy_nonarray(&data, &self.*.color);
             self.*.__uniform.unmap();
         }
     };
@@ -677,7 +711,7 @@ pub const shape = struct {
     }
 
     fn build(self: *iobject) void {
-        if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.is_inited() or !self.*.transform.projection.?.*.is_inited()) {
+        if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.__uniform.is_build() or !self.*.transform.projection.?.*.__uniform.is_build()) {
             system.handle_error_msg2("iobject build need transform.camera, projection build(invaild)");
         }
         if (self.*.get_ivertices(self, 0) == null) {
@@ -884,7 +918,7 @@ pub const image = struct {
         vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite2.len, &descriptorWrite2, 0, null);
     }
     fn build(self: *iobject) void {
-        if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.is_inited() or !self.*.transform.projection.?.*.is_inited()) {
+        if (self.*.transform.camera == null or self.*.transform.projection == null or !self.*.transform.camera.?.*.__uniform.is_build() or !self.*.transform.projection.?.*.__uniform.is_build()) {
             system.handle_error_msg2("iobject build need transform.camera, projection build(invaild)");
         }
         if (self.*.get_ivertices(self, 0) == null) {
