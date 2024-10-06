@@ -40,7 +40,7 @@ pub var vertices_mem_pool: MemoryPool(graphics.dummy_vertices) = undefined;
 pub var objects_mem_pool: MemoryPool(graphics.dummy_object) = undefined;
 pub var indices_mem_pool: MemoryPool(graphics.dummy_indices) = undefined;
 
-pub var g_proj: graphics.projection = undefined;
+pub var g_proj: graphics.projection = .{};
 pub var g_camera: graphics.camera = undefined;
 
 var font0: font = undefined;
@@ -55,6 +55,9 @@ var image_src: graphics.image.source = undefined;
 var cmd: render_command = undefined;
 
 var color_trans: graphics.color_transform = undefined;
+
+pub const CANVAS_W: f32 = 1280;
+pub const CANVAS_H: f32 = 720;
 
 pub fn xfit_init() void {
     // const luaT = lua.c.luaL_newstate();
@@ -74,7 +77,8 @@ pub fn xfit_init() void {
     indices_mem_pool = MemoryPool(graphics.dummy_indices).init(allocator);
 
     const object = graphics.take_object(*graphics.shape, &objects_mem_pool) catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
-    g_proj = graphics.projection.init(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
+    g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
+    g_proj.build(.readwrite_cpu);
     const object2 = graphics.take_object(*graphics.image, &objects_mem_pool) catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
 
@@ -116,7 +120,8 @@ pub fn xfit_init() void {
     object.*.interface.transform.projection = &g_proj;
     object.*.src = &shape_src;
     //object.*.extra_src = extra_src[0..1];
-    object.*.interface.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2, 0, 0));
+
+    object.*.interface.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200, 0, 0));
     //object.*.interface.build(&object.*.interface);
 
     color_trans = graphics.color_transform.init();
@@ -131,6 +136,11 @@ pub fn xfit_init() void {
     object2.*.color_tran = &color_trans;
     object2.*.interface.transform.camera = &g_camera;
     object2.*.interface.transform.projection = &g_proj;
+    object2.*.interface.transform.model = matrix.scaling(
+        @as(f32, @floatFromInt(image_src.texture.width)) * 2,
+        @as(f32, @floatFromInt(image_src.texture.height)) * 2,
+        1.0,
+    );
     object2.*.interface.build(&object2.*.interface);
 
     objects.append(&object2.*.interface) catch system.handle_error_msg2("objects.append(&object2.*.interface)");
@@ -170,7 +180,7 @@ fn move_end_callback() void {
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {
     if (!system.exiting()) {
-        cmd.scene.?[1].*.transform.model = matrix.scaling(0.02, 0.02, 1.0).multiply(&matrix.translation(-2 + dx, 0, 0));
+        cmd.scene.?[1].*.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0));
     } else return false;
 
     shape_src.color[3] += 0.001;
@@ -184,8 +194,8 @@ fn move_callback() !bool {
 
     render_command.unlock_for_update();
 
-    dx += @floatCast(system.dt() / 10);
-    if (dx >= 3) dx = 0;
+    dx += 0.3;
+    if (dx >= 200) dx = 0;
     return true;
 }
 
@@ -193,7 +203,7 @@ var dx: f32 = 0;
 pub fn xfit_update() void {}
 
 pub fn xfit_size() void {
-    g_proj.init_matrix(.perspective, std.math.degreesToRadians(45)) catch |e| system.handle_error3("g_proj.init_matrix", e);
+    g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
 
     render_command.lock_for_update() catch return;
     g_proj.map_update();

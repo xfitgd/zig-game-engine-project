@@ -318,47 +318,54 @@ pub fn indices_(comptime _type: index_type) type {
 
 pub const projection = struct {
     const Self = @This();
-    pub const view_type = enum { orthographic, perspective };
-    proj: matrix,
+    proj: matrix = undefined,
     __uniform: vulkan_res_node(.buffer) = .{},
-    __check_alloc: if (dbg) []bool else void = if (dbg) undefined,
+    __check_alloc: mem.check_alloc = .{},
 
-    ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출 perspective일 경우 near, far 기본값 각각 0.1, 100
-    pub fn init(_view_type: view_type, fov: f32) matrix_error!Self {
-        var res: Self = .{ .proj = undefined };
-        try res.init_matrix(_view_type, fov);
-        build(&res, .readwrite_cpu);
-
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("projection alloc __check_alloc", e);
-        return res;
+    pub fn init_matrix_orthographic(self: *Self, _width: f32, _height: f32) matrix_error!void {
+        const width = @as(f32, @floatFromInt(window.window_width()));
+        const height = @as(f32, @floatFromInt(window.window_height()));
+        const ratio = if (width / height > _width / _height) _height / height else _width / width;
+        self.*.proj = try matrix.orthographicLhVulkan(
+            width * ratio,
+            height * ratio,
+            0.1,
+            100,
+        );
     }
-    ///_view_type이 orthographic경우 fov는 무시됨, 시스템 초기화 후 호출
-    pub fn init2(_view_type: view_type, fov: f32, near: f32, far: f32) matrix_error!Self {
-        var res: Self = .{};
-        try res.init_matrix2(_view_type, fov, near, far);
-        build(&res, .readwrite_cpu);
-
-        if (dbg) res.__check_alloc = __system.allocator.alloc(bool, 1) catch |e| system.handle_error3("projection alloc __check_alloc 2", e);
-        return res;
+    pub fn init_matrix_orthographic2(self: *Self, _width: f32, _height: f32, near: f32, far: f32) matrix_error!void {
+        const width = @as(f32, @floatFromInt(window.window_width()));
+        const height = @as(f32, @floatFromInt(window.window_height()));
+        const ratio = if (width / height > _width / _height) _height / height else _width / width;
+        self.*.proj = try matrix.orthographicLhVulkan(
+            width * ratio,
+            height * ratio,
+            near,
+            far,
+        );
     }
-    pub fn init_matrix(self: *Self, _view_type: view_type, fov: f32) matrix_error!void {
-        self.*.proj = switch (_view_type) {
-            .orthographic => try matrix.orthographicLhVulkan(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), 0.1, 100),
-            .perspective => try matrix.perspectiveFovLhVulkan(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), 0.1, 100),
-        };
+    pub fn init_matrix_perspective(self: *Self, fov: f32) matrix_error!void {
+        self.*.proj = try matrix.perspectiveFovLhVulkan(
+            fov,
+            @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())),
+            0.1,
+            100,
+        );
     }
-    pub fn init_matrix2(self: *Self, _view_type: view_type, fov: f32, near: f32, far: f32) matrix_error!void {
-        self.*.proj = switch (_view_type) {
-            .orthographic => try matrix.orthographicLhVulkan(@floatFromInt(window.window_width()), @floatFromInt(window.window_height()), near, far),
-            .perspective => try matrix.perspectiveFovLhVulkan(fov, @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())), near, far),
-        };
+    pub fn init_matrix_perspective2(self: *Self, fov: f32, near: f32, far: f32) matrix_error!void {
+        self.*.proj = try matrix.perspectiveFovLhVulkan(
+            fov,
+            @as(f32, @floatFromInt(window.window_width())) / @as(f32, @floatFromInt(window.window_height())),
+            near,
+            far,
+        );
     }
     pub inline fn deinit(self: *Self) void {
+        self.*.__check_alloc.deinit();
         self.*.__uniform.clean();
-
-        if (dbg) __system.allocator.free(self.*.__check_alloc);
     }
-    fn build(self: *Self, _flag: write_flag) void {
+    pub fn build(self: *Self, _flag: write_flag) void {
+        self.*.__check_alloc.init(__system.allocator);
         create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(&self.*.proj))[0..1]));
     }
     pub fn map_update(self: *Self) void {
@@ -769,6 +776,18 @@ pub const shape = struct {
     }
 };
 
+pub const center_pt_pos = enum {
+    center,
+    left,
+    right,
+    top_left,
+    top,
+    top_right,
+    bottom_left,
+    bottom,
+    bottom_right,
+};
+
 pub const image = struct {
     const Self = @This();
 
@@ -801,6 +820,35 @@ pub const image = struct {
     interface: iobject,
     color_tran: *color_transform,
     __descriptor_set: vk.VkDescriptorSet = undefined,
+
+    ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
+    pub fn pixel_perfect_point(img: Self, _p: point, _canvas_w: f32, _canvas_h: f32, center: center_pt_pos) point {
+        const width = @as(f32, @floatFromInt(window.window_width()));
+        const height = @as(f32, @floatFromInt(window.window_height()));
+        if (width / height > _canvas_w / _canvas_h) { //1배 비율이 아니면 적용할수 없다.
+            if (_canvas_h != height) return _p;
+        } else {
+            if (_canvas_w != width) return _p;
+        }
+        _p = @floor(_p);
+        if (window.window_width() % 2 != 0) _p.x -= 0.5;
+        if (window.window_height() % 2 != 0) _p.y += 0.5;
+
+        switch (center) {
+            .center => {
+                if (img.src.*.texture.width % 2 != 0) _p.x += 0.5;
+                if (img.src.*.texture.height % 2 != 0) _p.y -= 0.5;
+            },
+            .right, .left => {
+                if (img.src.*.texture.height % 2 != 0) _p.y -= 0.5;
+            },
+            .top, .bottom => {
+                if (img.src.*.texture.width % 2 != 0) _p.x += 0.5;
+            },
+            else => {},
+        }
+        return _p;
+    }
 
     fn get_ivertices(_interface: *iobject, idx: usize) ?*ivertices {
         const self = @as(*Self, @fieldParentPtr("interface", _interface));
