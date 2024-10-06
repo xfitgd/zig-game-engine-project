@@ -30,7 +30,7 @@ inline fn get_arch_text(arch: std.Target.Cpu.Arch) []const u8 {
     };
 }
 
-pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine_path: []const u8, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile) void) void {
+pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine_path: []const u8, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile, std.Build.ResolvedTarget) void) void {
     var pro = std.process.Child.init(&[_][]const u8{ engine_path ++ "/shader_compile", engine_path }, b.allocator);
     _ = pro.spawnAndWait() catch unreachable;
 
@@ -123,7 +123,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
 
             result.root_module.addImport("build_options", build_options_module);
 
-            callback(result);
+            callback(result, target);
 
             install_step.dependOn(&b.addInstallArtifact(result, .{
                 .dest_dir = .{ .override = .{ .custom = out_arch_text[i] } },
@@ -145,7 +145,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/windows/{s}/{s}", .{ engine_path, get_arch_text(target.result.cpu.arch), name }) catch unreachable));
             }
 
-            callback(result);
+            callback(result, target);
 
             b.installArtifact(result);
         } else unreachable;

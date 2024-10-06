@@ -21,9 +21,10 @@ const EXAMPLES = enum(usize) {
     SOUND,
 };
 
-fn callback(result: *std.Build.Step.Compile) void {
+fn callback(result: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
     //TODO 여기에 사용자 지정 라이브러리 등을 추가합니다.
     _ = result;
+    _ = target;
 }
 
 pub fn build(b: *std.Build) void {
