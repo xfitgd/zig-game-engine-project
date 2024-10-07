@@ -4,6 +4,7 @@ const ArrayList = std.ArrayList;
 const MemoryPoolExtra = std.heap.MemoryPoolExtra;
 
 const __windows = @import("__windows.zig");
+const window = @import("window.zig");
 const __android = @import("__android.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
@@ -11,6 +12,7 @@ const matrix = math.matrix;
 const graphics = @import("graphics.zig");
 const render_command = @import("render_command.zig");
 const __system = @import("__system.zig");
+const root = @import("root");
 
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 pub threadlocal var vk_allocator: ?*__vulkan_allocator = null;
@@ -49,6 +51,8 @@ const tex_vert = @embedFile("shaders/out/tex_vert.spv");
 const tex_frag = @embedFile("shaders/out/tex_frag.spv");
 var tex_vert_shader: vk.VkShaderModule = undefined;
 var tex_frag_shader: vk.VkShaderModule = undefined;
+
+pub var __pre_mat_uniform: __vulkan_allocator.vulkan_res_node(.buffer) = .{};
 
 pub const pipeline_set = struct {
     pipeline: vk.VkPipeline = null,
@@ -92,7 +96,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
             height = std.math.clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
             return vk.VkExtent2D{ .width = width, .height = height };
         } else if (system.platform == .android) {
-            return vk.VkExtent2D{ .width = __android.get_device_width(), .height = __android.get_device_height() };
+            return vk.VkExtent2D{ .width = @max(0, __android.android.ANativeWindow_getWidth(__android.app.window)), .height = @max(0, __android.android.ANativeWindow_getHeight(__android.app.window)) };
         } else {
             @compileError("not support platform");
         }
@@ -154,6 +158,7 @@ pub var vkGraphicsQueue: vk.VkQueue = undefined;
 var vkPresentQueue: vk.VkQueue = undefined;
 
 var vkExtent: vk.VkExtent2D = undefined;
+var vkExtent_rotation: vk.VkExtent2D = undefined;
 pub var vk_swapchain_frame_buffers: []vk.VkFramebuffer = undefined;
 var vk_swapchain_image_views: []vk.VkImageView = undefined;
 
@@ -216,9 +221,8 @@ fn recordCommandBuffer(commandBuffer: *render_command) void {
     if (commandBuffer.*.scene == null or commandBuffer.*.scene.?.len == 0) {
         return;
     }
-    const cmds = commandBuffer.*.__command_buffers;
 
-    for (cmds, vk_swapchain_frame_buffers) |cmd, frame| {
+    for (commandBuffer.*.__command_buffers, vk_swapchain_frame_buffers) |cmd, frame| {
         const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
         const clearDeathStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
 
@@ -226,7 +230,7 @@ fn recordCommandBuffer(commandBuffer: *render_command) void {
             .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = vkRenderPass,
             .framebuffer = frame,
-            .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent },
+            .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
             .clearValueCount = 2,
             .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDeathStencil },
         };
@@ -245,89 +249,18 @@ fn recordCommandBuffer(commandBuffer: *render_command) void {
         const viewport: vk.VkViewport = .{
             .x = 0,
             .y = 0,
-            .width = @floatFromInt(vkExtent.width),
-            .height = @floatFromInt(vkExtent.height),
+            .width = @floatFromInt(vkExtent_rotation.width),
+            .height = @floatFromInt(vkExtent_rotation.height),
             .maxDepth = 1,
             .minDepth = 0,
         };
-        const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
+        const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent_rotation };
 
         vk.vkCmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
         vk.vkCmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
         for (commandBuffer.scene.?) |value| {
-            const ivertices = value.*.get_ivertices(value, 0) orelse continue;
-            if (ivertices.*.pipeline == &shape_color_2d_pipeline_set) {
-                for (
-                    [_]*graphics.ivertices{ivertices},
-                    [_]*graphics.iindices{value.*.get_iindices(value, 0).?},
-                ) |v, in| {
-                    vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
-
-                    const set = value.*.get_descriptor_sets(value, 0);
-                    vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &set, 0, null);
-
-                    const offsets: vk.VkDeviceSize = 0;
-                    vk.vkCmdBindVertexBuffers(cmd, 0, 1, &v.*.node.res, &offsets);
-
-                    vk.vkCmdBindIndexBuffer(cmd, in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-                    vk.vkCmdDrawIndexed(cmd, @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
-                }
-                vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
-
-                const parent = @as(*graphics.shape, @fieldParentPtr("interface", value));
-                const source = parent.*.src;
-
-                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &source.*.__descriptor_set, 0, null);
-
-                vk.vkCmdDraw(cmd, 6, 1, 0, 0);
-
-                const extra = @as(?[]*graphics.shape.source, @ptrCast(value.*.get_extra_sources(value)));
-                if (extra != null) {
-                    if (extra.?.len > 0) vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &value.*.get_descriptor_sets(value, 0), 0, null);
-                    for (extra.?) |src| {
-                        for (
-                            [_]*graphics.ivertices{&src.*.vertices.interface},
-                            [_]*graphics.iindices{&src.*.indices.interface},
-                        ) |v, in| {
-                            vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipeline);
-
-                            const set = value.*.get_descriptor_sets(value, 0);
-                            vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, v.*.pipeline.*.pipelineLayout, 0, 1, &set, 0, null);
-
-                            const offsets: vk.VkDeviceSize = 0;
-                            vk.vkCmdBindVertexBuffers(cmd, 0, 1, &v.*.node.res, &offsets);
-
-                            vk.vkCmdBindIndexBuffer(cmd, in.*.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-                            vk.vkCmdDrawIndexed(cmd, @intCast(in.*.get_indices_len(in)), 1, 0, 0, 0);
-                        }
-                        vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipeline);
-
-                        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &src.*.__descriptor_set, 0, null);
-
-                        vk.vkCmdDraw(cmd, 6, 1, 0, 0);
-                    }
-                }
-            } else {
-                vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipeline);
-
-                const set = value.*.get_descriptor_sets(value, 0);
-                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, ivertices.*.pipeline.*.pipelineLayout, 0, 1, &set, 0, null);
-
-                const offsets: vk.VkDeviceSize = 0;
-                vk.vkCmdBindVertexBuffers(cmd, 0, 1, &ivertices.*.node.res, &offsets);
-
-                const iindices = value.*.get_iindices(value, 0);
-                if (iindices != null) {
-                    vk.vkCmdBindIndexBuffer(cmd, iindices.?.*.node.res, 0, switch (iindices.?.*.idx_type) {
-                        .U16 => vk.VK_INDEX_TYPE_UINT16,
-                        .U32 => vk.VK_INDEX_TYPE_UINT32,
-                    });
-                    vk.vkCmdDrawIndexed(cmd, @intCast(iindices.?.*.get_indices_len(iindices.?)), 1, 0, 0, 0);
-                } else {
-                    vk.vkCmdDraw(cmd, @intCast(ivertices.*.get_vertices_len(ivertices)), 1, 0, 0);
-                }
-            }
+            value.*.__draw(cmd);
         }
 
         vk.vkCmdEndRenderPass(cmd);
@@ -563,10 +496,6 @@ pub fn vulkan_start() void {
         .primitiveRestartEnable = vk.VK_FALSE,
     };
 
-    const viewport: vk.VkViewport = .{ .x = 0, .y = 0, .width = @floatFromInt(vkExtent.width), .height = @floatFromInt(vkExtent.height), .maxDepth = 1, .minDepth = 0 };
-
-    const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent };
-
     const dynamicState: vk.VkPipelineDynamicStateCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
         .dynamicStateCount = dynamicStates.len,
@@ -574,11 +503,11 @@ pub fn vulkan_start() void {
     };
 
     const viewportState: vk.VkPipelineViewportStateCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .flags = 0,
         .viewportCount = 1,
+        .pViewports = null,
         .scissorCount = 1,
-        .pViewports = @ptrCast(&viewport),
-        .pScissors = @ptrCast(&scissor),
+        .pScissors = null,
     };
 
     const rasterizer: vk.VkPipelineRasterizationStateCreateInfo = .{
@@ -821,7 +750,7 @@ pub fn vulkan_start() void {
     }
     //create_shape_color_2d_pipeline
     {
-        const uboLayoutBinding = [3]vk.VkDescriptorSetLayoutBinding{
+        const uboLayoutBinding = [_]vk.VkDescriptorSetLayoutBinding{
             vk.VkDescriptorSetLayoutBinding{
                 .binding = 0,
                 .descriptorCount = 1,
@@ -836,6 +765,12 @@ pub fn vulkan_start() void {
             },
             vk.VkDescriptorSetLayoutBinding{
                 .binding = 2,
+                .descriptorCount = 1,
+                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
+            vk.VkDescriptorSetLayoutBinding{
+                .binding = 3,
                 .descriptorCount = 1,
                 .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -923,7 +858,7 @@ pub fn vulkan_start() void {
     }
     //create_tex_2d_pipeline
     {
-        const uboLayoutBinding = [5]vk.VkDescriptorSetLayoutBinding{
+        const uboLayoutBinding = [_]vk.VkDescriptorSetLayoutBinding{
             vk.VkDescriptorSetLayoutBinding{
                 .binding = 0,
                 .descriptorCount = 1,
@@ -949,11 +884,18 @@ pub fn vulkan_start() void {
                 .binding = 3,
                 .descriptorCount = 1,
                 .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .stageFlags = vk.VK_SHADER_STAGE_VERTEX_BIT | vk.VK_SHADER_STAGE_FRAGMENT_BIT,
                 .pImmutableSamplers = null,
             },
             vk.VkDescriptorSetLayoutBinding{
                 .binding = 4,
+                .descriptorCount = 1,
+                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .pImmutableSamplers = null,
+            },
+            vk.VkDescriptorSetLayoutBinding{
+                .binding = 5,
                 .descriptorCount = 1,
                 .descriptorType = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -1097,6 +1039,7 @@ pub fn vulkan_start() void {
     sampler_info.minFilter = vk.VK_FILTER_NEAREST;
     result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &nearest_sampler);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler nearest_sampler : {d}", .{result});
+
     //
 }
 
@@ -1104,6 +1047,7 @@ pub fn vulkan_destroy() void {
     //graphics destroy
     quad_image_vertices.deinit();
     no_color_tran.deinit();
+    __pre_mat_uniform.clean();
 
     vk.vkDestroySampler(vkDevice, linear_sampler, null);
     vk.vkDestroySampler(vkDevice, nearest_sampler, null);
@@ -1192,7 +1136,7 @@ fn create_framebuffer() void {
 
     const img_info: vk.VkImageCreateInfo = .{
         .arrayLayers = 1,
-        .extent = .{ .width = vkExtent.width, .height = vkExtent.height, .depth = 1 },
+        .extent = .{ .width = vkExtent_rotation.width, .height = vkExtent_rotation.height, .depth = 1 },
         .flags = 0,
         .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
         .imageType = vk.VK_IMAGE_TYPE_2D,
@@ -1216,13 +1160,40 @@ fn create_framebuffer() void {
             .renderPass = vkRenderPass,
             .attachmentCount = 2,
             .pAttachments = &attachments,
-            .width = vkExtent.width,
-            .height = vkExtent.height,
+            .width = vkExtent_rotation.width,
+            .height = vkExtent_rotation.height,
             .layers = 1,
         };
 
         const result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer vkCreateFramebuffer vk_swapchain_frame_buffers : {d}", .{result});
+    }
+
+    refesh_pre_matrix();
+}
+
+pub fn refesh_pre_matrix() void {
+    const orientation = window.get_screen_orientation();
+    const mat: matrix = switch (orientation) {
+        .unknown => matrix.identity(),
+        .landscape90 => matrix.rotation2D(std.math.degreesToRadians(90.0)),
+        .landscape270 => matrix.rotation2D(std.math.degreesToRadians(270.0)),
+        .vertical180 => matrix.rotation2D(std.math.degreesToRadians(180.0)),
+        .vertical360 => matrix.identity(),
+    };
+    if (__pre_mat_uniform.res == null) {
+        graphics.create_buffer(
+            vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            .readwrite_cpu,
+            @sizeOf(matrix),
+            &__pre_mat_uniform,
+            std.mem.sliceAsBytes(@as([*]const matrix, @ptrCast(&mat))[0..1]),
+        );
+    } else {
+        var data: ?*matrix = undefined;
+        __pre_mat_uniform.map(@ptrCast(&data));
+        @memcpy(std.mem.sliceAsBytes(@as([*]matrix, @ptrCast(data.?))[0..1]), std.mem.sliceAsBytes(@as([*]const matrix, @ptrCast(&mat))[0..1]));
+        __pre_mat_uniform.unmap();
     }
 }
 
@@ -1261,6 +1232,29 @@ fn create_swapchain_and_imageviews() void {
         __system.allocator.free(formats);
         return;
     }
+
+    if (system.platform == .android) {
+        if (surfaceCap.currentTransform & vk.VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR != 0) {
+            vkExtent_rotation.width = vkExtent.height;
+            vkExtent_rotation.height = vkExtent.width;
+            @atomicStore(@TypeOf(__system.__screen_orientation), &__system.__screen_orientation, .landscape90, std.builtin.AtomicOrder.monotonic);
+        } else if (surfaceCap.currentTransform & vk.VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR != 0) {
+            vkExtent_rotation.width = vkExtent.height;
+            vkExtent_rotation.height = vkExtent.width;
+            @atomicStore(@TypeOf(__system.__screen_orientation), &__system.__screen_orientation, .landscape270, std.builtin.AtomicOrder.monotonic);
+        } else if (surfaceCap.currentTransform & vk.VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR != 0) {
+            @atomicStore(@TypeOf(__system.__screen_orientation), &__system.__screen_orientation, .vertical180, std.builtin.AtomicOrder.monotonic);
+            vkExtent_rotation = vkExtent;
+        } else {
+            @atomicStore(@TypeOf(__system.__screen_orientation), &__system.__screen_orientation, .vertical360, std.builtin.AtomicOrder.monotonic);
+            vkExtent_rotation = vkExtent;
+        }
+    } else {
+        vkExtent_rotation = vkExtent;
+    }
+    @atomicStore(i32, &__system.init_set.window_width, @intCast(vkExtent.width), std.builtin.AtomicOrder.monotonic);
+    @atomicStore(i32, &__system.init_set.window_height, @intCast(vkExtent.height), std.builtin.AtomicOrder.monotonic);
+
     format = chooseSwapSurfaceFormat(formats);
     const presentMode = chooseSwapPresentMode(presentModes, __system.init_set.vSync);
 
@@ -1275,7 +1269,7 @@ fn create_swapchain_and_imageviews() void {
         .minImageCount = imageCount,
         .imageFormat = format.format,
         .imageColorSpace = format.colorSpace,
-        .imageExtent = vkExtent,
+        .imageExtent = vkExtent_rotation,
         .imageArrayLayers = 1,
         .imageUsage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .presentMode = presentMode,
@@ -1410,10 +1404,10 @@ pub fn get_swapchain_image_length() usize {
     return vk_swapchain_image_views.len;
 }
 
-pub fn recreate_swapchain(_recreate_window: bool) void {
+pub fn recreate_swapchain() void {
     wait_device_idle();
 
-    if (system.platform == .android and _recreate_window) {
+    if (system.platform == .android) {
         __android.vulkan_android_recreate_surface(vkInstance, &vkSurface);
     }
 
@@ -1421,22 +1415,30 @@ pub fn recreate_swapchain(_recreate_window: bool) void {
     create_swapchain_and_imageviews();
     if (vkExtent.width <= 0 or vkExtent.height <= 0) return;
     create_framebuffer();
+
+    root.xfit_size();
 }
 
 pub var render_rwlock: std.Thread.Mutex = .{};
 
 pub fn drawFrame() void {
     var imageIndex: u32 = undefined;
+    if (system.platform == .android) {
+        if (__android.orientationChanged) {
+            recreate_swapchain();
+            __android.orientationChanged = false;
+        }
+    }
 
     if (vkExtent.width <= 0 or vkExtent.height <= 0) {
-        recreate_swapchain(false);
+        recreate_swapchain();
         if (vkExtent.width <= 0 or vkExtent.height <= 0) return;
     }
 
     if (graphics.render_cmd != null) {
         var result = vk.vkAcquireNextImageKHR(vkDevice, vkSwapchain, std.math.maxInt(u64), vkImageAvailableSemaphore, null, &imageIndex);
         if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
-            recreate_swapchain(false);
+            recreate_swapchain();
             if (vkExtent.width <= 0 or vkExtent.height <= 0) return;
         }
         system.handle_error(!(result != vk.VK_SUCCESS and result != vk.VK_SUBOPTIMAL_KHR), "__vulkan.drawFrame.vkAcquireNextImageKHR : {d}", .{result});
@@ -1485,7 +1487,7 @@ pub fn drawFrame() void {
         result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
 
         if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
-            recreate_swapchain(false);
+            recreate_swapchain();
         } else {
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
         }

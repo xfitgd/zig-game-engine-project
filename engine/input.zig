@@ -130,7 +130,7 @@ pub fn key() type {
             Home = __android.android.AKEYCODE_HOME,
             Back = __android.android.AKEYCODE_BACK,
             Call = __android.android.AKEYCODE_CALL,
-            EndCall = __android.android.AKEYCODE_CALL,
+            EndCall = __android.android.AKEYCODE_ENDCALL,
 
             Zero = __android.android.AKEYCODE_0,
             One = __android.android.AKEYCODE_1,
@@ -480,6 +480,15 @@ pub inline fn set_key_down_func(_func: *const fn (key()) void) void {
 }
 pub inline fn set_key_up_func(_func: *const fn (key()) void) void {
     @atomicStore(@TypeOf(__system.key_up_func), &__system.key_up_func, _func, std.builtin.AtomicOrder.monotonic);
+}
+pub inline fn set_mouse_move_func(_func: *const fn (pos: math.point) void) void {
+    @atomicStore(@TypeOf(__system.mouse_move_func), &__system.mouse_move_func, _func, std.builtin.AtomicOrder.monotonic);
+}
+pub inline fn set_mouse_hover_func(_func: *const fn () void) void {
+    @atomicStore(@TypeOf(__system.mouse_hover_func), &__system.mouse_hover_func, _func, std.builtin.AtomicOrder.monotonic);
+}
+pub inline fn set_mouse_leave_func(_func: *const fn () void) void {
+    @atomicStore(@TypeOf(__system.mouse_leave_func), &__system.mouse_leave_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn Lmouse_down() bool {

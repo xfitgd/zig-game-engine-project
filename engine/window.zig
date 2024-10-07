@@ -21,22 +21,23 @@ pub const window_show = enum(i32) {
     MINIMIZE = __windows.win32.SW_MINIMIZE,
 };
 
+pub const screen_orientation = enum {
+    unknown,
+    landscape90,
+    landscape270,
+    vertical180,
+    vertical360,
+};
+
+pub fn get_screen_orientation() screen_orientation {
+    return @atomicLoad(screen_orientation, &__system.__screen_orientation, std.builtin.AtomicOrder.monotonic);
+}
+
 pub fn window_width() i32 {
-    if (system.platform == .windows) {
-        const result = @atomicLoad(i32, &__system.init_set.window_width, std.builtin.AtomicOrder.monotonic);
-        return result;
-    } else if (system.platform == .android) {
-        return @intCast(__android.get_device_width());
-    }
-    @compileError("not support platform.");
+    return @atomicLoad(i32, &__system.init_set.window_width, std.builtin.AtomicOrder.monotonic);
 }
 pub fn window_height() i32 {
-    if (system.platform == .windows) {
-        return @atomicLoad(i32, &__system.init_set.window_height, std.builtin.AtomicOrder.monotonic);
-    } else if (system.platform == .android) {
-        return @intCast(__android.get_device_height());
-    }
-    @compileError("not support platform.");
+    return @atomicLoad(i32, &__system.init_set.window_height, std.builtin.AtomicOrder.monotonic);
 }
 pub fn window_x() i32 {
     if (system.platform == .windows) {
@@ -101,8 +102,6 @@ pub fn set_window_size(w: u32, h: u32) void {
         system.print_error("WARN window.set_window_size not support mobile platform.\n", .{});
         return;
     }
-    @atomicStore(i32, &__system.init_set.window_width, __system.prev_window.width, std.builtin.AtomicOrder.monotonic);
-    @atomicStore(i32, &__system.init_set.window_height, __system.prev_window.height, std.builtin.AtomicOrder.monotonic);
 }
 pub fn set_window_pos(x: i32, y: i32) void {
     if (system.platform == .windows) {
@@ -125,8 +124,6 @@ pub fn set_window_mode() void {
     @atomicStore(system.screen_mode, &__system.init_set.screen_mode, system.screen_mode.WINDOW, std.builtin.AtomicOrder.monotonic);
     @atomicStore(i32, &__system.init_set.window_x, __system.prev_window.x, std.builtin.AtomicOrder.monotonic);
     @atomicStore(i32, &__system.init_set.window_y, __system.prev_window.y, std.builtin.AtomicOrder.monotonic);
-    @atomicStore(i32, &__system.init_set.window_width, __system.prev_window.width, std.builtin.AtomicOrder.monotonic);
-    @atomicStore(i32, &__system.init_set.window_height, __system.prev_window.height, std.builtin.AtomicOrder.monotonic);
 
     switch (__system.prev_window.state) {
         .Restore => {
@@ -153,8 +150,6 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: syst
     @atomicStore(bool, &__system.init_set.can_resizewindow, _can_resizewindow, std.builtin.AtomicOrder.monotonic);
     @atomicStore(i32, &__system.init_set.window_x, pos.x, std.builtin.AtomicOrder.monotonic);
     @atomicStore(i32, &__system.init_set.window_y, pos.y, std.builtin.AtomicOrder.monotonic);
-    @atomicStore(i32, &__system.init_set.window_width, size.x, std.builtin.AtomicOrder.monotonic);
-    @atomicStore(i32, &__system.init_set.window_height, size.y, std.builtin.AtomicOrder.monotonic);
 
     switch (state) {
         .Restore => {

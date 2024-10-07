@@ -7,7 +7,7 @@ const cwebp = @cImport({
     @cInclude("webp/encode.h");
 });
 
-const img = @import("img.zig");
+const image_util = @import("image_util.zig");
 
 config: union {
     decode: cwebp.WebPDecoderConfig,
@@ -42,8 +42,8 @@ pub fn load_header(self: *Self, data: []const u8) webp_error!void {
     self.*.config.decode.options.scaled_height = self.*.config.decode.input.height;
 }
 
-pub fn decode(self: *Self, out_fmt: img.color_format, data: []const u8, out_data: []u8) webp_error!void {
-    const bit = @divExact(img.bit(out_fmt), 8);
+pub fn decode(self: *Self, out_fmt: image_util.color_format, data: []const u8, out_data: []u8) webp_error!void {
+    const bit = @divExact(image_util.bit(out_fmt), 8);
     switch (out_fmt) {
         .RGBA => self.*.config.decode.output.colorspace = cwebp.MODE_RGBA,
         .ARGB => self.*.config.decode.output.colorspace = cwebp.MODE_ARGB,

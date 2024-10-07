@@ -2,6 +2,8 @@ const std = @import("std");
 const expect = std.testing.expect;
 
 const root = @import("root");
+const math = @import("math.zig");
+const point = math.point;
 const __vulkan = @import("__vulkan.zig");
 
 const system = @import("system.zig");
@@ -10,6 +12,8 @@ const __system = @import("__system.zig");
 pub const c_allocator = std.heap.c_allocator;
 
 pub const android = @import("include/android.zig");
+
+pub var orientationChanged: bool = false;
 
 inline fn LOGI(fmt: [*c]const u8, args: anytype) c_int {
     return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_INFO, "xfit", fmt } ++ args);
@@ -57,20 +61,14 @@ const android_poll_source = struct {
     process: ?*const fn (?*android_poll_source) void,
 };
 
-const saved_state = struct {
-    angle: f32 = 0,
-    x: i32 = 0,
-    y: i32 = 0,
-};
-
 const android_app = struct {
     userdata: ?*anyopaque = null,
     on_app_cmd: ?*const fn (AppEvent) void = null,
     on_input_event: ?*const fn (?*android.AInputEvent) i32 = null,
     activity: ?*android.ANativeActivity = null,
     config: ?*android.AConfiguration = null,
-    savedState: ?[]u8 = null,
-    savedStateSize: usize = 0,
+    //savedState: ?[]u8 = null,
+    //savedStateSize: usize = 0,
     looper: ?*android.ALooper = null,
     input_queue: ?*android.AInputQueue = null,
     window: ?*android.ANativeWindow = null,
@@ -102,13 +100,12 @@ const android_app = struct {
 
     width: i32 = 0,
     height: i32 = 0,
-    savedata: saved_state = std.mem.zeroes(saved_state),
 
     inited: bool = false,
     paused: bool = false,
 };
 
-var app: android_app = .{};
+pub var app: android_app = .{};
 
 pub fn get_AssetManager() ?*android.AAssetManager {
     return app.activity.?.*.assetManager;
@@ -146,7 +143,6 @@ fn onConfigurationChanged(_activity: [*c]android.ANativeActivity) callconv(.C) v
     if (system.dbg) _ = LOGV("ConfigurationChanged: %p", .{_activity});
     android_app_write_cmd(AppEvent.APP_CMD_CONFIG_CHANGED);
 }
-
 pub fn get_device_width() u32 {
     const width = android.ANativeWindow_getWidth(app.window);
     return @max(0, width);
@@ -168,24 +164,24 @@ pub fn get_file_dir() []const u8 {
 
 fn onSaveInstanceState(_activity: [*c]android.ANativeActivity, _out_len: [*c]usize) callconv(.C) ?*anyopaque {
     if (system.dbg) _ = LOGV("SaveInstanceState: %p", .{_activity});
+    _ = _out_len;
+    // var savedState: ?*anyopaque = null;
 
-    var savedState: ?*anyopaque = null;
+    // app.mutex.lock();
+    // app.stateSaved = false;
+    // android_app_write_cmd(AppEvent.APP_CMD_SAVE_STATE);
+    // while (!app.stateSaved) {
+    //     app.cond.wait(&app.mutex);
+    // }
+    // if (app.savedState != null) {
+    //     savedState = @ptrCast(app.savedState);
+    //     _out_len.* = app.savedStateSize;
+    //     app.savedState = null;
+    //     app.savedStateSize = 0;
+    // }
+    // app.mutex.unlock();
 
-    app.mutex.lock();
-    app.stateSaved = false;
-    android_app_write_cmd(AppEvent.APP_CMD_SAVE_STATE);
-    while (!app.stateSaved) {
-        app.cond.wait(&app.mutex);
-    }
-    if (app.savedState != null) {
-        savedState = @ptrCast(app.savedState);
-        _out_len.* = app.savedStateSize;
-        app.savedState = null;
-        app.savedStateSize = 0;
-    }
-    app.mutex.unlock();
-
-    return savedState;
+    return null;
 }
 fn onContentRectChanged(_activity: [*c]android.ANativeActivity, _rect: [*c]const android.ARect) callconv(.C) void {
     _ = _activity;
@@ -246,59 +242,95 @@ fn print_cur_config() void {
     android.AConfiguration_getLanguage(app.config, @ptrCast(&lang));
     android.AConfiguration_getCountry(app.config, @ptrCast(&country));
 
-    _ = LOGV("Config: mcc=%d mnc=%d lang=%c%c cnt=%c%c orien=%d touch=%d dens=%d keys=%d nav=%d keysHid=%d navHid=%d sdk=%d size=%d long=%d modetype=%d modenight=%d", .{ android.AConfiguration_getMcc(app.config), android.AConfiguration_getMnc(app.config), lang[0], lang[1], country[0], country[1], android.AConfiguration_getOrientation(app.config), android.AConfiguration_getTouchscreen(app.config), android.AConfiguration_getDensity(app.config), android.AConfiguration_getKeyboard(app.config), android.AConfiguration_getNavigation(app.config), android.AConfiguration_getKeysHidden(app.config), android.AConfiguration_getNavHidden(app.config), android.AConfiguration_getSdkVersion(app.config), android.AConfiguration_getScreenSize(app.config), android.AConfiguration_getScreenLong(app.config), android.AConfiguration_getUiModeType(app.config), android.AConfiguration_getUiModeNight(app.config) });
+    _ = LOGV("Config: mcc=%d mnc=%d lang=%c%c cnt=%c%c orien=%d touch=%d dens=%d keys=%d nav=%d keysHid=%d navHid=%d sdk=%d size=%d long=%d modetype=%d modenight=%d", .{
+        android.AConfiguration_getMcc(app.config),
+        android.AConfiguration_getMnc(app.config),
+        lang[0],
+        lang[1],
+        country[0],
+        country[1],
+        android.AConfiguration_getOrientation(app.config),
+        android.AConfiguration_getTouchscreen(app.config),
+        android.AConfiguration_getDensity(app.config),
+        android.AConfiguration_getKeyboard(app.config),
+        android.AConfiguration_getNavigation(app.config),
+        android.AConfiguration_getKeysHidden(app.config),
+        android.AConfiguration_getNavHidden(app.config),
+        android.AConfiguration_getSdkVersion(app.config),
+        android.AConfiguration_getScreenSize(app.config),
+        android.AConfiguration_getScreenLong(app.config),
+        android.AConfiguration_getUiModeType(app.config),
+        android.AConfiguration_getUiModeNight(app.config),
+    });
 }
 
 fn onDestroy(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("Destroy: %p", .{_activity});
+    _ = _activity;
+    // if (system.dbg) _ = LOGV("Destroy: %p", .{_activity});
     android_app_free();
 }
 fn onInputQueueCreated(_activity: [*c]android.ANativeActivity, _queue: ?*android.AInputQueue) callconv(.C) void {
-    if (system.dbg) _ = LOGV("InputQueueCreated: %p -- %p", .{ _activity, _queue });
+    _ = _activity;
+    // if (system.dbg) _ = LOGV("InputQueueCreated: %p -- %p", .{ _activity, _queue });
     android_app_set_input(_queue);
 }
 fn onInputQueueDestroyed(_activity: [*c]android.ANativeActivity, _queue: ?*android.AInputQueue) callconv(.C) void {
-    if (system.dbg) _ = LOGV("InputQueueDestroyed: %p -- %p", .{ _activity, _queue });
+    _ = _activity;
+    _ = _queue;
+    //if (system.dbg) _ = LOGV("InputQueueDestroyed: %p -- %p", .{ _activity, _queue });
     android_app_set_input(null);
 }
 fn onLowMemory(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("LowMemory: %p", .{_activity});
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("LowMemory: %p", .{_activity});
     android_app_write_cmd(AppEvent.APP_CMD_LOW_MEMORY);
 }
 fn onNativeWindowCreated(_activity: [*c]android.ANativeActivity, _window: ?*android.ANativeWindow) callconv(.C) void {
-    if (system.dbg) _ = LOGV("NativeWindowCreated: %p -- %p", .{ _activity, _window });
+    //if (system.dbg) _ = LOGV("NativeWindowCreated: %p -- %p", .{ _activity, _window });
+    _ = _activity;
     android_app_set_window(_window);
 }
 fn onNativeWindowDestroyed(_activity: [*c]android.ANativeActivity, _window: ?*android.ANativeWindow) callconv(.C) void {
-    if (system.dbg) _ = LOGV("NativeWindowDestroyed: %p -- %p", .{ _activity, _window });
+    _ = _activity;
+    _ = _window;
+    //if (system.dbg) _ = LOGV("NativeWindowDestroyed: %p -- %p", .{ _activity, _window });
     android_app_set_window(null);
 }
 fn onNativeWindowRedrawNeeded(_activity: [*c]android.ANativeActivity, _window: ?*android.ANativeWindow) callconv(.C) void {
-    if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %p", .{ _activity, _window });
+    _ = _activity;
+    _ = _window;
+    // if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %p", .{ _activity, _window });
     android_app_write_cmd(AppEvent.APP_CMD_WINDOW_REDRAW_NEEDED);
 }
 fn onNativeWindowResized(_activity: [*c]android.ANativeActivity, _window: ?*android.ANativeWindow) callconv(.C) void {
-    if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %p", .{ _activity, _window });
+    _ = _activity;
+    _ = _window;
+    //if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %p", .{ _activity, _window });
     android_app_write_cmd(AppEvent.APP_CMD_WINDOW_RESIZED);
 }
 fn onPause(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("Pause: %p", .{_activity});
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("Pause: %p", .{_activity});
     android_app_set_activity_state(AppEvent.APP_CMD_PAUSE);
 }
 fn onResume(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("Resume: %p", .{_activity});
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("Resume: %p", .{_activity});
     android_app_set_activity_state(AppEvent.APP_CMD_RESUME);
 }
 fn onStart(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("Start: %p", .{_activity});
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("Start: %p", .{_activity});
     android_app_set_activity_state(AppEvent.APP_CMD_START);
 }
 fn onStop(_activity: [*c]android.ANativeActivity) callconv(.C) void {
-    if (system.dbg) _ = LOGV("Stop: %p", .{_activity});
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("Stop: %p", .{_activity});
     android_app_set_activity_state(AppEvent.APP_CMD_STOP);
 }
 fn onWindowFocusChanged(_activity: [*c]android.ANativeActivity, _focused: i32) callconv(.C) void {
-    if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %d", .{ _activity, _focused });
+    _ = _activity;
+    //if (system.dbg) _ = LOGV("NativeWindowRedrawNeeded: %p -- %d", .{ _activity, _focused });
     android_app_write_cmd(if (_focused != 0) AppEvent.APP_CMD_GAINED_FOCUS else AppEvent.APP_CMD_LOST_FOCUS);
 }
 
@@ -386,13 +418,13 @@ fn android_app_post_exec_cmd(_cmd: u8) void {
 }
 
 fn free_saved_state() void {
-    app.mutex.lock();
-    if (app.savedState != null) {
-        c_allocator.free(@as(?[]u8, @ptrCast(app.savedState)).?);
-        app.savedState = null;
-        app.savedStateSize = 0;
-    }
-    app.mutex.unlock();
+    // app.mutex.lock();
+    // if (app.savedState != null) {
+    //     c_allocator.free(@as(?[]u8, @ptrCast(app.savedState)).?);
+    //     app.savedState = null;
+    //     app.savedStateSize = 0;
+    // }
+    // app.mutex.unlock();
 }
 
 fn process_cmd(_source: ?*android_poll_source) void {
@@ -420,17 +452,18 @@ fn process_input(_source: ?*android_poll_source) void {
 fn engine_handle_cmd(_cmd: AppEvent) void {
     switch (_cmd) {
         AppEvent.APP_CMD_SAVE_STATE => {
-            app.savedStateSize = @sizeOf(saved_state);
-            app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("engine_handle_cmd c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
-            @memcpy(app.savedState.?, std.mem.asBytes(&app.savedata));
+            // app.savedStateSize = @sizeOf(saved_state);
+            // app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("engine_handle_cmd c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
+            // @memcpy(app.savedState.?, std.mem.asBytes(&app.savedata));
         },
         AppEvent.APP_CMD_INIT_WINDOW => {
             if (app.window != null) {
                 if (!app.inited) {
+                    //세로일 경우 원래대로?
                     root.main();
                     app.inited = true;
                 } else {
-                    __vulkan.recreate_swapchain(true);
+                    __vulkan.recreate_swapchain();
                 }
             }
         },
@@ -453,6 +486,9 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             __system.activated.store(true, std.builtin.AtomicOrder.monotonic);
             root.xfit_activate(true, true);
         },
+        AppEvent.APP_CMD_WINDOW_RESIZED => {
+            orientationChanged = true;
+        },
         else => {},
     }
 }
@@ -460,24 +496,87 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
 fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
     const evt = android.AInputEvent_getType(_event);
     if (evt == android.AINPUT_EVENT_TYPE_MOTION) {
-        app.savedata.x = @intFromFloat(android.AMotionEvent_getX(_event, 0));
-        app.savedata.y = @intFromFloat(android.AMotionEvent_getY(_event, 0));
-
-        @atomicStore(i32, &__system.cursor_pos[0], app.savedata.x, std.builtin.AtomicOrder.release);
-        @atomicStore(i32, &__system.cursor_pos[1], app.savedata.y, std.builtin.AtomicOrder.release);
+        const tool_type = android.AMotionEvent_getToolType(_event, 0);
+        var count: u32 = undefined;
+        if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
+            count = 1;
+        } else if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_FINGER) {
+            count = @min(100, android.AMotionEvent_getPointerCount(_event));
+        } else return 0;
+        const poses = __system.allocator.alloc(point, count) catch system.handle_error_msg2("engine_handle_input alloc poses");
+        defer __system.allocator.free(poses);
+        var i: u32 = 0;
+        while (i < poses.len) : (i += 1) {
+            poses[i][0] = android.AMotionEvent_getX(_event, i);
+            poses[i][1] = android.AMotionEvent_getY(_event, i);
+        }
+        @atomicStore(i32, &__system.cursor_pos[0], @intFromFloat(poses[0][0]), std.builtin.AtomicOrder.monotonic);
+        @atomicStore(i32, &__system.cursor_pos[1], @intFromFloat(poses[0][1]), std.builtin.AtomicOrder.monotonic);
+        if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
+            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(poses[0]);
+        }
 
         const act = android.AMotionEvent_getAction(_event);
-        if (act == android.AMOTION_EVENT_ACTION_DOWN) {
-            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?();
-        } else if (act == android.AMOTION_EVENT_ACTION_UP) {
-            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?();
+        switch (act & android.AMOTION_EVENT_ACTION_MASK) {
+            android.AMOTION_EVENT_ACTION_DOWN => {
+                if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(poses[0]);
+                if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(0, poses[0]);
+            },
+            android.AMOTION_EVENT_ACTION_UP => {
+                if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(poses[0]);
+                if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(0, poses[0]);
+            },
+            android.AMOTION_EVENT_ACTION_POINTER_DOWN => {
+                const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
+                if (pointer_id < count) {
+                    if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(pointer_id, poses[pointer_id]);
+                } else {
+                    @branchHint(.unlikely);
+                    system.print("WARN engine_handle_input AMOTION_EVENT_ACTION_POINTER_DOWN out of range poses[{d}] value : {d}\n", .{ count, pointer_id });
+                    return 0;
+                }
+            },
+            android.AMOTION_EVENT_ACTION_POINTER_UP => {
+                const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
+                if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(pointer_id, poses[pointer_id]);
+            },
+            android.AMOTION_EVENT_ACTION_SCROLL => {
+                const dt: i32 = @intFromFloat(android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_VSCROLL, 0) * 100);
+                __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
+                if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
+            },
+            else => {},
         }
         return 1;
     } else if (evt == android.AINPUT_EVENT_TYPE_KEY) {
         const act = android.AKeyEvent_getAction(_event);
-        if (act == android.AKEY_EVENT_ACTION_DOWN) {} else if (act == android.AKEY_EVENT_ACTION_UP) {} else {
+        const keycode = @max(0, android.AKeyEvent_getKeyCode(_event));
+        if (act == android.AKEY_EVENT_ACTION_DOWN) {
+            if (keycode < __system.KEY_SIZE) {
+                if (!__system.keys[keycode].load(std.builtin.AtomicOrder.monotonic)) {
+                    __system.keys[keycode].store(true, std.builtin.AtomicOrder.monotonic);
+                    //system.print_debug("input key_down {d}", .{wParam});
+                    if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(keycode));
+                }
+            } else {
+                @branchHint(.unlikely);
+                system.print("WARN engine_handle_input AKEY_EVENT_ACTION_DOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
+                return 0;
+            }
+        } else if (act == android.AKEY_EVENT_ACTION_UP) {
+            if (keycode < __system.KEY_SIZE) {
+                __system.keys[keycode].store(false, std.builtin.AtomicOrder.monotonic);
+                //system.print_debug("input key_up {d}", .{wParam});
+                if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(keycode));
+            } else {
+                @branchHint(.unlikely);
+                system.print("WARN engine_handle_input AKEY_EVENT_ACTION_UP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
+                return 0;
+            }
+        } else {
             return 0;
         }
+        return 1;
     }
     return 0;
 }
@@ -567,9 +666,9 @@ fn anrdoid_app_entry() void {
 
     app.sensor_event_queue = android.ASensorManager_createEventQueue(app.sensor_manager, app.looper, @intFromEnum(LooperEvent.LOOPER_ID_USER), OnSensorEvent, null);
 
-    if (app.savedState != null) {
-        @memcpy(std.mem.asBytes(&app.savedata), app.savedState.?);
-    }
+    // if (app.savedState != null) {
+    //     @memcpy(std.mem.asBytes(&app.savedata), app.savedState.?);
+    // }
 
     while (true) {
         var ident: i32 = undefined;
@@ -605,6 +704,8 @@ fn anrdoid_app_entry() void {
 
 /// Actual application entry point
 export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _savedState: ?*anyopaque, _savedStateSize: usize) callconv(.C) void {
+    _ = _savedState;
+    _ = _savedStateSize;
     _activity.*.callbacks.*.onConfigurationChanged = onConfigurationChanged;
     _activity.*.callbacks.*.onContentRectChanged = onContentRectChanged;
     _activity.*.callbacks.*.onDestroy = onDestroy;
@@ -626,13 +727,13 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
 
     app.activity = _activity;
 
-    if (_savedState != null and _savedStateSize != 0) {
-        app.savedStateSize = _savedStateSize;
+    // if (_savedState != null and _savedStateSize != 0) {
+    //     app.savedStateSize = _savedStateSize;
 
-        app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("ANativeActivity_onCreate c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
+    //     app.savedState = @as([*]u8, @ptrCast(c_allocator.alloc(u8, app.savedStateSize) catch |e| system.handle_error3("ANativeActivity_onCreate c_allocator.alloc app.savedState", e)))[0..app.savedStateSize];
 
-        @memcpy(app.savedState.?, @as(?[*]u8, @ptrCast(_savedState)).?);
-    }
+    //     @memcpy(app.savedState.?, @as(?[*]u8, @ptrCast(_savedState)).?);
+    // }
 
     const pipe = std.posix.pipe() catch |e| system.handle_error3("ANativeActivity_onCreate std.posix.pipe", e);
     app.msgread = pipe[0];

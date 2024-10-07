@@ -379,8 +379,8 @@ pub const matrix4x4 = struct {
         };
     }
     pub inline fn rotationX(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ 1, 0, 0, 0 },
@@ -391,8 +391,8 @@ pub const matrix4x4 = struct {
         };
     }
     pub inline fn rotationY(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ c, 0, -s, 0 },
@@ -403,8 +403,8 @@ pub const matrix4x4 = struct {
         };
     }
     pub inline fn rotationZ(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ c, s, 0, 0 },
@@ -416,8 +416,8 @@ pub const matrix4x4 = struct {
     }
     pub const rotation2D = rotationZ;
     pub inline fn rotationX_inverse(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ 1, 0, 0, 0 },
@@ -428,8 +428,8 @@ pub const matrix4x4 = struct {
         };
     }
     pub inline fn rotationY_inverse(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ c, 0, s, 0 },
@@ -440,8 +440,8 @@ pub const matrix4x4 = struct {
         };
     }
     pub inline fn rotationZ_inverse(angle: f32) Self {
-        const c = std.cos(angle);
-        const s = std.sin(angle);
+        const c = @cos(angle);
+        const s = @sin(angle);
         return Self{
             .e = .{
                 .{ c, -s, 0, 0 },
@@ -511,8 +511,8 @@ pub const matrix4x4 = struct {
     }
     /// Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
     pub fn perspectiveFovRhGL(fovy: f32, aspect: f32, near: f32, far: f32) matrix_error!Self {
-        const sfov = std.math.sin(0.5 * fovy);
-        const cfov = std.math.cos(0.5 * fovy);
+        const sfov = @sin(0.5 * fovy);
+        const cfov = @cos(0.5 * fovy);
 
         if (!(near > 0.0 and far > 0.0 and far > near)) return matrix_error.invaild_near_far;
         if (compare_n(sfov, 0)) return matrix_error.sfov_0;

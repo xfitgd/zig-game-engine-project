@@ -2,13 +2,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
-const MemoryPool = std.heap.MemoryPool;
+const MemoryPoolExtra = std.heap.MemoryPoolExtra;
 
 const __vulkan = @import("__vulkan.zig");
 const vk = __vulkan.vk;
 const __system = @import("__system.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
+const mem = @import("mem.zig");
 
 const BLOCK_LEN = 8192;
 const NODE_SIZE = 2048;
@@ -20,7 +21,7 @@ const Self = @This();
 
 pub const ERROR = error{device_memory_limit};
 
-buffers: MemoryPool(vulkan_res),
+buffers: MemoryPoolExtra(vulkan_res, .{}),
 buffer_ids: ArrayList(*vulkan_res),
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
@@ -51,6 +52,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
         const vulkan_res_node_Self = @This();
         res: ivulkan_res(_res_type) = null,
         idx: usize = undefined,
+        __resource_len: u32 = undefined,
         pvulkan_buffer: *vulkan_res = undefined,
         __image_view: if (_res_type == .image) vk.VkImageView else void = if (_res_type == .image) undefined,
 
@@ -61,6 +63,13 @@ pub fn vulkan_res_node(_res_type: res_type) type {
             self.*.pvulkan_buffer.*.map(self.*.idx, _out_data);
         }
         pub inline fn unmap(self: *vulkan_res_node_Self) void {
+            self.*.pvulkan_buffer.*.unmap();
+        }
+        pub inline fn map_update(self: *vulkan_res_node_Self, _data: anytype) void {
+            var data: ?*anyopaque = undefined;
+            self.*.pvulkan_buffer.*.map(self.*.idx, &data);
+            const u8data = mem.obj_to_u8arrC(_data);
+            @memcpy(@as([*]u8, @ptrCast(data.?))[0..u8data.len], u8data);
             self.*.pvulkan_buffer.*.unmap();
         }
         pub inline fn clean(self: *vulkan_res_node_Self) void {
@@ -195,7 +204,7 @@ const vulkan_res = struct {
 
 pub fn init() Self {
     return Self{
-        .buffers = MemoryPool(vulkan_res).init(__system.allocator),
+        .buffers = MemoryPoolExtra(vulkan_res, .{}).init(__system.allocator),
         .buffer_ids = ArrayList(*vulkan_res).init(__system.allocator),
     };
 }

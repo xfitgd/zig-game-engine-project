@@ -37,6 +37,12 @@ pub var hInstance: HINSTANCE = undefined;
 pub var screen_mode: system.screen_mode = system.screen_mode.WINDOW;
 pub var current_monitor: ?*system.monitor_info = null;
 pub var current_resolution: ?*system.screen_info = null;
+const xbox_guid = win32.GUID{
+    .Data1 = 0xec87f1e3,
+    .Data2 = 0xc13b,
+    .Data3 = 0x4100,
+    .Data4 = [8]u8{ 0xb5, 0xf7, 0x8b, 0x84, 0xd5, 0x42, 0x60, 0xcb },
+};
 
 pub fn vulkan_windows_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
     const win32SurfaceCreateInfo: __vulkan.vk.VkWin32SurfaceCreateInfoKHR = .{
@@ -148,24 +154,32 @@ pub fn windows_start() void {
     // const raw_input = [2]win32.RAWINPUTDEVICE{
     //     .{
     //         .usUsagePage = 1,
-    //         .usUsage = 6, //KEYBOARD
-    //         .dwFlags = win32.RIDEV_REMOVE,
-    //         .hwndTarget = null,
+    //         .usUsage = 5, // Joystick
+    //         .dwFlags = win32.RIDEV_INPUTSINK,
+    //         .hwndTarget = hWnd,
     //     },
     //     .{
     //         .usUsagePage = 1,
-    //         .usUsage = 2, //MOUSE
-    //         .dwFlags = win32.RIDEV_REMOVE,
-    //         .hwndTarget = null,
+    //         .usUsage = 4, // Joystick
+    //         .dwFlags = win32.RIDEV_INPUTSINK,
+    //         .hwndTarget = hWnd,
     //     },
     // };
 
     // if (win32.RegisterRawInputDevices(&raw_input, 2, @sizeOf(win32.RAWINPUTDEVICE)) == FALSE) system.handle_error2("windows_start.RegisterRawInputDevices {d}", .{win32.GetLastError()});
-    // TODO JoyStick Needed
 
     _ = win32.ShowWindow(hWnd, if (__system.init_set.screen_mode == system.screen_mode.WINDOW) @intFromEnum(__system.init_set.window_show) else win32.SW_MAXIMIZE);
 
-    _ = win32.RegisterTouchWindow(hWnd, 0);
+    // _ = win32.RegisterTouchWindow(hWnd, 0);
+
+    // var db: win32.DEV_BROADCAST_DEVICEINTERFACE_A = .{
+    //     .dbcc_classguid = xbox_guid,
+    // };
+    // if (null == win32.RegisterDeviceNotificationA(hWnd, &db, win32.DEVICE_NOTIFY_WINDOW_HANDLE)) {
+    //     system.print_error("WARN code {d} RegisterDeviceNotificationA\n", .{win32.GetLastError()});
+    // } else {
+    //     xbox_init();
+    // }
 
     var start_sem: std.Thread.Semaphore = .{};
     var start_sem2: std.Thread.Semaphore = .{};
@@ -176,6 +190,43 @@ pub fn windows_start() void {
     graphics.check_vk_allocator();
 
     start_sem2.post();
+}
+
+fn xbox_init() void {
+    const dev = win32.SetupDiGetClassDevsA(&xbox_guid, null, null, win32.DIGCF_DEVICEINTERFACE | win32.DIGCF_PRESENT);
+    if (dev == win32.INVALID_HANDLE_VALUE) {
+        system.print_error("WARN code {d} SetupDiGetClassDevsA\n", .{win32.GetLastError()});
+        return;
+    }
+    var idata: win32.SP_DEVICE_INTERFACE_DATA = .{};
+    var index: DWORD = 0;
+    while (win32.SetupDiEnumDeviceInterfaces(dev, null, &xbox_guid, index, &idata) == win32.TRUE) {
+        var size: DWORD = undefined;
+        _ = win32.SetupDiGetDeviceInterfaceDetailA(dev, &idata, null, 0, &size, null);
+
+        const detail = __system.allocator.alignedAlloc(u8, 4, size) catch system.handle_error_msg2("xbox_init detail alloc");
+        const detailA: win32.PSP_DEVICE_INTERFACE_DETAIL_DATA_A = @ptrCast(detail.ptr);
+        detailA.*.cbSize = @sizeOf(win32.SP_DEVICE_INTERFACE_DETAIL_DATA_A); // ! size변수가 아니다!
+
+        var data: win32.SP_DEVINFO_DATA = .{};
+        if (win32.SetupDiGetDeviceInterfaceDetailA(dev, &idata, detailA, size, &size, &data) == win32.FALSE) {
+            system.print_error("WARN code {d} SetupDiGetDeviceInterfaceDetailA 2\n", .{win32.GetLastError()});
+            return;
+        }
+        _ = xbox_connect(&detailA.*.DevicePath[0]);
+        __system.allocator.free(detail);
+        index += 1;
+    }
+
+    if (win32.FALSE == win32.SetupDiDestroyDeviceInfoList(dev)) {
+        system.print_error("WARN code {d} SetupDiDestroyDeviceInfoList\n", .{win32.GetLastError()});
+        return;
+    }
+}
+
+fn xbox_connect(path: win32.PCSTR) c_int {
+    _ = path;
+    return 0;
 }
 
 fn render_thread(start_sem: *std.Thread.Semaphore, start_sem2: *std.Thread.Semaphore) void {
@@ -370,32 +421,32 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
     switch (uMsg) {
         win32.WM_LBUTTONDOWN => {
             __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?();
+            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_MBUTTONDOWN => {
             __system.Mmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?();
+            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_RBUTTONDOWN => {
             __system.Rmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?();
+            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_LBUTTONUP => {
             __system.Lmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?();
+            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_MBUTTONUP => {
             __system.Mmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?();
+            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_RBUTTONUP => {
             __system.Rmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?();
+            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
             return 0;
         },
         win32.WM_KEYDOWN => {
@@ -406,7 +457,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                     if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(wParam));
                 }
             } else {
-                system.print_error("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+                system.print("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
             }
             return 0;
         },
@@ -416,7 +467,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                 //system.print_debug("input key_up {d}", .{wParam});
                 if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(wParam));
             } else {
-                system.print_error("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+                system.print("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
             }
             return 0;
         },
@@ -447,19 +498,6 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             S.activateInited = true;
             return 0;
         },
-        win32.WM_SIZE => {
-            if (wParam != win32.SIZE_MINIMIZED) {
-                if (S.sizeInited) {
-                    @atomicStore(i32, &__system.init_set.window_width, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
-                    @atomicStore(i32, &__system.init_set.window_height, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
-
-                    root.xfit_size();
-                }
-
-                S.sizeInited = true;
-            }
-            return 0;
-        },
         win32.WM_MOVE => {
             @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
             @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
@@ -474,19 +512,24 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             }
             @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
             @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(.{ @floatFromInt(__system.cursor_pos[0]), @floatFromInt(__system.cursor_pos[1]) });
             return 0;
         },
         // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
         win32.WM_MOUSELEAVE => {
             __system.mouse_out.store(true, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_leave_func) != null) system.a_fn(__system.mouse_leave_func).?();
             return 0;
         },
         win32.WM_MOUSEHOVER => {
             __system.mouse_out.store(false, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_hover_func) != null) system.a_fn(__system.mouse_hover_func).?();
             return 0;
         },
         win32.WM_MOUSEWHEEL => {
-            __system.mouse_scroll_dt.store(win32.GET_WHEEL_DELTA_WPARAM(wParam), std.builtin.AtomicOrder.monotonic);
+            const dt: i32 = win32.GET_WHEEL_DELTA_WPARAM(wParam);
+            __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
         },
         win32.WM_CLOSE => {
             if (!root.xfit_closing()) return 0;

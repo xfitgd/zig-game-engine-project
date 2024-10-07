@@ -4160,3 +4160,102 @@ pub extern fn IsIconic(hWnd: HWND) callconv(@import("std").os.windows.WINAPI) BO
 pub extern fn AnyPopup() callconv(@import("std").os.windows.WINAPI) BOOL;
 pub extern fn BringWindowToTop(hWnd: HWND) callconv(@import("std").os.windows.WINAPI) BOOL;
 pub extern fn IsZoomed(hWnd: HWND) callconv(@import("std").os.windows.WINAPI) BOOL;
+pub const HDEVNOTIFY = PVOID;
+pub const HDEVINFO = PVOID;
+pub extern fn RegisterDeviceNotificationA(hRecipient: HANDLE, NotificationFilter: LPVOID, Flags: DWORD) callconv(@import("std").os.windows.WINAPI) HDEVNOTIFY;
+pub extern fn RegisterDeviceNotificationW(hRecipient: HANDLE, NotificationFilter: LPVOID, Flags: DWORD) callconv(@import("std").os.windows.WINAPI) HDEVNOTIFY;
+
+pub const GUID = extern struct {
+    Data1: c_ulong = 0,
+    Data2: c_ushort = 0,
+    Data3: c_ushort = 0,
+    Data4: [8]UCHAR = @import("std").mem.zeroes([8]UCHAR),
+};
+pub const DEVICE_NOTIFY_WINDOW_HANDLE: DWORD = 0;
+pub const DEVICE_NOTIFY_SERVICE_HANDLE: DWORD = 1;
+pub const DEVICE_NOTIFY_ALL_INTERFACE_CLASSES: DWORD = 4;
+
+pub const DBT_DEVTYP_DEVICEINTERFACE: DWORD = 5;
+pub const DBT_DEVTYP_HANDLE: DWORD = 6;
+
+pub const DEV_BROADCAST_DEVICEINTERFACE_W = extern struct {
+    dbcc_size: DWORD = @sizeOf(DEV_BROADCAST_DEVICEINTERFACE_W),
+    dbcc_devicetype: DWORD = DBT_DEVTYP_DEVICEINTERFACE,
+    dbcc_reserved: DWORD = 0,
+    dbcc_classguid: GUID = .{},
+    dbcc_name: [1]wchar_t = @import("std").mem.zeroes([1]wchar_t),
+};
+pub const DEV_BROADCAST_DEVICEINTERFACE_A = extern struct {
+    dbcc_size: DWORD = @sizeOf(DEV_BROADCAST_DEVICEINTERFACE_A),
+    dbcc_devicetype: DWORD = DBT_DEVTYP_DEVICEINTERFACE,
+    dbcc_reserved: DWORD = 0,
+    dbcc_classguid: GUID = .{},
+    dbcc_name: [1]CHAR = @import("std").mem.zeroes([1]CHAR),
+};
+
+pub const PCWSTR = [*c]const wchar_t;
+pub const PCSTR = [*c]const CHAR;
+
+pub extern fn SetupDiGetClassDevsW(ClassGuid: *const GUID, Enumerator: PCWSTR, hwndParent: HWND, Flags: DWORD) callconv(@import("std").os.windows.WINAPI) HDEVINFO;
+pub extern fn SetupDiGetClassDevsA(ClassGuid: *const GUID, Enumerator: PCSTR, hwndParent: HWND, Flags: DWORD) callconv(@import("std").os.windows.WINAPI) HDEVINFO;
+
+pub const DIGCF_DEVICEINTERFACE: DWORD = 0x10;
+pub const DIGCF_PRESENT: DWORD = 0x2;
+
+pub const SP_DEVICE_INTERFACE_DATA = extern struct {
+    cbSize: DWORD = @sizeOf(SP_DEVICE_INTERFACE_DATA),
+    InterfaceClassGuid: GUID = .{},
+    Flags: DWORD = 0,
+    Reserved: ULONG_PTR = 0,
+};
+
+pub const SP_DEVINFO_DATA = extern struct {
+    cbSize: DWORD = @sizeOf(SP_DEVINFO_DATA),
+    ClassGuid: GUID = .{},
+    DevInst: DWORD = 0,
+    Reserved: ULONG_PTR = 0,
+};
+
+pub const SP_DEVICE_INTERFACE_DETAIL_DATA_W = extern struct {
+    cbSize: DWORD,
+    DevicePath: [1]WCHAR,
+};
+pub const SP_DEVICE_INTERFACE_DETAIL_DATA_A = extern struct {
+    cbSize: DWORD,
+    DevicePath: [1]CHAR,
+};
+
+pub const PSP_DEVICE_INTERFACE_DATA = [*c]SP_DEVICE_INTERFACE_DATA;
+pub const PSP_DEVICE_INTERFACE_DETAIL_DATA_W = [*c]SP_DEVICE_INTERFACE_DETAIL_DATA_W;
+pub const PSP_DEVICE_INTERFACE_DETAIL_DATA_A = [*c]SP_DEVICE_INTERFACE_DETAIL_DATA_A;
+pub const PSP_DEVINFO_DATA = [*c]SP_DEVINFO_DATA;
+
+pub extern fn SetupDiGetDeviceInterfaceDetailW(DeviceInfoSet: HDEVINFO, DeviceInterfaceData: PSP_DEVICE_INTERFACE_DATA, DeviceInterfaceDetailData: PSP_DEVICE_INTERFACE_DETAIL_DATA_W, DeviceInterfaceDetailDataSize: DWORD, RequiredSize: PDWORD, DeviceInfoData: PSP_DEVINFO_DATA) callconv(@import("std").os.windows.WINAPI) BOOL;
+pub extern fn SetupDiGetDeviceInterfaceDetailA(DeviceInfoSet: HDEVINFO, DeviceInterfaceData: PSP_DEVICE_INTERFACE_DATA, DeviceInterfaceDetailData: PSP_DEVICE_INTERFACE_DETAIL_DATA_A, DeviceInterfaceDetailDataSize: DWORD, RequiredSize: PDWORD, DeviceInfoData: PSP_DEVINFO_DATA) callconv(@import("std").os.windows.WINAPI) BOOL;
+
+pub extern fn SetupDiEnumDeviceInterfaces(DeviceInfoSet: HDEVINFO, DeviceInfoData: PSP_DEVINFO_DATA, InterfaceClassGuid: *const GUID, MemberIndex: DWORD, DeviceInterfaceData: PSP_DEVICE_INTERFACE_DATA) callconv(@import("std").os.windows.WINAPI) BOOL;
+
+pub extern fn SetupDiDestroyDeviceInfoList(DeviceInfoSet: HDEVINFO) callconv(@import("std").os.windows.WINAPI) BOOL;
+
+pub const RAWINPUTDEVICE = extern struct {
+    usUsagePage: USHORT = 0,
+    usUsage: USHORT = 0,
+    dwFlags: DWORD = 0,
+    hwndTarget: HWND = null,
+};
+pub const PCRAWINPUTDEVICE = [*c]const RAWINPUTDEVICE;
+pub const PRAWINPUTDEVICE = [*c]RAWINPUTDEVICE;
+
+pub extern fn RegisterRawInputDevices(pRawInputDevices: PCRAWINPUTDEVICE, uiNumDevices: UINT, cbSize: UINT) callconv(@import("std").os.windows.WINAPI) BOOL;
+
+pub const RIDEV_REMOVE: DWORD = 0x00000001;
+pub const RIDEV_EXCLUDE: DWORD = 0x00000010;
+pub const RIDEV_PAGEONLY: DWORD = 0x00000020;
+pub const RIDEV_NOLEGACY: DWORD = 0x00000030;
+pub const RIDEV_INPUTSINK: DWORD = 0x00000100;
+pub const RIDEV_CAPTUREMOUSE: DWORD = 0x00000200; // ;effective when mouse nolegacy is specified, otherwise it would be an error
+pub const RIDEV_NOHOTKEYS: DWORD = 0x00000200; // effective for keyboard.
+pub const RIDEV_APPKEYS: DWORD = 0x00000400; //; effective for keyboard.
+pub const RIDEV_EXINPUTSINK: DWORD = 0x00001000;
+pub const RIDEV_DEVNOTIFY: DWORD = 0x00002000;
+pub const RIDEV_EXMODEMASK: DWORD = 0x000000F0;

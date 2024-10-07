@@ -10,6 +10,10 @@ layout(binding = 2) uniform UniformBufferObject2 {
     mat4 proj;
 } proj;
 
+layout(binding = 3) uniform UniformBufferObject3 {
+    mat4 pre;
+} model;
+
 //#extension GL_EXT_debug_printf : enable
 layout(location = 0) in vec2 inPosition;
 

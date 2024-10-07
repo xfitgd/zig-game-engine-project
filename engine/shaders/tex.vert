@@ -9,6 +9,9 @@ layout(binding = 1) uniform UniformBufferObject1 {
 layout(binding = 2) uniform UniformBufferObject2 {
     mat4 proj;
 } proj;
+layout(binding = 3) uniform UniformBufferObject3 {
+    mat4 pre;
+} pre;
 
 //#extension GL_EXT_debug_printf : enable
 layout(location = 0) in vec2 inPosition;
@@ -17,6 +20,6 @@ layout(location = 0) out vec2 fragTexCoord;
 
 
 void main() {
-    gl_Position = proj.proj * view.view * model.model * vec4(inPosition, 0.0, 1.0);
+    gl_Position = pre.pre * proj.proj * view.view * model.model * vec4(inPosition, 0.0, 1.0);
     fragTexCoord = inTexCoord;
 }

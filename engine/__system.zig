@@ -43,6 +43,7 @@ pub var init_set: system.init_setting = .{};
 pub var delta_time: u64 = 0;
 pub var processor_core_len: u32 = 0;
 pub var platform_ver: system.platform_version = undefined;
+pub var __screen_orientation: window.screen_orientation = .unknown;
 
 pub var mouse_out: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 pub var mouse_scroll_dt: std.atomic.Value(i32) = std.atomic.Value(i32).init(0);
@@ -51,13 +52,22 @@ pub var Lmouse_click: std.atomic.Value(bool) = std.atomic.Value(bool).init(false
 pub var Mmouse_click: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 pub var Rmouse_click: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
-pub var Lmouse_down_func: ?*const fn () void = null;
-pub var Mmouse_down_func: ?*const fn () void = null;
-pub var Rmouse_down_func: ?*const fn () void = null;
+pub var Lmouse_down_func: ?*const fn (pos: math.point) void = null;
+pub var Mmouse_down_func: ?*const fn (pos: math.point) void = null;
+pub var Rmouse_down_func: ?*const fn (pos: math.point) void = null;
 
-pub var Lmouse_up_func: ?*const fn () void = null;
-pub var Mmouse_up_func: ?*const fn () void = null;
-pub var Rmouse_up_func: ?*const fn () void = null;
+pub var Lmouse_up_func: ?*const fn (pos: math.point) void = null;
+pub var Mmouse_up_func: ?*const fn (pos: math.point) void = null;
+pub var Rmouse_up_func: ?*const fn (pos: math.point) void = null;
+
+pub var mouse_scroll_func: ?*const fn (dt: i32) void = null;
+
+pub var mouse_leave_func: ?*const fn () void = null;
+pub var mouse_hover_func: ?*const fn () void = null;
+pub var mouse_move_func: ?*const fn (pos: math.point) void = null;
+
+pub var touch_down_func: ?*const fn (touch_idx: u32, pos: math.point) void = null;
+pub var touch_up_func: ?*const fn (touch_idx: u32, pos: math.point) void = null;
 
 pub var window_move_func: ?*const fn () void = null;
 pub var window_size_func: ?*const fn () void = null;
@@ -85,7 +95,15 @@ pub var font_started: if (system.dbg) bool else void = if (system.dbg) false els
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
     allocator = _allocator;
     monitors = ArrayList(system.monitor_info).init(allocator);
-    init_set = init_setting.*;
+    if (system.platform == .android) {
+        const width = init_set.window_width;
+        const height = init_set.window_height;
+        init_set = init_setting.*;
+        init_set.window_width = width;
+        init_set.window_height = height;
+    } else {
+        init_set = init_setting.*;
+    }
 
     title = allocator.dupeZ(u8, init_set.window_title) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
 }
