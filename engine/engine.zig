@@ -68,6 +68,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         "libvorbis.a",
         "libvorbisenc.a",
         "libvorbisfile.a",
+        "libminiaudio.a",
         "liblua.a",
     };
 
@@ -155,13 +156,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         const system = b.addModule("system", .{ .root_source_file = b.path(engine_path ++ "/system.zig") });
         system.addImport("build_options", build_options_module);
         result.root_module.addImport("build_options", build_options_module);
-        result.addCSourceFile(.{
-            .file = b.path(engine_path ++ "/lib/miniaudio.c"),
-            .flags = &.{
-                "-O3", "-D__clang__", "-U_MSC_VER",
-                "-fno-sanitize=undefined", //없으면 오류남
-            },
-        });
 
         result.addIncludePath(get_lazypath(b, engine_path ++ "/include"));
         result.addIncludePath(get_lazypath(b, engine_path ++ "/include/freetype"));
