@@ -15,6 +15,7 @@ const file = @import("engine/file.zig");
 const asset_file = @import("engine/asset_file.zig");
 const webp = @import("engine/webp.zig");
 const image_util = @import("engine/image_util.zig");
+const window = @import("engine/window.zig");
 
 const lua = @import("engine/lua.zig");
 
@@ -49,13 +50,23 @@ var font0_data: []u8 = undefined;
 var shape_src: graphics.shape.source = undefined;
 // var shape_src2: graphics.shape.source = undefined;
 // var extra_src = [_]*graphics.shape.source{&shape_src2};
-var image_src: graphics.image.source = undefined;
-var cmd: render_command = undefined;
+var image_src: graphics.texture = undefined;
+var cmd: *render_command = undefined;
 
 var color_trans: graphics.color_transform = undefined;
 
 pub const CANVAS_W: f32 = 1280;
 pub const CANVAS_H: f32 = 720;
+
+// fn error_func(text: []u8, stack_trace: []u8) void {
+//     var fs: file = .{};
+//     fs.open("xfit_err.log", .{
+//         .truncate = false,
+//     }) catch unreachable;
+//     _ = fs.write(text) catch unreachable;
+//     _ = fs.write(stack_trace) catch unreachable;
+//     fs.close();
+// }
 
 pub fn xfit_init() void {
     // const luaT = lua.c.luaL_newstate();
@@ -67,6 +78,8 @@ pub fn xfit_init() void {
     // ress = lua.c.lua_getglobal(luaT, "Printhello");
     // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
 
+    //system.set_error_handling_func(error_func);
+
     font.start();
 
     objects = ArrayList(*graphics.iobject).init(allocator);
@@ -74,9 +87,10 @@ pub fn xfit_init() void {
     objects_mem_pool = MemoryPoolExtra(graphics.iobject, .{}).init(allocator);
     indices_mem_pool = MemoryPoolExtra(graphics.dummy_indices, .{}).init(allocator);
 
-    const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
     g_proj.build(.readwrite_cpu);
+
+    const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
     const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
 
@@ -94,14 +108,14 @@ pub fn xfit_init() void {
     var img_decoder: webp = .{};
     img_decoder.load_header(data) catch |e| system.handle_error3("test.webp loadheader fail", e);
 
-    image_src = graphics.image.source.init();
-    image_src.texture.width = img_decoder.width();
-    image_src.texture.height = img_decoder.height();
-    image_src.texture.pixels = allocator.alloc(u8, img_decoder.width() * img_decoder.height() * 4) catch |e| system.handle_error3("_texture.pixels alloc", e);
+    image_src = graphics.texture.init();
+    image_src.width = img_decoder.width();
+    image_src.height = img_decoder.height();
+    image_src.pixels = allocator.alloc(u8, img_decoder.width() * img_decoder.height() * 4) catch |e| system.handle_error3("_texture.pixels alloc", e);
 
-    img_decoder.decode(.RGBA, data, image_src.texture.pixels.?) catch |e| system.handle_error3("test.webp decode", e);
+    img_decoder.decode(.RGBA, data, image_src.pixels.?) catch |e| system.handle_error3("test.webp decode", e);
 
-    image_src.texture.build();
+    image_src.build();
 
     img.*._image.src = &image_src;
 
@@ -109,6 +123,9 @@ pub fn xfit_init() void {
     font0 = font.init(font0_data, 0);
 
     font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    // var t1 = std.time.Timer.start() catch unreachable;
+    // font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    // system.print("{d}", .{t1.lap()});
     //font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
     //font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, .{ 0, 1, 1, 1 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
@@ -135,8 +152,8 @@ pub fn xfit_init() void {
     img.*._image.transform.camera = &g_camera;
     img.*._image.transform.projection = &g_proj;
     img.*._image.transform.model = matrix.scaling(
-        @as(f32, @floatFromInt(image_src.texture.width)) * 2,
-        @as(f32, @floatFromInt(image_src.texture.height)) * 2,
+        @as(f32, @floatFromInt(image_src.width)) * 2,
+        @as(f32, @floatFromInt(image_src.height)) * 2,
         1.0,
     );
     img.*.build();
@@ -145,10 +162,9 @@ pub fn xfit_init() void {
     objects.append(text_shape) catch system.handle_error_msg2("objects.append(text_shape)");
 
     cmd = render_command.init();
-    cmd.scene = objects.items[0..objects.items.len];
-    cmd.refresh();
+    cmd.*.scene = objects.items[0..objects.items.len];
 
-    graphics.render_cmd = &cmd;
+    graphics.render_cmd = cmd;
 
     var start_sem: std.Thread.Semaphore = .{};
 
@@ -166,7 +182,7 @@ pub fn xfit_init() void {
     start_sem.wait();
 }
 fn move_start_callback(start_sem: *std.Thread.Semaphore) bool {
-    shape_src.build(.read_gpu);
+    shape_src.build(.read_gpu, .readwrite_cpu);
     cmd.scene.?[1].*.build();
 
     start_sem.*.post();
@@ -181,7 +197,7 @@ fn move_callback() !bool {
         cmd.scene.?[1].*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0));
     } else return false;
 
-    shape_src.color[3] += 0.001;
+    shape_src.color[3] += 0.005;
     if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
 
     // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
@@ -192,7 +208,7 @@ fn move_callback() !bool {
 
     render_command.unlock_for_update();
 
-    dx += 0.3;
+    dx += 1;
     if (dx >= 200) dx = 0;
     return true;
 }
@@ -213,8 +229,8 @@ pub fn xfit_destroy() void {
     shape_src.deinit_for_alloc();
     //shape_src2.deinit_for_alloc();
 
-    allocator.free(image_src.texture.pixels.?);
-    image_src.texture.deinit();
+    allocator.free(image_src.pixels.?);
+    image_src.deinit();
 
     g_camera.deinit();
     g_proj.deinit();

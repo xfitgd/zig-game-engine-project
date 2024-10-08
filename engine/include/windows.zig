@@ -1717,6 +1717,24 @@ pub const struct__RECT = extern struct {
     right: LONG = @import("std").mem.zeroes(LONG),
     bottom: LONG = @import("std").mem.zeroes(LONG),
 };
+
+pub const RDW_INVALIDATE: DWORD = 0x0001;
+pub const RDW_INTERNALPAINT: DWORD = 0x0002;
+pub const RDW_ERASE: DWORD = 0x0004;
+
+pub const RDW_VALIDATE: DWORD = 0x0008;
+pub const RDW_NOINTERNALPAINT: DWORD = 0x0010;
+pub const RDW_NOERASE: DWORD = 0x0020;
+
+pub const RDW_NOCHILDREN: DWORD = 0x0040;
+pub const RDW_ALLCHILDREN: DWORD = 0x0080;
+
+pub const RDW_UPDATENOW: DWORD = 0x0100;
+pub const RDW_ERASENOW: DWORD = 0x0200;
+
+pub const RDW_FRAME: DWORD = 0x0400;
+pub const RDW_NOFRAME: DWORD = 0x0800;
+
 pub const RECT = struct__RECT;
 pub const PRECT = [*c]struct__RECT;
 pub const LPRECT = [*c]struct__RECT;
@@ -3537,6 +3555,9 @@ pub const struct_HRSRC__ = extern struct {
 };
 pub const HRSRC = [*c]struct_HRSRC__;
 
+pub extern fn PostThreadMessageA(idThread: DWORD, Msg: UINT, wParam: WPARAM, lParam: LPARAM) callconv(@import("std").os.windows.WINAPI) BOOL;
+pub extern fn PostThreadMessageW(idThread: DWORD, Msg: UINT, wParam: WPARAM, lParam: LPARAM) callconv(@import("std").os.windows.WINAPI) BOOL;
+
 pub extern fn MapVirtualKeyA(uCode: UINT, uMapType: UINT) callconv(@import("std").os.windows.WINAPI) UINT;
 pub extern fn MapVirtualKeyW(uCode: UINT, uMapType: UINT) callconv(@import("std").os.windows.WINAPI) UINT;
 pub extern fn MapVirtualKeyExA(uCode: UINT, uMapType: UINT, dwhkl: HKL) callconv(@import("std").os.windows.WINAPI) UINT;
@@ -3762,6 +3783,8 @@ pub extern fn GetPropA(hWnd: HWND, lpString: LPCSTR) callconv(@import("std").os.
 pub extern fn GetPropW(hWnd: HWND, lpString: LPCWSTR) callconv(@import("std").os.windows.WINAPI) HANDLE;
 pub extern fn RemovePropA(hWnd: HWND, lpString: LPCSTR) callconv(@import("std").os.windows.WINAPI) HANDLE;
 pub extern fn RemovePropW(hWnd: HWND, lpString: LPCWSTR) callconv(@import("std").os.windows.WINAPI) HANDLE;
+
+pub extern fn WaitMessage() callconv(@import("std").os.windows.WINAPI) BOOL;
 
 pub const PROPENUMPROCEXA = ?*const fn (HWND, LPSTR, HANDLE, ULONG_PTR) callconv(@import("std").os.windows.WINAPI) BOOL;
 pub const PROPENUMPROCEXW = ?*const fn (HWND, LPWSTR, HANDLE, ULONG_PTR) callconv(@import("std").os.windows.WINAPI) BOOL;

@@ -112,16 +112,13 @@ pub fn get_AssetManager() ?*android.AAssetManager {
 }
 
 pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
+    if (vkSurface.* != null) {
+        __vulkan.vk.vkDestroySurfaceKHR(@ptrCast(vkInstance), @as(*__vulkan.vk.VkSurfaceKHR, @ptrCast(vkSurface)).*, null);
+    }
     const androidSurfaceCreateInfo: __vulkan.vk.VkAndroidSurfaceCreateInfoKHR = .{ .window = @ptrCast(app.window), .flags = 0 };
     const result = __vulkan.vk.vkCreateAndroidSurfaceKHR(@ptrCast(vkInstance), &androidSurfaceCreateInfo, null, @ptrCast(vkSurface));
 
     system.handle_error(result == __vulkan.vk.VK_SUCCESS, "vkCreateAndroidSurfaceKHR code : {d}", .{result});
-}
-
-pub fn vulkan_android_recreate_surface(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vulkan.vk.VkSurfaceKHR) void {
-    __vulkan.vk.vkDestroySurfaceKHR(@ptrCast(vkInstance), @as(*__vulkan.vk.VkSurfaceKHR, @ptrCast(vkSurface)).*, null);
-
-    vulkan_android_start(vkInstance, vkSurface);
 }
 
 fn destroy_android() void {

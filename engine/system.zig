@@ -39,7 +39,7 @@ pub inline fn activated() bool {
 }
 
 pub inline fn exiting() bool {
-    return __system.exiting.load(std.builtin.AtomicOrder.acquire);
+    return __system.exiting.load(std.builtin.AtomicOrder.monotonic);
 }
 
 pub inline fn a_fn(func: anytype) @TypeOf(func) {
@@ -331,40 +331,32 @@ pub inline fn unreachable2() void {
     }
 }
 
-pub inline fn break_or_exit() void {
-    if (platform == .android) {
-        std.c.abort();
-        return;
-    }
-    std.process.abort();
-}
-
 pub inline fn handle_error_msg(errtest: bool, msg: []const u8) void {
     if (!errtest) {
         print_error("ERR {s}\n", .{msg});
-        break_or_exit();
+        unreachable;
     }
 }
 pub inline fn handle_error_msg2(msg: []const u8) void {
     print_error("ERR {s}\n", .{msg});
-    break_or_exit();
+    unreachable;
 }
 
 pub inline fn handle_error2(comptime fmt: []const u8, args: anytype) void {
     print_error("ERR " ++ fmt ++ "\n", args);
-    break_or_exit();
+    unreachable;
 }
 
 pub inline fn handle_error(errtest: bool, comptime fmt: []const u8, args: anytype) void {
     if (!errtest) {
         print_error("ERR " ++ fmt ++ "\n", args);
-        break_or_exit();
+        unreachable;
     }
 }
 
 pub inline fn handle_error3(funcion_name: []const u8, err: anytype) void {
     print_error("ERR {s} {s}\n", .{ funcion_name, @errorName(err) });
-    break_or_exit();
+    unreachable;
 }
 
 pub inline fn sleep(ns: u64) void {

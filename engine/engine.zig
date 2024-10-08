@@ -140,6 +140,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
 
             result.subsystem = .Windows;
             result.linkSystemLibrary("setupapi");
+            //result.linkSystemLibrary("Gdi32");
 
             result.addObjectFile(get_lazypath(b, engine_path ++ "/lib/windows/vulkan.lib"));
             for (lib_names) |name| {

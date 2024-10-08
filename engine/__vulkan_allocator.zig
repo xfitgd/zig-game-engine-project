@@ -10,6 +10,7 @@ const __system = @import("__system.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
 const mem = @import("mem.zig");
+const graphics = @import("graphics.zig");
 
 const BLOCK_LEN = 8192;
 const NODE_SIZE = 2048;
@@ -26,7 +27,7 @@ buffer_ids: ArrayList(*vulkan_res),
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
     var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
-    vk.vkGetPhysicalDeviceMemoryProperties(__vulkan.vk_physical_devices[0], &mem_prop);
+    vk.vkGetPhysicalDeviceMemoryProperties(__vulkan.vk_physical_device, &mem_prop);
 
     var i: u32 = 0;
     while (i < mem_prop.memoryTypeCount) : (i += 1) {
@@ -35,7 +36,7 @@ fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
         }
     }
     system.print_error("ERR find_memory_type.memory_type_not_found\n", .{});
-    system.unreachable2();
+    unreachable;
 }
 
 pub const res_type = enum { buffer, image };
@@ -90,6 +91,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
 const vulkan_res = struct {
     is_free: []bool,
     cell_size: usize,
+    //alignment: usize,
     len: usize,
     cur: usize,
     mem: vk.VkDeviceMemory,
@@ -193,12 +195,15 @@ const vulkan_res = struct {
     ///bind_buffer에서 반환된 idx를 사용.
     fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) void {
         self.*.is_free[_idx] = true;
-        self.*.is_full = false;
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
             vk.VkImage => vk.vkDestroyImage(__vulkan.vkDevice, _buf, null),
             else => @compileError("invaild buf type"),
         }
+        for (self.*.is_free) |v| {
+            if (!v) return;
+        }
+        self.*.deinit();
     }
 };
 
@@ -218,24 +223,31 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
     const cell = math.ceil_up(max_size, _mem_require.*.alignment);
     for (self.buffer_ids.items) |value| {
         //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
-        if (max_size > value.*.cell_size or ((value.*.cell_size % _mem_require.*.alignment) != 0) or ((max_size >= MINIMUM_SIZE) and (max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size))))))) continue;
+        if (max_size > value.*.cell_size or ((value.*.cell_size % _mem_require.*.alignment) != 0) or ((value.*.cell_size >= MINIMUM_SIZE) and (max_size < @as(usize, @intFromFloat(MINIMUM_SIZE_DIV_CELL * @as(f64, @floatFromInt(value.*.cell_size))))))) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
         _out_idx.* = value.*.bind_any(_res) catch continue;
+        //system.print_debug("(1) {d} {d} {d} {d}", .{ max_size, value.*.cell_size, value.*.len, _mem_require.*.alignment });
         res = value;
         break;
     }
     if (res == null) {
         res = self.*.buffers.create() catch |err| {
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffers.create\n", .{@errorName(err)});
-            system.unreachable2();
+            unreachable;
         };
+
+        // system.print_debug("(2) {d} {d} {d}", .{
+        //     max_size,
+        //     std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
+        //     _mem_require.*.alignment,
+        // });
 
         res.?.* = vulkan_res.init(cell, std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1, _mem_require.*.memoryTypeBits, _prop, self);
 
-        _out_idx.* = res.?.*.bind_any(_res) catch system.unreachable2(); //발생할수 없는 오류
+        _out_idx.* = res.?.*.bind_any(_res) catch unreachable; //발생할수 없는 오류
         self.*.buffer_ids.append(res.?) catch |err| {
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
-            system.unreachable2();
+            unreachable;
         };
     }
     return res.?;
@@ -290,7 +302,13 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     var staging_buf_idx: usize = undefined;
     var img_info = _img_info.*;
 
-    img_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (_data != null) {
+        img_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+        if (img_info.extent.width * img_info.extent.width * img_info.extent.depth * 4 > _data.?.len) {
+            system.handle_error_msg2("create_image _data not enough for size(rect).");
+        }
+    }
 
     result = vk.vkCreateImage(__vulkan.vkDevice, &img_info, null, &_out_vulkan_image_node.*.res);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_buffer.vkCreateBuffer _out_vulkan_buffer_node.*.res code : {d}", .{result});
@@ -332,12 +350,51 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
 
         var _out_data: ?*anyopaque = null;
         staging_alloc.*.map(staging_buf_idx, &_out_data);
-        @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data))), _data.?);
+        @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data.?);
         staging_alloc.*.unmap();
 
-        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, &img_info, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth);
-        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, &img_info, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        staging_alloc.unbind_res(staging_buf, staging_buf_idx);
+    }
+}
+
+pub fn copy_texture(self: *Self, image: *graphics.texture, _data: []const u8, rect: ?math.recti) void {
+    var result: c_int = undefined;
+    var mem_require: vk.VkMemoryRequirements = undefined;
+    var staging_alloc: *vulkan_res = undefined;
+    var staging_buf: vk.VkBuffer = undefined;
+    var staging_buf_idx: usize = undefined;
+
+    if (_data != null) {
+        const size = if (rect == null) image.width * image.height * 4 else rect.?.width() * rect.?.height() * 4;
+        if (size > image.width * image.height * 4) {
+            system.handle_error_msg2("copy_image rect region can't bigger than image size.");
+        }
+        if (size > _data.len) {
+            system.handle_error_msg2("copy_image _data not enough for size(rect).");
+        }
+        const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+        result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateBuffer staging_buf : {d}", .{result});
+
+        vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
+
+        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, 0);
+
+        var _out_data: ?*anyopaque = null;
+        staging_alloc.*.map(staging_buf_idx, &_out_data);
+        @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
+        staging_alloc.*.unmap();
+
+        __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        if (rect != null) {
+            __vulkan.copy_buffer_to_image2(staging_buf, image.*.__image.res, rect, 1);
+        } else {
+            __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1);
+        }
+        __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     }
 }

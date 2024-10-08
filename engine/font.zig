@@ -91,8 +91,10 @@ fn load_glyph(self: *Self, _char: u21) font_error!void {
 }
 
 fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
-    if (out_shape_src.vertices.array == null) out_shape_src.*.vertices.array = try allocator.alloc(graphics.shape_color_vertex_2d, 0);
-    if (out_shape_src.indices.array == null) out_shape_src.*.indices.array = try allocator.alloc(u32, 0);
+    if (out_shape_src.vertices.array != null) allocator.free(out_shape_src.*.vertices.array.?);
+    if (out_shape_src.indices.array != null) allocator.free(out_shape_src.*.indices.array.?);
+    out_shape_src.*.vertices.array = try allocator.alloc(graphics.shape_color_vertex_2d, 0);
+    out_shape_src.*.indices.array = try allocator.alloc(u32, 0);
 }
 
 pub fn render_string(self: *Self, _str: []const u8, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
@@ -132,6 +134,7 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
 
     if (char_d != null) {} else {
         try load_glyph(self, char);
+
         var char_d2: char_data = undefined;
 
         var poly: geometry.polygon = .{ .lines = try allocator.alloc([]geometry.line, self.*.__face.*.glyph.*.outline.n_contours) };
