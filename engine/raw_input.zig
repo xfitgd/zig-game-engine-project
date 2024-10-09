@@ -1,7 +1,10 @@
+//Windows Only
 const std = @import("std");
 
 const __windows = @import("__windows.zig");
+const system = @import("system.zig");
 const __raw_input = @import("__raw_input.zig");
+
 
 pub const GUID = __windows.win32.GUID;
 

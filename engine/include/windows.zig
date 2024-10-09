@@ -4306,9 +4306,29 @@ pub const DEV_BROADCAST_HDR = extern struct {
     dbch_reserved: DWORD,
 };
 
+pub const BOOLEAN = UCHAR;
+
+pub const HID_COLLECTION_INFORMATION = struct {
+    DescriptorSize: ULONG,
+    Polled: BOOLEAN,
+    Reserved1: [1]UCHAR,
+    VendorID: USHORT,
+    ProductID: USHORT,
+    VersionNumber: USHORT,
+};
+
 pub const DBT_DEVICEARRIVAL: DWORD = 0x8000; // system detected a new device
 pub const DBT_DEVICEQUERYREMOVE: DWORD = 0x8001; // wants to remove, may fail
 pub const DBT_DEVICEQUERYREMOVEFAILED: DWORD = 0x8002; // removal aborted
 pub const DBT_DEVICEREMOVEPENDING: DWORD = 0x8003; // about to remove, still avail.
 pub const DBT_DEVICEREMOVECOMPLETE: DWORD = 0x8004; // device is gone
 pub const DBT_DEVICETYPESPECIFIC: DWORD = 0x8005; // type specific event
+
+pub const PUINT = [*c]UINT;
+
+pub const RIDI_PREPARSEDDATA: UINT = 0x20000005;
+pub const RIDI_DEVICENAME: UINT = 0x20000007;
+pub const RIDI_DEVICEINFO: UINT = 0x2000000b;
+
+pub extern fn GetRawInputDeviceInfoA(hDevice: HANDLE, uiCommand: UINT, pData: LPVOID, pcbSize: PUINT) callconv(@import("std").os.windows.WINAPI) UINT;
+pub extern fn GetRawInputDeviceInfoW(hDevice: HANDLE, uiCommand: UINT, pData: LPVOID, pcbSize: PUINT) callconv(@import("std").os.windows.WINAPI) UINT;

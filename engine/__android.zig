@@ -436,7 +436,6 @@ fn process_input(_source: ?*android_poll_source) void {
     _ = _source;
     var event: ?*android.AInputEvent = null;
     while (android.AInputQueue_getEvent(app.input_queue, &event) >= 0) {
-        //if (system.dbg) _ = LOGV("New input event: type=%d", .{android.AInputEvent_getType(event)});
         if (android.AInputQueue_preDispatchEvent(app.input_queue, event) != 0) {
             continue;
         }
@@ -492,57 +491,67 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
 
 fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
     const evt = android.AInputEvent_getType(_event);
+
     if (evt == android.AINPUT_EVENT_TYPE_MOTION) {
         const tool_type = android.AMotionEvent_getToolType(_event, 0);
-        var count: u32 = undefined;
-        if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
-            count = 1;
-        } else if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_FINGER) {
-            count = @min(100, android.AMotionEvent_getPointerCount(_event));
-        } else return 0;
-        const poses = __system.allocator.alloc(point, count) catch system.handle_error_msg2("engine_handle_input alloc poses");
-        defer __system.allocator.free(poses);
-        var i: u32 = 0;
-        while (i < poses.len) : (i += 1) {
-            poses[i][0] = android.AMotionEvent_getX(_event, i);
-            poses[i][1] = android.AMotionEvent_getY(_event, i);
-        }
-        @atomicStore(i32, &__system.cursor_pos[0], @intFromFloat(poses[0][0]), std.builtin.AtomicOrder.monotonic);
-        @atomicStore(i32, &__system.cursor_pos[1], @intFromFloat(poses[0][1]), std.builtin.AtomicOrder.monotonic);
-        if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
-            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(poses[0]);
-        }
+        const src = android.AInputEvent_getSource(_event);
+        if ((src & android.AINPUT_SOURCE_CLASS_JOYSTICK) == android.AINPUT_SOURCE_CLASS_JOYSTICK) {
+            if (system.dbg) {
+                _ = LOGV("New input event: type=%d", .{
+                    src,
+                });
+            }
+        } else {
+            var count: u32 = undefined;
+            if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
+                count = 1;
+            } else if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_FINGER) {
+                count = @min(100, android.AMotionEvent_getPointerCount(_event));
+            } else return 0;
+            const poses = __system.allocator.alloc(point, count) catch system.handle_error_msg2("engine_handle_input alloc poses");
+            defer __system.allocator.free(poses);
+            var i: u32 = 0;
+            while (i < poses.len) : (i += 1) {
+                poses[i][0] = android.AMotionEvent_getX(_event, i);
+                poses[i][1] = android.AMotionEvent_getY(_event, i);
+            }
+            @atomicStore(i32, &__system.cursor_pos[0], @intFromFloat(poses[0][0]), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos[1], @intFromFloat(poses[0][1]), std.builtin.AtomicOrder.monotonic);
+            if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
+                if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(poses[0]);
+            }
 
-        const act = android.AMotionEvent_getAction(_event);
-        switch (act & android.AMOTION_EVENT_ACTION_MASK) {
-            android.AMOTION_EVENT_ACTION_DOWN => {
-                if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(poses[0]);
-                if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(0, poses[0]);
-            },
-            android.AMOTION_EVENT_ACTION_UP => {
-                if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(poses[0]);
-                if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(0, poses[0]);
-            },
-            android.AMOTION_EVENT_ACTION_POINTER_DOWN => {
-                const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
-                if (pointer_id < count) {
-                    if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(pointer_id, poses[pointer_id]);
-                } else {
-                    @branchHint(.unlikely);
-                    system.print("WARN engine_handle_input AMOTION_EVENT_ACTION_POINTER_DOWN out of range poses[{d}] value : {d}\n", .{ count, pointer_id });
-                    return 0;
-                }
-            },
-            android.AMOTION_EVENT_ACTION_POINTER_UP => {
-                const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
-                if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(pointer_id, poses[pointer_id]);
-            },
-            android.AMOTION_EVENT_ACTION_SCROLL => {
-                const dt: i32 = @intFromFloat(android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_VSCROLL, 0) * 100);
-                __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
-                if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
-            },
-            else => {},
+            const act = android.AMotionEvent_getAction(_event);
+            switch (act & android.AMOTION_EVENT_ACTION_MASK) {
+                android.AMOTION_EVENT_ACTION_DOWN => {
+                    if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(poses[0]);
+                    if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(0, poses[0]);
+                },
+                android.AMOTION_EVENT_ACTION_UP => {
+                    if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(poses[0]);
+                    if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(0, poses[0]);
+                },
+                android.AMOTION_EVENT_ACTION_POINTER_DOWN => {
+                    const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
+                    if (pointer_id < count) {
+                        if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(pointer_id, poses[pointer_id]);
+                    } else {
+                        @branchHint(.unlikely);
+                        system.print("WARN engine_handle_input AMOTION_EVENT_ACTION_POINTER_DOWN out of range poses[{d}] value : {d}\n", .{ count, pointer_id });
+                        return 0;
+                    }
+                },
+                android.AMOTION_EVENT_ACTION_POINTER_UP => {
+                    const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
+                    if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(pointer_id, poses[pointer_id]);
+                },
+                android.AMOTION_EVENT_ACTION_SCROLL => {
+                    const dt: i32 = @intFromFloat(android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_VSCROLL, 0) * 100);
+                    __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
+                    if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
+                },
+                else => {},
+            }
         }
         return 1;
     } else if (evt == android.AINPUT_EVENT_TYPE_KEY) {

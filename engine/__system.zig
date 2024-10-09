@@ -106,7 +106,7 @@ pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_sett
     }
 
     title = allocator.dupeZ(u8, init_set.window_title) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
-    __raw_input.start();
+    if (system.platform == .windows) __raw_input.start();
 }
 
 pub fn loop() void {
@@ -152,7 +152,7 @@ pub fn destroy() void {
     }
     monitors.deinit();
     allocator.free(title);
-    __raw_input.destroy();
+    if (system.platform == .windows) __raw_input.destroy();
 }
 
 pub fn real_destroy() void {

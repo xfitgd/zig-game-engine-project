@@ -78,7 +78,7 @@ const USER_DATA = struct {
     change_fn_: ChangeDeviceFn,
 };
 
-var raw: raw_input = .{ .handle = undefined };
+var raw: if (system.platform == .windows) raw_input else void = if (system.platform == .windows) .{ .handle = undefined } else {};
 var out_data: [XBOX_OUT_PACKET_SIZE]u8 = undefined;
 
 fn change_fn(_device_idx: u32, add_or_remove: bool, _user_data: ?*anyopaque) void {
@@ -87,16 +87,24 @@ fn change_fn(_device_idx: u32, add_or_remove: bool, _user_data: ?*anyopaque) voi
 }
 
 pub fn start(_change_fn: ChangeDeviceFn) raw_input.ERROR!void {
-    raw = .{ .handle = undefined };
     const data: *anyopaque = @ptrCast(__system.allocator.create(USER_DATA) catch system.handle_error_msg2("xbox_pad_input create USER_DATA"));
     @as(*USER_DATA, @alignCast(@ptrCast(data))).*.change_fn_ = _change_fn;
-    try raw.init(XBOX_MAX_CONTROLLERS, &XBOX_WIN_GUID, change_fn, data);
+    if (system.platform == .windows) {
+        raw = .{ .handle = undefined };
+        try raw.init(XBOX_MAX_CONTROLLERS, &XBOX_WIN_GUID, change_fn, data);
+    } else if (system.platform == .android) {} else {
+        @compileError("not support platform");
+    }
 }
 
 pub fn destroy() void {
-    const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
-    __system.allocator.destroy(@as(*USER_DATA, @alignCast(@ptrCast(data.?))));
-    raw.deinit();
+    if (system.platform == .windows) {
+        const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
+        __system.allocator.destroy(@as(*USER_DATA, @alignCast(@ptrCast(data.?))));
+        raw.deinit();
+    } else if (system.platform == .android) {} else {
+        @compileError("not support platform");
+    }
 }
 
 fn callback(out: []u8, device_idx: u32, _user_data: ?*anyopaque) void {
@@ -131,10 +139,13 @@ fn callback(out: []u8, device_idx: u32, _user_data: ?*anyopaque) void {
 }
 
 pub fn set_callback(_fn: CallbackFn) void {
-    const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
-    @as(*USER_DATA, @alignCast(@ptrCast(data.?))).*.fn_ = _fn;
-
-    raw.set_callback(callback, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE], XBOX_CONTROL_CODE);
+    if (system.platform == .windows) {
+        const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
+        @as(*USER_DATA, @alignCast(@ptrCast(data.?))).*.fn_ = _fn;
+        raw.set_callback(callback, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE], XBOX_CONTROL_CODE);
+    } else if (system.platform == .android) {} else {
+        @compileError("not support platform");
+    }
 }
 
 pub const XBOX_VIBRATION = struct {
@@ -151,16 +162,22 @@ pub fn set_vibration(
     device_idx: u32,
     vib: XBOX_VIBRATION,
 ) !u32 {
-    const data: [9]u8 = .{
-        0x03,
-        0x0F,
-        vib.left_trigger,
-        vib.right_trigger,
-        vib.left_rumble,
-        vib.right_rumble,
-        vib.on_time,
-        vib.off_time,
-        vib.repeat,
-    };
-    return try raw.set(device_idx, data[0..data.len]);
+    if (system.platform == .windows) {
+        const data: [9]u8 = .{
+            0x03,
+            0x0F,
+            vib.left_trigger,
+            vib.right_trigger,
+            vib.left_rumble,
+            vib.right_rumble,
+            vib.on_time,
+            vib.off_time,
+            vib.repeat,
+        };
+        return try raw.set(device_idx, data[0..data.len]);
+    } else if (system.platform == .android) {
+        return 0;
+    } else {
+        @compileError("not support platform");
+    }
 }
