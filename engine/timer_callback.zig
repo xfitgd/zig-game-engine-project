@@ -1,6 +1,8 @@
 const std = @import("std");
 const system = @import("system.zig");
 
+const graphics = @import("graphics.zig");
+
 inline fn loop(wait_nanosec: u64, comptime function: anytype, args: anytype) bool {
     system.sleep(wait_nanosec);
     return callback_(function, args);
@@ -35,6 +37,7 @@ fn callback(wait_nanosec: u64, repeat: u64, comptime function: anytype, args: an
     } else {
         while (re > 0 and loop(wait_nanosec, function, args)) : (re -= 1) {}
     }
+    graphics.deinit_vk_allocator_thread();
 }
 
 fn callback2(
@@ -59,6 +62,7 @@ fn callback2(
     if (@TypeOf(end_func) != @TypeOf(null)) {
         _ = callback_(end_func, end_args);
     }
+    graphics.deinit_vk_allocator_thread();
 }
 
 ///no spawn thread each callback function bool callback function return false or cause error -> exit timer

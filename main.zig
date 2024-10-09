@@ -174,22 +174,20 @@ pub fn xfit_init() void {
         move_callback,
         .{},
         move_start_callback,
-        move_end_callback,
+        null,
         .{&start_sem},
         .{},
     ) catch |e| system.handle_error3("timer_callback.start", e);
 
     start_sem.wait();
 }
+
 fn move_start_callback(start_sem: *std.Thread.Semaphore) bool {
     shape_src.build(.read_gpu, .readwrite_cpu);
     cmd.scene.?[1].*.build();
 
     start_sem.*.post();
     return true;
-}
-fn move_end_callback() void {
-    graphics.deinit_vk_allocator_thread();
 }
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {

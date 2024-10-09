@@ -8,6 +8,7 @@ const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
 const render_command = @import("render_command.zig");
+const __raw_input = @import("__raw_input.zig");
 const graphics = @import("graphics.zig");
 const math = @import("math.zig");
 
@@ -98,133 +99,13 @@ pub fn system_windows_start() void {
     return;
 }
 
-const MSG_STRUCT = struct {
-    msg: u32,
-    wparam: win32.WPARAM,
-    lparam: win32.LPARAM,
-};
-
-var msg_queue: ArrayList(MSG_STRUCT) = undefined;
-var msg_mutex: std.Thread.Mutex = .{};
-
 fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
     _ = param;
     __vulkan.vulkan_start();
 
     root.xfit_init();
-    const S = struct {
-        var activateInited = false;
-    };
 
-    var msg: MSG_STRUCT = undefined;
     while (!__system.exiting.load(std.builtin.AtomicOrder.acquire)) {
-        if (msg_mutex.tryLock()) {
-            while (msg_queue.items.len > 0) {
-                msg = msg_queue.pop();
-                switch (msg.msg) {
-                    win32.WM_LBUTTONDOWN => {
-                        __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_MBUTTONDOWN => {
-                        __system.Mmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_RBUTTONDOWN => {
-                        __system.Rmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_LBUTTONUP => {
-                        __system.Lmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_MBUTTONUP => {
-                        __system.Mmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_RBUTTONUP => {
-                        __system.Rmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(msg.lparam)), @floatFromInt(win32.HIWORD(msg.lparam)) });
-                    },
-                    win32.WM_KEYDOWN => {
-                        if (msg.wparam < __system.KEY_SIZE) {
-                            if (!__system.keys[msg.wparam].load(std.builtin.AtomicOrder.monotonic)) {
-                                __system.keys[msg.wparam].store(true, std.builtin.AtomicOrder.monotonic);
-                                //system.print_debug("input key_down {d}", .{msg.wparam});
-                                if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(msg.wparam));
-                            }
-                        } else {
-                            system.print("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, msg.wparam });
-                        }
-                    },
-                    win32.WM_KEYUP => {
-                        if (msg.wparam < __system.KEY_SIZE) {
-                            __system.keys[msg.wparam].store(false, std.builtin.AtomicOrder.monotonic);
-                            //system.print_debug("input key_up {d}", .{msg.wparam});
-                            if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(msg.wparam));
-                        } else {
-                            system.print("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, msg.wparam });
-                        }
-                    },
-                    win32.WM_KILLFOCUS => {
-                        for (&__system.keys) |*value| {
-                            value.*.store(false, std.builtin.AtomicOrder.monotonic);
-                        }
-                    },
-                    // win32.WM_INPUT => {
-                    //     var rawinput: win32.RAWINPUT = std.mem.zeroes(win32.RAWINPUT);
-                    //     var unsize: u32 = @sizeOf(win32.RAWINPUT);
-                    //     _ = win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(msg.lparam))), win32.RID_INPUT, &rawinput, &unsize, @sizeOf(win32.RAWINPUTHEADER));
-                    //     switch (rawinput.header.dwType) {
-                    //         else => {},
-                    //     }
-                    // },
-                    win32.WM_ACTIVATE => {
-                        if (S.activateInited) {
-                            const pause = (win32.HIWORD(msg.wparam) != 0);
-                            const activated = (win32.LOWORD(msg.wparam) != win32.WA_INACTIVE);
-                            __system.pause.store(pause, std.builtin.AtomicOrder.monotonic);
-                            __system.activated.store(activated, std.builtin.AtomicOrder.monotonic);
-
-                            root.xfit_activate(activated, pause);
-                        }
-                        S.activateInited = true;
-                    },
-                    win32.WM_MOVE => {
-                        @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(msg.lparam)), std.builtin.AtomicOrder.monotonic);
-                        @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(msg.lparam)), std.builtin.AtomicOrder.monotonic);
-
-                        if (system.a_fn(__system.window_move_func) != null) system.a_fn(__system.window_move_func).?();
-                    },
-                    win32.WM_MOUSEMOVE => {
-                        var mouse_event: win32.TRACKMOUSEEVENT = .{ .cbSize = @sizeOf(win32.TRACKMOUSEEVENT), .dwFlags = win32.TME_HOVER | win32.TME_LEAVE, .hwndTrack = hWnd, .dwHoverTime = 10 };
-                        if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
-                            system.print_error("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
-                        }
-                        @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(msg.lparam), std.builtin.AtomicOrder.monotonic);
-                        @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(msg.lparam), std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(.{ @floatFromInt(__system.cursor_pos[0]), @floatFromInt(__system.cursor_pos[1]) });
-                    },
-                    // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
-                    win32.WM_MOUSELEAVE => {
-                        __system.mouse_out.store(true, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.mouse_leave_func) != null) system.a_fn(__system.mouse_leave_func).?();
-                    },
-                    win32.WM_MOUSEHOVER => {
-                        __system.mouse_out.store(false, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.mouse_hover_func) != null) system.a_fn(__system.mouse_hover_func).?();
-                    },
-                    win32.WM_MOUSEWHEEL => {
-                        const dt: i32 = win32.GET_WHEEL_DELTA_WPARAM(msg.wparam);
-                        __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
-                        if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
-                    },
-                    else => {},
-                }
-            }
-            msg_mutex.unlock();
-        }
-
         __system.loop();
     }
 
@@ -245,7 +126,7 @@ pub fn windows_start() void {
     const CLASS_NAME = "Xfit Window Class";
 
     var wc = win32.WNDCLASSA{
-        .style = win32.CS_HREDRAW | win32.CS_VREDRAW,
+        .style = 0,
         .lpfnWndProc = WindowProc,
         .cbClsExtra = 0,
         .cbWndExtra = 0,
@@ -294,50 +175,27 @@ pub fn windows_start() void {
         }
     }
 
-    msg_queue = ArrayList(MSG_STRUCT).init(__system.allocator);
-
     _ = win32.CreateThread(null, 0, render_thread, null, 0, &render_thread_id);
 
     hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse system.handle_error2("windows_start.CreateWindowExA {d}", .{win32.GetLastError()});
 
+    const rid = [_]win32.RAWINPUTDEVICE{ .{
+        .usUsagePage = 1,
+        .usUsage = 5,
+        .dwFlags = win32.RIDEV_INPUTSINK,
+        .hwndTarget = hWnd,
+    }, .{
+        .usUsagePage = 1,
+        .usUsage = 4,
+        .dwFlags = win32.RIDEV_INPUTSINK,
+        .hwndTarget = hWnd,
+    } };
+    if (FALSE == win32.RegisterRawInputDevices(&rid, 2, @sizeOf(win32.RAWINPUTDEVICE))) {
+        system.print_error("WARN RegisterRawInputDevices code : {d}\n", .{win32.GetLastError()});
+        return;
+    }
+
     _ = win32.ShowWindow(hWnd, if (__system.init_set.screen_mode == system.screen_mode.WINDOW) @intFromEnum(__system.init_set.window_show) else win32.SW_MAXIMIZE);
-}
-
-fn xbox_init() void {
-    const dev = win32.SetupDiGetClassDevsA(&xbox_guid, null, null, win32.DIGCF_DEVICEINTERFACE | win32.DIGCF_PRESENT);
-    if (dev == win32.INVALID_HANDLE_VALUE) {
-        system.print_error("WARN code {d} SetupDiGetClassDevsA\n", .{win32.GetLastError()});
-        return;
-    }
-    var idata: win32.SP_DEVICE_INTERFACE_DATA = .{};
-    var index: DWORD = 0;
-    while (win32.SetupDiEnumDeviceInterfaces(dev, null, &xbox_guid, index, &idata) == win32.TRUE) {
-        var size: DWORD = undefined;
-        _ = win32.SetupDiGetDeviceInterfaceDetailA(dev, &idata, null, 0, &size, null);
-
-        const detail = __system.allocator.alignedAlloc(u8, 4, size) catch system.handle_error_msg2("xbox_init detail alloc");
-        const detailA: win32.PSP_DEVICE_INTERFACE_DETAIL_DATA_A = @ptrCast(detail.ptr);
-        detailA.*.cbSize = @sizeOf(win32.SP_DEVICE_INTERFACE_DETAIL_DATA_A); // ! size변수가 아니다!
-
-        var data: win32.SP_DEVINFO_DATA = .{};
-        if (win32.SetupDiGetDeviceInterfaceDetailA(dev, &idata, detailA, size, &size, &data) == win32.FALSE) {
-            system.print_error("WARN code {d} SetupDiGetDeviceInterfaceDetailA 2\n", .{win32.GetLastError()});
-            return;
-        }
-        _ = xbox_connect(&detailA.*.DevicePath[0]);
-        __system.allocator.free(detail);
-        index += 1;
-    }
-
-    if (win32.FALSE == win32.SetupDiDestroyDeviceInfoList(dev)) {
-        system.print_error("WARN code {d} SetupDiDestroyDeviceInfoList\n", .{win32.GetLastError()});
-        return;
-    }
-}
-
-fn xbox_connect(path: win32.PCSTR) c_int {
-    _ = path;
-    return 0;
 }
 
 pub fn windows_loop() void {
@@ -427,7 +285,7 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
 pub fn set_window_title() void {
     //?window.set_window_title 참고
     if (FALSE == win32.SetWindowTextA(hWnd, __system.title)) {
-        system.print_error("WARN set_window_title.SetWindowTextA Failed Code : {}\n", .{win32.GetLastError()});
+        system.print_error("WARN set_window_title.SetWindowTextA Failed Code : {d}\n", .{win32.GetLastError()});
     }
 }
 
@@ -463,7 +321,7 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
 
     const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, win32.CDS_FULLSCREEN | win32.CDS_RESET, null);
     if (res != win32.DISP_CHANGE_SUCCESSFUL) {
-        system.print("WARN change_fullscreen.ChangeDisplaySettingsExA FAILED Code {}\n", .{res});
+        system.print("WARN change_fullscreen.ChangeDisplaySettingsExA FAILED Code {d}\n", .{res});
         return;
     }
 
@@ -484,18 +342,18 @@ pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.sc
 
 pub fn nanosleep(ns: u64) void {
     const timer = win32.CreateWaitableTimerA(null, TRUE, null) orelse {
-        system.print("WARN nanosleep.CreateWaitableTimerA FAILED Code {}\n", .{win32.GetLastError()});
+        system.print("WARN nanosleep.CreateWaitableTimerA FAILED Code {d}\n", .{win32.GetLastError()});
         std.time.sleep(ns);
         return;
     };
 
     if (win32.SetWaitableTimer(timer, &win32.LARGE_INTEGER{ .QuadPart = -@as(i64, @intCast(@divTrunc(ns, 100))) }, 0, null, null, FALSE) == FALSE) {
-        system.print("WARN nanosleep.SetWaitableTimer FAILED Code {}\n", .{win32.GetLastError()});
+        system.print("WARN nanosleep.SetWaitableTimer FAILED Code {d}\n", .{win32.GetLastError()});
         std.time.sleep(ns);
         return;
     }
     if (win32.WAIT_FAILED == win32.WaitForSingleObject(timer, win32.INFINITE)) {
-        system.print("WARN nanosleep.WaitForSingleObject FAILED Code {}\n", .{win32.GetLastError()});
+        system.print("WARN nanosleep.WaitForSingleObject FAILED Code {d}\n", .{win32.GetLastError()});
         std.time.sleep(ns);
         return;
     }
@@ -506,10 +364,130 @@ pub fn nanosleep(ns: u64) void {
 //TODO 터치 이벤트
 fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM) callconv(WINAPI) win32.LRESULT {
     switch (uMsg) {
-        win32.WM_LBUTTONDOWN, win32.WM_MBUTTONDOWN, win32.WM_RBUTTONDOWN, win32.WM_LBUTTONUP, win32.WM_MBUTTONUP, win32.WM_RBUTTONUP, win32.WM_KEYDOWN, win32.WM_KEYUP, win32.WM_KILLFOCUS, win32.WM_INPUT, win32.WM_ACTIVATE, win32.WM_MOVE, win32.WM_MOUSEMOVE, win32.WM_MOUSELEAVE, win32.WM_MOUSEHOVER, win32.WM_MOUSEWHEEL => {
-            msg_mutex.lock();
-            msg_queue.append(MSG_STRUCT{ .msg = uMsg, .wparam = wParam, .lparam = lParam }) catch system.handle_error_msg2("msg_queue.append");
-            msg_mutex.unlock();
+        win32.WM_LBUTTONDOWN => {
+            __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_MBUTTONDOWN => {
+            __system.Mmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_RBUTTONDOWN => {
+            __system.Rmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_LBUTTONUP => {
+            __system.Lmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_MBUTTONUP => {
+            __system.Mmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_RBUTTONUP => {
+            __system.Rmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+        },
+        win32.WM_KEYDOWN => {
+            if (wParam < __system.KEY_SIZE) {
+                if (!__system.keys[wParam].load(std.builtin.AtomicOrder.monotonic)) {
+                    __system.keys[wParam].store(true, std.builtin.AtomicOrder.monotonic);
+                    //system.print_debug("input key_down {d}", .{wParam});
+                    if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(wParam));
+                }
+            } else {
+                system.print("WARN WindowProc WM_KEYDOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+            }
+        },
+        win32.WM_KEYUP => {
+            if (wParam < __system.KEY_SIZE) {
+                __system.keys[wParam].store(false, std.builtin.AtomicOrder.monotonic);
+                //system.print_debug("input key_up {d}", .{wParam});
+                if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(wParam));
+            } else {
+                system.print("WARN WindowProc WM_KEYUP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, wParam });
+            }
+        },
+        win32.WM_KILLFOCUS => {
+            for (&__system.keys) |*value| {
+                value.*.store(false, std.builtin.AtomicOrder.monotonic);
+            }
+        },
+        win32.WM_INPUT => {
+            // var rawinput: win32.RAWINPUT = std.mem.zeroes(win32.RAWINPUT);
+            // var unsize: u32 = @sizeOf(win32.RAWINPUT);
+            // _ = win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, &rawinput, &unsize, @sizeOf(win32.RAWINPUTHEADER));
+            // switch (rawinput.header.dwType) {
+            //     else => {},
+            // }
+            var i: usize = 0;
+            __raw_input.mutex.lock();
+            while (i < __raw_input.list.items.len) : (i += 1) {
+                __raw_input.list.items[i].*.handle_event();
+            }
+            __raw_input.mutex.unlock();
+        },
+        win32.WM_DEVICECHANGE => {
+            var i: usize = 0;
+            if (lParam != 0 and (wParam == win32.DBT_DEVICEARRIVAL or wParam == win32.DBT_DEVICEREMOVECOMPLETE)) {
+                const hdr: *win32.DEV_BROADCAST_HDR = @as(*win32.DEV_BROADCAST_HDR, @ptrFromInt(@as(usize, @intCast(lParam))));
+                if (hdr.*.dbch_devicetype == win32.DBT_DEVTYP_DEVICEINTERFACE) {
+                    const dif: *win32.DEV_BROADCAST_DEVICEINTERFACE_A = @ptrCast(hdr);
+                    __raw_input.mutex.lock();
+                    while (i < __raw_input.list.items.len) : (i += 1) {
+                        if (std.mem.eql(
+                            u8,
+                            @as([*]const u8, @ptrCast(__raw_input.list.items[i].*.guid))[0..@sizeOf(win32.GUID)],
+                            @as([*]u8, @ptrCast(&dif.*.dbcc_classguid))[0..@sizeOf(win32.GUID)],
+                        )) {
+                            const pathT: []const u8 = std.mem.span(@as([*:0]const u8, @ptrCast(&dif.*.dbcc_name)));
+                            if (wParam == win32.DBT_DEVICEARRIVAL) {
+                                _ = __raw_input.list.items[i].*.connect(pathT);
+                            } else if (wParam == win32.DBT_DEVICEREMOVECOMPLETE) {
+                                _ = __raw_input.list.items[i].*.disconnect(pathT);
+                            }
+                        }
+                    }
+                    __raw_input.mutex.unlock();
+                }
+            }
+        },
+        win32.WM_ACTIVATE => {
+            const pause = (win32.HIWORD(wParam) != 0);
+            const activated = (win32.LOWORD(wParam) != win32.WA_INACTIVE);
+            __system.pause.store(pause, std.builtin.AtomicOrder.monotonic);
+            __system.activated.store(activated, std.builtin.AtomicOrder.monotonic);
+
+            root.xfit_activate(activated, pause);
+        },
+        win32.WM_MOVE => {
+            @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+
+            if (system.a_fn(__system.window_move_func) != null) system.a_fn(__system.window_move_func).?();
+        },
+        win32.WM_MOUSEMOVE => {
+            var mouse_event: win32.TRACKMOUSEEVENT = .{ .cbSize = @sizeOf(win32.TRACKMOUSEEVENT), .dwFlags = win32.TME_HOVER | win32.TME_LEAVE, .hwndTrack = hWnd, .dwHoverTime = 10 };
+            if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
+                system.print_error("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
+            }
+            @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(.{ @floatFromInt(__system.cursor_pos[0]), @floatFromInt(__system.cursor_pos[1]) });
+        },
+        // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
+        win32.WM_MOUSELEAVE => {
+            __system.mouse_out.store(true, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_leave_func) != null) system.a_fn(__system.mouse_leave_func).?();
+        },
+        win32.WM_MOUSEHOVER => {
+            __system.mouse_out.store(false, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_hover_func) != null) system.a_fn(__system.mouse_hover_func).?();
+        },
+        win32.WM_MOUSEWHEEL => {
+            const dt: i32 = win32.GET_WHEEL_DELTA_WPARAM(wParam);
+            __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
+            if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
         },
         win32.WM_CLOSE => {
             if (!root.xfit_closing()) return 0;
@@ -519,7 +497,6 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             win32.PostQuitMessage(0);
             __system.exiting.store(true, std.builtin.AtomicOrder.release);
             render_thread_sem.wait();
-            msg_queue.deinit();
             return 0;
         },
         else => {},

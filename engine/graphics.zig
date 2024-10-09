@@ -153,11 +153,9 @@ pub fn deinit_vk_allocator_thread() void {
         __vulkan.vk_allocator_mutex.lock();
         defer __vulkan.vk_allocator_mutex.unlock();
         if (__vulkan.vk_allocator_is_destroyed) return;
-        if (dbg) {
-            if (__vulkan.vk_allocator == &__vulkan.vk_allocators.items[0].alloc) { //0번은 메인스레드라 지우면 안됩니다.
-                system.print_error("WARN cant deinit main thread vk_allocators.items[0]\n", .{});
-                return;
-            }
+        if (__vulkan.vk_allocator == &__vulkan.vk_allocators.items[0].alloc) { //0번은 메인스레드라 지우면 안됩니다.
+            system.print_error("WARN cant deinit main thread vk_allocators.items[0]\n", .{});
+            return;
         }
 
         var i: usize = 0;
@@ -166,6 +164,7 @@ pub fn deinit_vk_allocator_thread() void {
                 if (__vulkan.vk_allocators.items.len > __vulkan.vk_allocator_FREE_MAX) {
                     v.*.alloc.deinit();
                     _ = __vulkan.vk_allocators.orderedRemove(i);
+                    __vulkan.pvk_allocators.destroy(v);
                 } else {
                     v.*.is_free = true;
                     __vulkan.vk_allocator_free_count += 1;

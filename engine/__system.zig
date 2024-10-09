@@ -14,6 +14,7 @@ const input = @import("input.zig");
 const mem = @import("mem.zig");
 
 const render_command = @import("render_command.zig");
+const __raw_input = @import("__raw_input.zig");
 
 const root = @import("root");
 
@@ -88,9 +89,8 @@ pub var key_up_func: ?*const fn (key_code: input.key()) void = null;
 pub var monitors: ArrayList(system.monitor_info) = undefined;
 pub var primary_monitor: *system.monitor_info = undefined;
 
-//debug variables
 pub var sound_started: bool = false;
-pub var font_started: if (system.dbg) bool else void = if (system.dbg) false else {};
+pub var font_started: bool = false;
 
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
     allocator = _allocator;
@@ -106,6 +106,7 @@ pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_sett
     }
 
     title = allocator.dupeZ(u8, init_set.window_title) catch |e| system.handle_error3("__system.init.title = allocator.dupeZ", e);
+    __raw_input.start();
 }
 
 pub fn loop() void {
@@ -151,11 +152,10 @@ pub fn destroy() void {
     }
     monitors.deinit();
     allocator.free(title);
+    __raw_input.destroy();
 }
 
 pub fn real_destroy() void {
-    if (system.dbg) {
-        if (sound_started) system.handle_error_msg2("sound not destroyed");
-        if (font_started) system.handle_error_msg2("font not destroyed");
-    }
+    if (sound_started) system.handle_error_msg2("sound not destroyed");
+    if (font_started) system.handle_error_msg2("font not destroyed");
 }

@@ -2773,6 +2773,7 @@ pub const WM_NCXBUTTONUP = @as(u32, 172);
 pub const WM_NCXBUTTONDBLCLK = @as(u32, 173);
 pub const WM_INPUT_DEVICE_CHANGE = @as(u32, 254);
 pub const WM_INPUT = @as(u32, 255);
+pub const WM_DEVICECHANGE = @as(u32, 0x0219);
 pub const WM_KEYFIRST = @as(u32, 256);
 pub const WM_CHAR = @as(u32, 258);
 pub const WM_DEADCHAR = @as(u32, 259);
@@ -4282,3 +4283,32 @@ pub const RIDEV_APPKEYS: DWORD = 0x00000400; //; effective for keyboard.
 pub const RIDEV_EXINPUTSINK: DWORD = 0x00001000;
 pub const RIDEV_DEVNOTIFY: DWORD = 0x00002000;
 pub const RIDEV_EXMODEMASK: DWORD = 0x000000F0;
+
+pub const ERROR_DEVICE_NOT_CONNECTED: DWORD = 1167;
+pub const ERROR_DEVICE_REINITIALIZATION_NEEDED: DWORD = 1164; // dderror
+pub const ERROR_DEVICE_REQUIRES_CLEANING: DWORD = 1165;
+pub const ERROR_DEVICE_DOOR_OPEN: DWORD = 1166;
+
+pub extern fn DeviceIoControl(
+    hDevice: HANDLE,
+    dwIoControlCode: DWORD,
+    lpInBuffer: LPVOID,
+    nInBufferSize: DWORD,
+    lpOutBuffer: LPVOID,
+    nOutBufferSize: DWORD,
+    lpBytesReturned: LPDWORD,
+    lpOverlapped: LPOVERLAPPED,
+) callconv(@import("std").os.windows.WINAPI) BOOL;
+
+pub const DEV_BROADCAST_HDR = extern struct {
+    dbch_size: DWORD,
+    dbch_devicetype: DWORD,
+    dbch_reserved: DWORD,
+};
+
+pub const DBT_DEVICEARRIVAL: DWORD = 0x8000; // system detected a new device
+pub const DBT_DEVICEQUERYREMOVE: DWORD = 0x8001; // wants to remove, may fail
+pub const DBT_DEVICEQUERYREMOVEFAILED: DWORD = 0x8002; // removal aborted
+pub const DBT_DEVICEREMOVEPENDING: DWORD = 0x8003; // about to remove, still avail.
+pub const DBT_DEVICEREMOVECOMPLETE: DWORD = 0x8004; // device is gone
+pub const DBT_DEVICETYPESPECIFIC: DWORD = 0x8005; // type specific event
