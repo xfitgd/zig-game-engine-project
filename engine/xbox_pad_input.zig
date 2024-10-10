@@ -107,42 +107,44 @@ pub fn destroy() void {
     }
 }
 
-fn callback(out: []u8, device_idx: u32, _user_data: ?*anyopaque) void {
-    const data: *USER_DATA = @alignCast(@ptrCast(_user_data.?));
-    var state: XBOX_STATE = undefined;
-    state.device_idx = device_idx;
-    state.packet = std.mem.bytesToValue(u32, &out[5]);
-    const buttons: u16 = std.mem.bytesToValue(u16, &out[11]);
-    state.left_trigger = out[13];
-    state.right_trigger = out[14];
-    state.left_thumb_x = std.mem.bytesToValue(i16, &out[15]);
-    state.left_thumb_y = std.mem.bytesToValue(i16, &out[17]);
-    state.right_thumb_x = std.mem.bytesToValue(i16, &out[19]);
-    state.right_thumb_y = std.mem.bytesToValue(i16, &out[21]);
+fn callback(handle: ?*anyopaque, device_idx: u32, _user_data: ?*anyopaque) void {
+    if (__raw_input.get(@alignCast(@ptrCast(handle)), device_idx, XBOX_CONTROL_CODE, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE])) {
+        const data: *USER_DATA = @alignCast(@ptrCast(_user_data.?));
+        var state: XBOX_STATE = undefined;
+        state.device_idx = device_idx;
+        state.packet = std.mem.bytesToValue(u32, &out_data[5]);
+        const buttons: u16 = std.mem.bytesToValue(u16, &out_data[11]);
+        state.left_trigger = out_data[13];
+        state.right_trigger = out_data[14];
+        state.left_thumb_x = std.mem.bytesToValue(i16, &out_data[15]);
+        state.left_thumb_y = std.mem.bytesToValue(i16, &out_data[17]);
+        state.right_thumb_x = std.mem.bytesToValue(i16, &out_data[19]);
+        state.right_thumb_y = std.mem.bytesToValue(i16, &out_data[21]);
 
-    state.buttons.A = buttons & XBOX_A != 0;
-    state.buttons.B = buttons & XBOX_B != 0;
-    state.buttons.X = buttons & XBOX_X != 0;
-    state.buttons.Y = buttons & XBOX_Y != 0;
-    state.buttons.DPAD_LEFT = buttons & XBOX_DPAD_LEFT != 0;
-    state.buttons.DPAD_RIGHT = buttons & XBOX_DPAD_RIGHT != 0;
-    state.buttons.DPAD_DOWN = buttons & XBOX_DPAD_DOWN != 0;
-    state.buttons.DPAD_UP = buttons & XBOX_DPAD_UP != 0;
-    state.buttons.BACK = buttons & XBOX_BACK != 0;
-    state.buttons.GUIDE = buttons & XBOX_GUIDE != 0;
-    state.buttons.START = buttons & XBOX_START != 0;
-    state.buttons.LEFT_THUMB = buttons & XBOX_LEFT_THUMB != 0;
-    state.buttons.RIGHT_THUMB = buttons & XBOX_RIGHT_THUMB != 0;
-    state.buttons.LEFT_SHOULDER = buttons & XBOX_LEFT_SHOULDER != 0;
-    state.buttons.RIGHT_SHOULDER = buttons & XBOX_RIGHT_SHOULDER != 0;
-    data.*.fn_(state);
+        state.buttons.A = buttons & XBOX_A != 0;
+        state.buttons.B = buttons & XBOX_B != 0;
+        state.buttons.X = buttons & XBOX_X != 0;
+        state.buttons.Y = buttons & XBOX_Y != 0;
+        state.buttons.DPAD_LEFT = buttons & XBOX_DPAD_LEFT != 0;
+        state.buttons.DPAD_RIGHT = buttons & XBOX_DPAD_RIGHT != 0;
+        state.buttons.DPAD_DOWN = buttons & XBOX_DPAD_DOWN != 0;
+        state.buttons.DPAD_UP = buttons & XBOX_DPAD_UP != 0;
+        state.buttons.BACK = buttons & XBOX_BACK != 0;
+        state.buttons.GUIDE = buttons & XBOX_GUIDE != 0;
+        state.buttons.START = buttons & XBOX_START != 0;
+        state.buttons.LEFT_THUMB = buttons & XBOX_LEFT_THUMB != 0;
+        state.buttons.RIGHT_THUMB = buttons & XBOX_RIGHT_THUMB != 0;
+        state.buttons.LEFT_SHOULDER = buttons & XBOX_LEFT_SHOULDER != 0;
+        state.buttons.RIGHT_SHOULDER = buttons & XBOX_RIGHT_SHOULDER != 0;
+        data.*.fn_(state);
+    }
 }
 
 pub fn set_callback(_fn: CallbackFn) void {
     if (system.platform == .windows) {
         const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
         @as(*USER_DATA, @alignCast(@ptrCast(data.?))).*.fn_ = _fn;
-        raw.set_callback(callback, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE], XBOX_CONTROL_CODE);
+        raw.set_callback(callback);
     } else if (system.platform == .android) {} else {
         @compileError("not support platform");
     }

@@ -9,7 +9,7 @@ pub const XfitPlatform = engine.XfitPlatform;
 const PLATFORM = XfitPlatform.windows;
 const OPTIMIZE = std.builtin.OptimizeMode.Debug;
 
-const EXAMPLE: EXAMPLES = EXAMPLES.GRAPHICS2D;
+const EXAMPLE: EXAMPLES = EXAMPLES.INPUT;
 //*
 
 const examples = [_][]const u8{

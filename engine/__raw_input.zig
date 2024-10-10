@@ -25,9 +25,6 @@ const Self = @This();
 
 devices: []device,
 guid: *const raw_input.GUID,
-in: []const u8 = undefined,
-out: []u8 = undefined,
-ctrl_code: u32 = undefined,
 callback: ?raw_input.CallBackFn = null,
 change_fn: raw_input.ChangeDeviceFn,
 user_data: ?*anyopaque = null,
@@ -213,19 +210,12 @@ pub fn handle_event(self: *Self) void {
     if (self.*.callback != null) {
         var i: u32 = 0;
         while (i < self.*.devices.len) : (i += 1) {
-            if (self.*.get(i, self.*.ctrl_code, self.*.in, self.*.out)) {
-                self.*.callback.?(self.*.out, i, self.*.user_data);
-            }
+            self.*.callback.?(@ptrCast(self), i, self.*.user_data);
         }
     }
 }
 
-pub fn set_callback(self: *Self, _fn: raw_input.CallBackFn, _in: []const u8, _out: []u8, _ctrl_code: u32) void {
-    mutex.lock();
-    defer mutex.unlock();
-    self.*.in = _in;
-    self.*.out = _out;
-    self.*.ctrl_code = _ctrl_code;
+pub fn set_callback(self: *Self, _fn: raw_input.CallBackFn) void {
     self.*.callback = _fn;
 }
 
