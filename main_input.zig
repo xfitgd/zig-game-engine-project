@@ -46,10 +46,10 @@ fn xinput_callback(state: xbox_pad_input.XBOX_STATE) void {
     system.print("Thumb={s}{s} LeftThumb=({d},{d}) RightThumb=({d},{d})\n", .{
         if (state.buttons.LEFT_THUMB) "L" else " ",
         if (state.buttons.RIGHT_THUMB) "R" else " ",
-        (@as(f32, @floatFromInt(state.left_thumb_x)) / 32768),
-        (@as(f32, @floatFromInt(state.left_thumb_y)) / 32768),
-        (@as(f32, @floatFromInt(state.right_thumb_x)) / 32768),
-        (@as(f32, @floatFromInt(state.right_thumb_y)) / 32768),
+        state.left_thumb_x,
+        state.left_thumb_y,
+        state.right_thumb_x,
+        state.right_thumb_y,
     });
     system.print("Trigger=({d},{d})\n", .{
         state.left_trigger,

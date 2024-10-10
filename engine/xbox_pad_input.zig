@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const __windows = @import("__windows.zig");
+const __android = @import("__android.zig");
 const __system = @import("__system.zig");
 const raw_input = @import("raw_input.zig");
 const __raw_input = @import("__raw_input.zig");
@@ -33,12 +34,12 @@ pub const XBOX_BUTTONS = packed struct {
 pub const XBOX_STATE = struct {
     device_idx: u32,
     packet: u32,
-    left_trigger: u8,
-    right_trigger: u8,
-    left_thumb_x: i16,
-    left_thumb_y: i16,
-    right_thumb_x: i16,
-    right_thumb_y: i16,
+    left_trigger: f32,
+    right_trigger: f32,
+    left_thumb_x: f32,
+    left_thumb_y: f32,
+    right_thumb_x: f32,
+    right_thumb_y: f32,
     buttons: XBOX_BUTTONS,
 };
 
@@ -70,28 +71,25 @@ const XBOX_OUT_PACKET_SIZE = 29;
 const XBOX_IN = [_]u8{ 0x01, 0x01, 0x00 };
 const XBOX_CONTROL_CODE: u32 = 0x8000e00c;
 
-const CallbackFn = *const fn (state: XBOX_STATE) void;
-const ChangeDeviceFn = *const fn (_device_idx: u32, add_or_remove: bool) void;
+pub const CallbackFn = *const fn (state: XBOX_STATE) void;
+pub const ChangeDeviceFn = *const fn (_device_idx: u32, add_or_remove: bool) void;
 
-const USER_DATA = struct {
-    fn_: CallbackFn,
-    change_fn_: ChangeDeviceFn,
-};
+var fn_: ?CallbackFn = null;
+var change_fn_: ChangeDeviceFn = undefined;
 
 var raw: if (system.platform == .windows) raw_input else void = if (system.platform == .windows) .{ .handle = undefined } else {};
 var out_data: [XBOX_OUT_PACKET_SIZE]u8 = undefined;
 
 fn change_fn(_device_idx: u32, add_or_remove: bool, _user_data: ?*anyopaque) void {
-    const data: *USER_DATA = @alignCast(@ptrCast(_user_data.?));
-    data.*.change_fn_(_device_idx, add_or_remove);
+    _ = _user_data;
+    change_fn_(_device_idx, add_or_remove);
 }
 
 pub fn start(_change_fn: ChangeDeviceFn) raw_input.ERROR!void {
-    const data: *anyopaque = @ptrCast(__system.allocator.create(USER_DATA) catch system.handle_error_msg2("xbox_pad_input create USER_DATA"));
-    @as(*USER_DATA, @alignCast(@ptrCast(data))).*.change_fn_ = _change_fn;
+    change_fn_ = _change_fn;
     if (system.platform == .windows) {
         raw = .{ .handle = undefined };
-        try raw.init(XBOX_MAX_CONTROLLERS, &XBOX_WIN_GUID, change_fn, data);
+        try raw.init(XBOX_MAX_CONTROLLERS, &XBOX_WIN_GUID, change_fn, null);
     } else if (system.platform == .android) {} else {
         @compileError("not support platform");
     }
@@ -99,27 +97,27 @@ pub fn start(_change_fn: ChangeDeviceFn) raw_input.ERROR!void {
 
 pub fn destroy() void {
     if (system.platform == .windows) {
-        const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
-        __system.allocator.destroy(@as(*USER_DATA, @alignCast(@ptrCast(data.?))));
         raw.deinit();
-    } else if (system.platform == .android) {} else {
+    } else if (system.platform == .android) {
+        __android.xbox_pad_callback = null;
+    } else {
         @compileError("not support platform");
     }
 }
 
 fn callback(handle: ?*anyopaque, device_idx: u32, _user_data: ?*anyopaque) void {
-    if (__raw_input.get(@alignCast(@ptrCast(handle)), device_idx, XBOX_CONTROL_CODE, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE])) {
-        const data: *USER_DATA = @alignCast(@ptrCast(_user_data.?));
-        var state: XBOX_STATE = undefined;
+    var state: XBOX_STATE = undefined;
+    if (system.platform == .windows) {
+        if (!__raw_input.get(@alignCast(@ptrCast(handle)), device_idx, XBOX_CONTROL_CODE, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE])) return;
         state.device_idx = device_idx;
         state.packet = std.mem.bytesToValue(u32, &out_data[5]);
-        const buttons: u16 = std.mem.bytesToValue(u16, &out_data[11]);
-        state.left_trigger = out_data[13];
-        state.right_trigger = out_data[14];
-        state.left_thumb_x = std.mem.bytesToValue(i16, &out_data[15]);
-        state.left_thumb_y = std.mem.bytesToValue(i16, &out_data[17]);
-        state.right_thumb_x = std.mem.bytesToValue(i16, &out_data[19]);
-        state.right_thumb_y = std.mem.bytesToValue(i16, &out_data[21]);
+        const buttons = std.mem.bytesToValue(u16, &out_data[11]);
+        state.left_trigger = @as(f32, @floatFromInt(out_data[13])) / 255.0;
+        state.right_trigger = @as(f32, @floatFromInt(out_data[14])) / 255.0;
+        state.left_thumb_x = @as(f32, @floatFromInt(std.mem.bytesToValue(i16, &out_data[15]))) / 32768.0;
+        state.left_thumb_y = @as(f32, @floatFromInt(std.mem.bytesToValue(i16, &out_data[17]))) / 32768.0;
+        state.right_thumb_x = @as(f32, @floatFromInt(std.mem.bytesToValue(i16, &out_data[19]))) / 32768.0;
+        state.right_thumb_y = @as(f32, @floatFromInt(std.mem.bytesToValue(i16, &out_data[21]))) / 32768.0;
 
         state.buttons.A = buttons & XBOX_A != 0;
         state.buttons.B = buttons & XBOX_B != 0;
@@ -136,16 +134,18 @@ fn callback(handle: ?*anyopaque, device_idx: u32, _user_data: ?*anyopaque) void 
         state.buttons.RIGHT_THUMB = buttons & XBOX_RIGHT_THUMB != 0;
         state.buttons.LEFT_SHOULDER = buttons & XBOX_LEFT_SHOULDER != 0;
         state.buttons.RIGHT_SHOULDER = buttons & XBOX_RIGHT_SHOULDER != 0;
-        data.*.fn_(state);
+    } else {
+        state = @as(*XBOX_STATE, @alignCast(@ptrCast(_user_data.?))).*;
     }
+    fn_.?(state);
 }
-
 pub fn set_callback(_fn: CallbackFn) void {
+    fn_ = _fn;
     if (system.platform == .windows) {
-        const data = @as(*__raw_input, @alignCast(@ptrCast(raw.handle))).*.user_data;
-        @as(*USER_DATA, @alignCast(@ptrCast(data.?))).*.fn_ = _fn;
         raw.set_callback(callback);
-    } else if (system.platform == .android) {} else {
+    } else if (system.platform == .android) {
+        __android.xbox_pad_callback = callback;
+    } else {
         @compileError("not support platform");
     }
 }
