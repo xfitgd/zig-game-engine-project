@@ -13,6 +13,8 @@ const math = @import("math.zig");
 const input = @import("input.zig");
 const mem = @import("mem.zig");
 
+const general_input = @import("general_input.zig");
+
 const render_command = @import("render_command.zig");
 const __raw_input = @import("__raw_input.zig");
 
@@ -91,6 +93,7 @@ pub var primary_monitor: *system.monitor_info = undefined;
 
 pub var sound_started: bool = false;
 pub var font_started: bool = false;
+pub var general_input_callback: ?general_input.CallbackFn = null;
 
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
     allocator = _allocator;

@@ -5,6 +5,7 @@ pub const INT = c_int;
 pub const LONG = c_long;
 pub const UCHAR = u8;
 pub const USHORT = c_ushort;
+pub const PUSHORT = [*c]USHORT;
 pub const UINT = c_uint;
 pub const UINT16 = c_ushort;
 pub const UINT32 = UINT;
@@ -3192,7 +3193,7 @@ pub const VK_OEM_CLEAR = @as(c_int, 0xFE);
 
 pub const PTIMERAPCROUTINE = ?*const fn (LPVOID, DWORD, DWORD, LPARAM) callconv(@import("std").os.windows.WINAPI) void;
 
-pub const POWER_REQUEST_CONTEXT_FLAGS = enum(u32) {
+pub const POWER_REQUEST_CONTEXT_FLAGS = enum(c_uint) {
     DETAILED_STRING = 2,
     SIMPLE_STRING = 1,
 };
@@ -3294,7 +3295,7 @@ pub const TOUCHINPUT = extern struct {
 pub const HTOUCHINPUT = [*c]TOUCHINPUT;
 pub const PTOUCHINPUT = [*c]TOUCHINPUT;
 pub const PCTOUCHINPUT = [*c]const TOUCHINPUT;
-pub const POINTER_BUTTON_CHANGE_TYPE = enum(i32) {
+pub const POINTER_BUTTON_CHANGE_TYPE = enum(c_uint) {
     POINTER_CHANGE_NONE,
     POINTER_CHANGE_FIRSTBUTTON_DOWN,
     POINTER_CHANGE_FIRSTBUTTON_UP,
@@ -3308,7 +3309,7 @@ pub const POINTER_BUTTON_CHANGE_TYPE = enum(i32) {
     POINTER_CHANGE_FIFTHBUTTON_UP,
 };
 
-pub const POINTER_INPUT_TYPE = enum(i32) { PT_POINTER = 1, PT_TOUCH = 2, PT_PEN = 3, PT_MOUSE = 4, PT_TOUCHPAD = 5 };
+pub const POINTER_INPUT_TYPE = enum(c_uint) { PT_POINTER = 1, PT_TOUCH = 2, PT_PEN = 3, PT_MOUSE = 4, PT_TOUCHPAD = 5 };
 pub const POINTER_FLAGS = INT;
 
 pub const POINTER_FLAG_NONE: c_int = 0x00000000;
@@ -3466,7 +3467,7 @@ pub const PTOUCH_HIT_TESTING_INPUT = [*c]struct_tagTOUCH_HIT_TESTING_INPUT;
 pub extern fn EvaluateProximityToRect(controlBoundingBox: [*c]const RECT, pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) callconv(@import("std").os.windows.WINAPI) BOOL;
 pub extern fn EvaluateProximityToPolygon(numVertices: UINT32, controlPolygon: [*c]const POINT, pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) callconv(@import("std").os.windows.WINAPI) BOOL;
 pub extern fn PackTouchHitTestingProximityEvaluation(pHitTestingInput: [*c]const TOUCH_HIT_TESTING_INPUT, pProximityEval: [*c]const TOUCH_HIT_TESTING_PROXIMITY_EVALUATION) callconv(@import("std").os.windows.WINAPI) LRESULT;
-pub const FEEDBACK_TYPE = enum(c_int) {
+pub const FEEDBACK_TYPE = enum(c_uint) {
     FEEDBACK_TOUCH_CONTACTVISUALIZATION = 1,
     FEEDBACK_PEN_BARRELVISUALIZATION = 2,
     FEEDBACK_PEN_TAP = 3,
@@ -4332,3 +4333,165 @@ pub const RIDI_DEVICEINFO: UINT = 0x2000000b;
 
 pub extern fn GetRawInputDeviceInfoA(hDevice: HANDLE, uiCommand: UINT, pData: LPVOID, pcbSize: PUINT) callconv(@import("std").os.windows.WINAPI) UINT;
 pub extern fn GetRawInputDeviceInfoW(hDevice: HANDLE, uiCommand: UINT, pData: LPVOID, pcbSize: PUINT) callconv(@import("std").os.windows.WINAPI) UINT;
+
+pub const USAGE = USHORT;
+pub const PUSAGE = [*c]USAGE;
+
+pub const NTSTATUS = LONG;
+pub const PHIDP_PREPARSED_DATA = LPVOID;
+pub const PHIDP_CAPS = [*c]HIDP_CAPS;
+pub const HIDP_CAPS = extern struct {
+    Usage: USAGE,
+    UsagePage: USAGE,
+    InputReportByteLength: USHORT,
+    OutputReportByteLength: USHORT,
+    FeatureReportByteLength: USHORT,
+    Reserved: [17]USHORT,
+
+    NumberLinkCollectionNodes: USHORT,
+
+    NumberInputButtonCaps: USHORT,
+    NumberInputValueCaps: USHORT,
+    NumberInputDataIndices: USHORT,
+
+    NumberOutputButtonCaps: USHORT,
+    NumberOutputValueCaps: USHORT,
+    NumberOutputDataIndices: USHORT,
+
+    NumberFeatureButtonCaps: USHORT,
+    NumberFeatureValueCaps: USHORT,
+    NumberFeatureDataIndices: USHORT,
+};
+
+pub const HIDP_BUTTON_CAPS = extern struct {
+    UsagePage: USAGE,
+    ReportID: UCHAR,
+    IsAlias: BOOLEAN,
+
+    BitField: USHORT,
+    LinkCollection: USHORT, // A unique internal index pointer
+
+    LinkUsage: USAGE,
+    LinkUsagePage: USAGE,
+
+    IsRange: BOOLEAN,
+    IsStringRange: BOOLEAN,
+    IsDesignatorRange: BOOLEAN,
+    IsAbsolute: BOOLEAN,
+
+    Reserved: [10]ULONG,
+
+    R: extern union {
+        Range: extern struct {
+            UsageMin: USAGE,
+            UsageMax: USAGE,
+            StringMin: USHORT,
+            StringMax: USHORT,
+            DesignatorMin: USHORT,
+            DesignatorMax: USHORT,
+            DataIndexMin: USHORT,
+            DataIndexMax: USHORT,
+        },
+        NotRange: extern struct {
+            Usage: USAGE,
+            Reserved1: USAGE,
+            StringIndex: USHORT,
+            Reserved2: USHORT,
+            DesignatorIndex: USHORT,
+            Reserved3: USHORT,
+            DataIndex: USHORT,
+            Reserved4: USHORT,
+        },
+    },
+};
+pub const PHIDP_BUTTON_CAPS = [*c]HIDP_BUTTON_CAPS;
+
+pub const HIDP_VALUE_CAPS = extern struct {
+    UsagePage: USAGE,
+    ReportID: UCHAR,
+    IsAlias: BOOLEAN,
+
+    BitField: USHORT,
+    LinkCollection: USHORT, // A unique internal index pointer
+
+    LinkUsage: USAGE,
+    LinkUsagePage: USAGE,
+
+    IsRange: BOOLEAN,
+    IsStringRange: BOOLEAN,
+    IsDesignatorRange: BOOLEAN,
+    IsAbsolute: BOOLEAN,
+
+    HasNull: BOOLEAN, // Does this channel have a null report   union
+    Reserved: UCHAR,
+    BitSize: USHORT, // How many bits are devoted to this value?
+
+    ReportCount: USHORT, // See Note below.  Usually set to 1.
+    Reserved2: [5]USHORT,
+
+    UnitsExp: ULONG,
+    Units: ULONG,
+
+    LogicalMin: LONG,
+    LogicalMax: LONG,
+    PhysicalMin: LONG,
+    PhysicalMax: LONG,
+
+    R: extern union {
+        Range: extern struct {
+            UsageMin: USAGE,
+            UsageMax: USAGE,
+            StringMin: USHORT,
+            StringMax: USHORT,
+            DesignatorMin: USHORT,
+            DesignatorMax: USHORT,
+            DataIndexMin: USHORT,
+            DataIndexMax: USHORT,
+        },
+        NotRange: extern struct {
+            Usage: USAGE,
+            Reserved1: USAGE,
+            StringIndex: USHORT,
+            Reserved2: USHORT,
+            DesignatorIndex: USHORT,
+            Reserved3: USHORT,
+            DataIndex: USHORT,
+            Reserved4: USHORT,
+        },
+    },
+};
+pub const PHIDP_VALUE_CAPS = [*c]HIDP_VALUE_CAPS;
+
+pub const HIDP_REPORT_TYPE = enum(c_uint) { HidP_Input, HidP_Output, HidP_Feature };
+
+pub extern fn HidP_GetCaps(PreparsedData: PHIDP_PREPARSED_DATA, Capabilities: PHIDP_CAPS) callconv(@import("std").os.windows.WINAPI) NTSTATUS;
+pub extern fn HidP_GetButtonCaps(ReportType: HIDP_REPORT_TYPE, Capabilities: PHIDP_BUTTON_CAPS, ButtonCapsLength: PUSHORT, PreparsedData: PHIDP_PREPARSED_DATA) callconv(@import("std").os.windows.WINAPI) NTSTATUS;
+pub extern fn HidP_GetValueCaps(ReportType: HIDP_REPORT_TYPE, Capabilities: PHIDP_VALUE_CAPS, ValueCapsLength: PUSHORT, PreparsedData: PHIDP_PREPARSED_DATA) callconv(@import("std").os.windows.WINAPI) NTSTATUS;
+pub extern fn HidP_GetUsages(ReportType: HIDP_REPORT_TYPE, UsagePage: USAGE, LinkCollection: USHORT, UsageList: PUSAGE, UsageLength: PULONG, PreparsedData: PHIDP_PREPARSED_DATA, Report: PCHAR, ReportLength: ULONG) callconv(@import("std").os.windows.WINAPI) NTSTATUS;
+pub extern fn HidP_GetUsageValue(ReportType: HIDP_REPORT_TYPE, UsagePage: USAGE, LinkCollection: USHORT, Usage: USAGE, UsageValue: PUSAGE, PreparsedData: PHIDP_PREPARSED_DATA, Report: PCHAR, ReportLength: ULONG) callconv(@import("std").os.windows.WINAPI) NTSTATUS;
+
+pub const FACILITY_HID_ERROR_CODE = 0x11;
+
+pub inline fn HIDP_ERROR_CODES(SEV: anytype, CODE: anytype) NTSTATUS {
+    return @intCast((SEV << 28) | (FACILITY_HID_ERROR_CODE << 16) | CODE);
+}
+
+pub const HIDP_STATUS_SUCCESS = HIDP_ERROR_CODES(0x0, 0);
+pub const HIDP_STATUS_NULL = (HIDP_ERROR_CODES(0x8, 1));
+pub const HIDP_STATUS_INVALID_PREPARSED_DATA = (HIDP_ERROR_CODES(0xC, 1));
+pub const HIDP_STATUS_INVALID_REPORT_TYPE = (HIDP_ERROR_CODES(0xC, 2));
+pub const HIDP_STATUS_INVALID_REPORT_LENGTH = (HIDP_ERROR_CODES(0xC, 3));
+pub const HIDP_STATUS_USAGE_NOT_FOUND = (HIDP_ERROR_CODES(0xC, 4));
+pub const HIDP_STATUS_VALUE_OUT_OF_RANGE = (HIDP_ERROR_CODES(0xC, 5));
+pub const HIDP_STATUS_BAD_LOG_PHY_VALUES = (HIDP_ERROR_CODES(0xC, 6));
+pub const HIDP_STATUS_BUFFER_TOO_SMALL = (HIDP_ERROR_CODES(0xC, 7));
+pub const HIDP_STATUS_INTERNAL_ERROR = (HIDP_ERROR_CODES(0xC, 8));
+pub const HIDP_STATUS_I8042_TRANS_UNKNOWN = (HIDP_ERROR_CODES(0xC, 9));
+pub const HIDP_STATUS_INCOMPATIBLE_REPORT_ID = (HIDP_ERROR_CODES(0xC, 0xA));
+pub const HIDP_STATUS_NOT_VALUE_ARRAY = (HIDP_ERROR_CODES(0xC, 0xB));
+pub const HIDP_STATUS_IS_VALUE_ARRAY = (HIDP_ERROR_CODES(0xC, 0xC));
+pub const HIDP_STATUS_DATA_INDEX_NOT_FOUND = (HIDP_ERROR_CODES(0xC, 0xD));
+pub const HIDP_STATUS_DATA_INDEX_OUT_OF_RANGE = (HIDP_ERROR_CODES(0xC, 0xE));
+pub const HIDP_STATUS_BUTTON_NOT_PRESSED = (HIDP_ERROR_CODES(0xC, 0xF));
+pub const HIDP_STATUS_REPORT_DOES_NOT_EXIST = (HIDP_ERROR_CODES(0xC, 0x10));
+pub const HIDP_STATUS_NOT_IMPLEMENTED = (HIDP_ERROR_CODES(0xC, 0x20));

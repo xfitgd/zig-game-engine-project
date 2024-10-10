@@ -200,7 +200,7 @@ pub fn get(self: *Self, idx: u32, ctl_code: u32, in: []const u8, out: []u8) bool
             _ = self.*.disconnect(self.*.devices[idx].path);
             return false;
         }
-        system.print_error("WARN DeviceIoControl code : {d}\n", .{win32.GetLastError()});
+        system.print("WARN DeviceIoControl ctrlCode: {d}, errorCode : {d}\nguid: {}\n", .{ ctl_code, win32.GetLastError(), self.*.guid.* });
         return false;
     }
     return true;
