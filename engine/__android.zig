@@ -7,7 +7,7 @@ const point = math.point;
 const __vulkan = @import("__vulkan.zig");
 
 const system = @import("system.zig");
-const xbox_pad_input = @import("xbox_pad_input.zig");
+const general_input = @import("general_input.zig");
 const raw_input = @import("raw_input.zig");
 const __system = @import("__system.zig");
 
@@ -16,8 +16,6 @@ pub const c_allocator = std.heap.c_allocator;
 pub const android = @import("include/android.zig");
 
 pub var orientationChanged: bool = false;
-
-pub var xbox_pad_callback: ?raw_input.CallBackFn = null;
 
 inline fn LOGI(fmt: [*c]const u8, args: anytype) c_int {
     return @call(.auto, android.__android_log_print, .{ android.ANDROID_LOG_INFO, "xfit", fmt } ++ args);
@@ -493,57 +491,63 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
     }
 }
 
-var xbox_state: xbox_pad_input.XBOX_STATE = std.mem.zeroes(xbox_pad_input.XBOX_STATE);
+var input_state: general_input.INPUT_STATE = std.mem.zeroes(general_input.INPUT_STATE);
 
-fn handle_xbox_pad_buttons(keycode: u32, updown: bool) void {
+fn handle_input_buttons(_event: ?*android.AInputEvent, keycode: u32, updown: bool) void {
+    if (system.a_fn(__system.general_input_callback) == null) return;
     switch (keycode) {
         android.AKEYCODE_BUTTON_A => {
-            if (xbox_state.buttons.A and updown) return;
-            xbox_state.buttons.A = updown;
+            if (input_state.buttons.A and updown) return;
+            input_state.buttons.A = updown;
         },
         android.AKEYCODE_BUTTON_B => {
-            if (xbox_state.buttons.B and updown) return;
-            xbox_state.buttons.B = updown;
+            if (input_state.buttons.B and updown) return;
+            input_state.buttons.B = updown;
         },
         android.AKEYCODE_BUTTON_X => {
-            if (xbox_state.buttons.X and updown) return;
-            xbox_state.buttons.X = updown;
+            if (input_state.buttons.X and updown) return;
+            input_state.buttons.X = updown;
         },
         android.AKEYCODE_BUTTON_Y => {
-            if (xbox_state.buttons.Y and updown) return;
-            xbox_state.buttons.Y = updown;
+            if (input_state.buttons.Y and updown) return;
+            input_state.buttons.Y = updown;
         },
         android.AKEYCODE_BUTTON_START => {
-            if (xbox_state.buttons.START and updown) return;
-            xbox_state.buttons.START = updown;
+            if (input_state.buttons.START and updown) return;
+            input_state.buttons.START = updown;
         },
         android.AKEYCODE_BUTTON_SELECT => {
-            if (xbox_state.buttons.BACK and updown) return;
-            xbox_state.buttons.BACK = updown;
+            if (input_state.buttons.BACK and updown) return;
+            input_state.buttons.BACK = updown;
         },
-        //? android.AKEYCODE_BUTTON_MODE => {
-        //     if (xbox_state.buttons.GUIDE and updown) return;
-        //     xbox_state.buttons.GUIDE = updown;
-        // },
         android.AKEYCODE_BUTTON_L1 => {
-            if (xbox_state.buttons.LEFT_SHOULDER and updown) return;
-            xbox_state.buttons.LEFT_SHOULDER = updown;
+            if (input_state.buttons.LEFT_SHOULDER and updown) return;
+            input_state.buttons.LEFT_SHOULDER = updown;
         },
         android.AKEYCODE_BUTTON_R1 => {
-            if (xbox_state.buttons.RIGHT_SHOULDER and updown) return;
-            xbox_state.buttons.RIGHT_SHOULDER = updown;
+            if (input_state.buttons.RIGHT_SHOULDER and updown) return;
+            input_state.buttons.RIGHT_SHOULDER = updown;
         },
         android.AKEYCODE_BUTTON_THUMBL => {
-            if (xbox_state.buttons.LEFT_THUMB and updown) return;
-            xbox_state.buttons.LEFT_THUMB = updown;
+            if (input_state.buttons.LEFT_THUMB and updown) return;
+            input_state.buttons.LEFT_THUMB = updown;
         },
         android.AKEYCODE_BUTTON_THUMBR => {
-            if (xbox_state.buttons.RIGHT_THUMB and updown) return;
-            xbox_state.buttons.RIGHT_THUMB = updown;
+            if (input_state.buttons.RIGHT_THUMB and updown) return;
+            input_state.buttons.RIGHT_THUMB = updown;
+        },
+        android.AKEYCODE_VOLUME_UP => {
+            if (input_state.buttons.VOLUME_UP and updown) return;
+            input_state.buttons.VOLUME_UP = updown;
+        },
+        android.AKEYCODE_VOLUME_DOWN => {
+            if (input_state.buttons.VOLUME_DOWN and updown) return;
+            input_state.buttons.VOLUME_DOWN = updown;
         },
         else => return,
     }
-    xbox_pad_callback.?(null, 0, &xbox_state);
+    input_state.handle = @ptrFromInt(@as(usize, @intCast(android.AInputEvent_getDeviceId(_event))));
+    system.a_fn(__system.general_input_callback).?(input_state);
 }
 
 fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
@@ -554,7 +558,7 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
         const tool_type = android.AMotionEvent_getToolType(_event, 0);
         //https://github.com/gameplay3d/GamePlay/blob/master/gameplay/src/PlatformAndroid.cpp
         if ((src & android.AINPUT_SOURCE_JOYSTICK) != 0) {
-            if (xbox_pad_callback != null) {
+            if (system.a_fn(__system.general_input_callback) != null) {
                 const xaxis = android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_HAT_X, 0);
                 const yaxis = android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_HAT_Y, 0);
 
@@ -568,37 +572,39 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
                 const rz = android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_RZ, 0);
 
                 if (xaxis == -1.0) {
-                    xbox_state.buttons.DPAD_LEFT = true;
-                    xbox_state.buttons.DPAD_RIGHT = false;
+                    input_state.buttons.DPAD_LEFT = true;
+                    input_state.buttons.DPAD_RIGHT = false;
                 } else if (xaxis == 1.0) {
-                    xbox_state.buttons.DPAD_LEFT = false;
-                    xbox_state.buttons.DPAD_RIGHT = true;
+                    input_state.buttons.DPAD_LEFT = false;
+                    input_state.buttons.DPAD_RIGHT = true;
                 } else {
-                    xbox_state.buttons.DPAD_LEFT = false;
-                    xbox_state.buttons.DPAD_RIGHT = false;
+                    input_state.buttons.DPAD_LEFT = false;
+                    input_state.buttons.DPAD_RIGHT = false;
                 }
 
                 if (yaxis == -1.0) {
-                    xbox_state.buttons.DPAD_UP = true;
-                    xbox_state.buttons.DPAD_DOWN = false;
+                    input_state.buttons.DPAD_UP = true;
+                    input_state.buttons.DPAD_DOWN = false;
                 } else if (yaxis == 1.0) {
-                    xbox_state.buttons.DPAD_UP = false;
-                    xbox_state.buttons.DPAD_DOWN = true;
+                    input_state.buttons.DPAD_UP = false;
+                    input_state.buttons.DPAD_DOWN = true;
                 } else {
-                    xbox_state.buttons.DPAD_UP = false;
-                    xbox_state.buttons.DPAD_DOWN = false;
+                    input_state.buttons.DPAD_UP = false;
+                    input_state.buttons.DPAD_DOWN = false;
                 }
 
-                xbox_state.left_trigger = left_trigger;
-                xbox_state.right_trigger = right_trigger;
+                input_state.left_trigger = left_trigger;
+                input_state.right_trigger = right_trigger;
 
-                xbox_state.left_thumb_x = x;
-                xbox_state.left_thumb_y = y;
+                input_state.left_thumb_x = x;
+                input_state.left_thumb_y = y;
 
-                xbox_state.right_thumb_x = z;
-                xbox_state.right_thumb_y = rz;
+                input_state.right_thumb_x = z;
+                input_state.right_thumb_y = rz;
 
-                xbox_pad_callback.?(null, 0, &xbox_state);
+                input_state.handle = @ptrFromInt(@as(usize, @intCast(android.AInputEvent_getDeviceId(_event))));
+
+                system.a_fn(__system.general_input_callback).?(input_state);
             }
         } else {
             var count: u32 = undefined;
@@ -658,7 +664,7 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
         const keycode: u32 = @max(0, android.AKeyEvent_getKeyCode(_event));
         if (act == android.AKEY_EVENT_ACTION_DOWN) {
             if ((src & android.AINPUT_SOURCE_JOYSTICK) != 0 or (src & android.AINPUT_SOURCE_GAMEPAD) != 0) {
-                handle_xbox_pad_buttons(keycode, true);
+                handle_input_buttons(_event, keycode, true);
             } else {
                 if (keycode < __system.KEY_SIZE) {
                     if (!__system.keys[keycode].load(std.builtin.AtomicOrder.monotonic)) {
@@ -674,7 +680,7 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
             }
         } else if (act == android.AKEY_EVENT_ACTION_UP) {
             if ((src & android.AINPUT_SOURCE_CLASS_JOYSTICK) != 0 or (src & android.AINPUT_SOURCE_GAMEPAD) != 0) {
-                handle_xbox_pad_buttons(keycode, false);
+                handle_input_buttons(_event, keycode, false);
             } else {
                 if (keycode < __system.KEY_SIZE) {
                     __system.keys[keycode].store(false, std.builtin.AtomicOrder.monotonic);

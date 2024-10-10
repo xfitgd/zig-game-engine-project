@@ -33,7 +33,6 @@ pub const XBOX_BUTTONS = packed struct {
 
 pub const XBOX_STATE = struct {
     device_idx: u32,
-    packet: u32,
     left_trigger: f32,
     right_trigger: f32,
     left_thumb_x: f32,
@@ -99,7 +98,7 @@ pub fn destroy() void {
     if (system.platform == .windows) {
         raw.deinit();
     } else if (system.platform == .android) {
-        __android.xbox_pad_callback = null;
+        //__android.xbox_pad_callback = null;
     } else {
         @compileError("not support platform");
     }
@@ -110,7 +109,7 @@ fn callback(handle: ?*anyopaque, device_idx: u32, _user_data: ?*anyopaque) void 
     if (system.platform == .windows) {
         if (!__raw_input.get(@alignCast(@ptrCast(handle)), device_idx, XBOX_CONTROL_CODE, XBOX_IN[0..XBOX_IN.len], out_data[0..XBOX_OUT_PACKET_SIZE])) return;
         state.device_idx = device_idx;
-        state.packet = std.mem.bytesToValue(u32, &out_data[5]);
+        //state.packet = std.mem.bytesToValue(u32, &out_data[5]);
         const buttons = std.mem.bytesToValue(u16, &out_data[11]);
         state.left_trigger = @as(f32, @floatFromInt(out_data[13])) / 255.0;
         state.right_trigger = @as(f32, @floatFromInt(out_data[14])) / 255.0;
@@ -144,7 +143,7 @@ pub fn set_callback(_fn: CallbackFn) void {
     if (system.platform == .windows) {
         raw.set_callback(callback);
     } else if (system.platform == .android) {
-        __android.xbox_pad_callback = callback;
+        //__android.xbox_pad_callback = callback;
     } else {
         @compileError("not support platform");
     }

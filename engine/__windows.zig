@@ -8,6 +8,7 @@ const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
 const render_command = @import("render_command.zig");
+const general_input = @import("general_input.zig");
 const __raw_input = @import("__raw_input.zig");
 const graphics = @import("graphics.zig");
 const math = @import("math.zig");
@@ -363,6 +364,11 @@ pub fn nanosleep(ns: u64) void {
 //TODO IME 입력 이벤트는 에디트 박스 구현할때 같이 하기
 //TODO 터치 이벤트
 fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM) callconv(WINAPI) win32.LRESULT {
+    const S = struct {
+        var caps: win32.HIDP_CAPS = undefined;
+        var usage: [128]win32.USAGE = undefined;
+        var general_state: general_input.INPUT_STATE = undefined;
+    };
     switch (uMsg) {
         win32.WM_LBUTTONDOWN => {
             __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
@@ -420,12 +426,149 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             // switch (rawinput.header.dwType) {
             //     else => {},
             // }
-            var i: usize = 0;
-            __raw_input.mutex.lock();
-            while (i < __raw_input.list.items.len) : (i += 1) {
-                __raw_input.list.items[i].*.handle_event();
+            {
+                var i: usize = 0;
+                __raw_input.mutex.lock();
+                while (i < __raw_input.list.items.len) : (i += 1) {
+                    __raw_input.list.items[i].*.handle_event();
+                }
+                __raw_input.mutex.unlock();
             }
-            __raw_input.mutex.unlock();
+
+            if (system.a_fn(__system.general_input_callback) != null) end: {
+                var size: u32 = undefined;
+                _ = win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, null, &size, @sizeOf(win32.RAWINPUTHEADER));
+                const inputT: []align(@alignOf(*win32.RAWINPUT)) u8 = __system.allocator.alignedAlloc(u8, @alignOf(*win32.RAWINPUT), size) catch |e| system.handle_error3("alignedAlloc RAWINPUT", e);
+                defer __system.allocator.free(inputT);
+                const input: *win32.RAWINPUT = @ptrCast(inputT.ptr);
+
+                if (0 < win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, @ptrCast(input), &size, @sizeOf(win32.RAWINPUTHEADER))) {
+                    if (0 != win32.GetRawInputDeviceInfoA(input.*.header.hDevice, win32.RIDI_PREPARSEDDATA, null, &size)) break :end;
+
+                    const processHeap = win32.GetProcessHeap();
+                    const pPreparsedData = win32.HeapAlloc(processHeap, 0, size) orelse break :end;
+                    defer _ = win32.HeapFree(processHeap, 0, pPreparsedData);
+
+                    const res = win32.GetRawInputDeviceInfoA(input.*.header.hDevice, win32.RIDI_PREPARSEDDATA, pPreparsedData, &size);
+                    if (res == 0 or res == std.math.maxInt(u32)) break :end;
+
+                    if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetCaps(pPreparsedData, &S.caps)) break :end;
+                    const pButtonCaps: win32.PHIDP_BUTTON_CAPS = @alignCast(@ptrCast(win32.HeapAlloc(
+                        processHeap,
+                        0,
+                        @sizeOf(win32.HIDP_BUTTON_CAPS) * S.caps.NumberInputButtonCaps,
+                    ) orelse break :end));
+                    defer _ = win32.HeapFree(processHeap, 0, pButtonCaps);
+
+                    var caps_len: win32.USHORT = S.caps.NumberInputButtonCaps;
+                    if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetButtonCaps(
+                        win32.HIDP_REPORT_TYPE.HidP_Input,
+                        pButtonCaps,
+                        &caps_len,
+                        pPreparsedData,
+                    )) break :end;
+
+                    const pValueCaps: win32.PHIDP_VALUE_CAPS = @alignCast(@ptrCast(win32.HeapAlloc(
+                        processHeap,
+                        0,
+                        @sizeOf(win32.HIDP_VALUE_CAPS) * S.caps.NumberInputValueCaps,
+                    ) orelse break :end));
+                    defer _ = win32.HeapFree(processHeap, 0, pValueCaps);
+
+                    caps_len = S.caps.NumberInputValueCaps;
+                    if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetValueCaps(
+                        win32.HIDP_REPORT_TYPE.HidP_Input,
+                        pValueCaps,
+                        &caps_len,
+                        pPreparsedData,
+                    )) break :end;
+
+                    var usage_len: win32.ULONG = pButtonCaps.*.R.Range.UsageMax - pButtonCaps.*.R.Range.UsageMin + 1;
+                    if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetUsages(
+                        win32.HIDP_REPORT_TYPE.HidP_Input,
+                        pButtonCaps.*.UsagePage,
+                        0,
+                        &S.usage,
+                        &usage_len,
+                        pPreparsedData,
+                        &input.*.data.hid.bRawData,
+                        input.*.data.hid.dwSizeHid,
+                    )) break :end;
+
+                    S.general_state = std.mem.zeroes(general_input.INPUT_STATE);
+
+                    var i: u32 = 0;
+                    while (i < usage_len) : (i += 1) {
+                        switch (S.usage[i] - pButtonCaps.*.R.Range.UsageMin) {
+                            0 => S.general_state.buttons.Y = true,
+                            1 => S.general_state.buttons.B = true,
+                            2 => S.general_state.buttons.A = true,
+                            3 => S.general_state.buttons.X = true,
+                            4 => S.general_state.buttons.LEFT_SHOULDER = true,
+                            5 => S.general_state.buttons.RIGHT_SHOULDER = true,
+                            6 => S.general_state.left_trigger = 1,
+                            7 => S.general_state.right_trigger = 1,
+                            8 => S.general_state.buttons.VOLUME_DOWN = true,
+                            9 => S.general_state.buttons.VOLUME_UP = true,
+                            10 => S.general_state.buttons.LEFT_THUMB = true,
+                            11 => S.general_state.buttons.RIGHT_THUMB = true,
+                            12 => S.general_state.buttons.START = true,
+                            13 => S.general_state.buttons.BACK = true,
+                            else => {},
+                        }
+                    }
+
+                    i = 0;
+                    var value: win32.USAGE = undefined;
+                    while (i < S.caps.NumberInputValueCaps) : (i += 1) {
+                        if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetUsageValue(
+                            win32.HIDP_REPORT_TYPE.HidP_Input,
+                            pValueCaps[i].UsagePage,
+                            0,
+                            pValueCaps[i].R.Range.UsageMin,
+                            &value,
+                            pPreparsedData,
+                            &input.*.data.hid.bRawData,
+                            input.*.data.hid.dwSizeHid,
+                        )) break :end;
+                        switch (pValueCaps[i].R.Range.UsageMin) {
+                            0x30 => S.general_state.left_thumb_x = (@as(f32, @floatFromInt(value)) / 255 - 0.5) * 2, //x
+                            0x31 => S.general_state.left_thumb_y = (@as(f32, @floatFromInt(value)) / 255 - 0.5) * 2, //y
+                            0x32 => S.general_state.right_thumb_x = (@as(f32, @floatFromInt(value)) / 255 - 0.5) * 2, //rx
+                            0x35 => S.general_state.right_thumb_y = (@as(f32, @floatFromInt(value)) / 255 - 0.5) * 2, //ry
+                            //0x36=>,z
+                            0x39 => {
+                                switch (value) {
+                                    0 => S.general_state.buttons.DPAD_UP = true,
+                                    1 => {
+                                        S.general_state.buttons.DPAD_UP = true;
+                                        S.general_state.buttons.DPAD_RIGHT = true;
+                                    },
+                                    2 => S.general_state.buttons.DPAD_RIGHT = true,
+                                    3 => {
+                                        S.general_state.buttons.DPAD_RIGHT = true;
+                                        S.general_state.buttons.DPAD_DOWN = true;
+                                    },
+                                    4 => S.general_state.buttons.DPAD_DOWN = true,
+                                    5 => {
+                                        S.general_state.buttons.DPAD_DOWN = true;
+                                        S.general_state.buttons.DPAD_LEFT = true;
+                                    },
+                                    6 => S.general_state.buttons.DPAD_LEFT = true,
+                                    7 => {
+                                        S.general_state.buttons.DPAD_LEFT = true;
+                                        S.general_state.buttons.DPAD_UP = true;
+                                    },
+                                    else => {},
+                                }
+                            }, //dpad
+                            else => {},
+                        }
+                    }
+                    S.general_state.handle = input.*.header.hDevice;
+                    __system.general_input_callback.?(S.general_state);
+                }
+            }
         },
         win32.WM_DEVICECHANGE => {
             var i: usize = 0;
