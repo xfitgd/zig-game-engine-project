@@ -15411,6 +15411,7 @@ pub const VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME = "VK_KHR_ray_tracing_
 pub const VK_KHR_portability_enumeration = @as(c_int, 1);
 pub const VK_KHR_PORTABILITY_ENUMERATION_SPEC_VERSION = @as(c_int, 1);
 pub const VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME = "VK_KHR_portability_enumeration";
+pub const VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME = "VK_KHR_portability_subset";
 pub const VK_KHR_maintenance4 = @as(c_int, 1);
 pub const VK_KHR_MAINTENANCE_4_SPEC_VERSION = @as(c_int, 2);
 pub const VK_KHR_MAINTENANCE_4_EXTENSION_NAME = "VK_KHR_maintenance4";

@@ -7,6 +7,9 @@ const __system = @import("__system.zig");
 const system = @import("system.zig");
 const math = @import("math.zig");
 
+pub const general_input = @import("general_input.zig");
+pub const xbox_pad_input = @import("xbox_pad_input.zig");
+
 pub fn key() type {
     if (system.platform == .windows) {
         return enum(u16) {

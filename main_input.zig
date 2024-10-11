@@ -10,10 +10,10 @@ comptime {
 const std = @import("std");
 const xfit = @import("engine/xfit.zig");
 const system = @import("engine/system.zig");
-const font = @import("engine/font.zig");
 const window = @import("engine/window.zig");
-const xbox_pad_input = @import("engine/xbox_pad_input.zig");
-const general_input = @import("engine/general_input.zig");
+const input = @import("engine/input.zig");
+const xbox_pad_input = input.xbox_pad_input;
+const general_input = input.general_input;
 
 const timer_callback = @import("engine/timer_callback.zig");
 

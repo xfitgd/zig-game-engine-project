@@ -198,13 +198,8 @@ fn move_callback() !bool {
     shape_src.color[3] += 0.005;
     if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
 
-    // 다른 스레드에서 호출시킬때 필요 (exiting 상태일때는 오류 발생)
-    render_command.lock_for_update() catch return false;
-
     cmd.scene.?[1].*._shape.transform.map_update();
     shape_src.map_color_update();
-
-    render_command.unlock_for_update();
 
     dx += 1;
     if (dx >= 200) dx = 0;
@@ -217,9 +212,7 @@ pub fn xfit_update() void {}
 pub fn xfit_size() void {
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
 
-    render_command.lock_for_update() catch return;
     g_proj.map_update();
-    render_command.unlock_for_update();
 }
 
 ///before system clean

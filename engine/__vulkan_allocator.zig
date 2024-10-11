@@ -18,20 +18,19 @@ const NODE_SIZE = 2048;
 ///버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
 const MINIMUM_SIZE_DIV_CELL = 0.5;
 const MINIMUM_SIZE = 32768;
+const MAX_IDX_COUNT = 8;
 const Self = @This();
 
 pub const ERROR = error{device_memory_limit};
 
 buffers: MemoryPoolExtra(vulkan_res, .{}),
 buffer_ids: ArrayList(*vulkan_res),
+memory_idx_counts: []u32,
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
-    var mem_prop: vk.VkPhysicalDeviceMemoryProperties = undefined;
-    vk.vkGetPhysicalDeviceMemoryProperties(__vulkan.vk_physical_device, &mem_prop);
-
     var i: u32 = 0;
-    while (i < mem_prop.memoryTypeCount) : (i += 1) {
-        if ((_type_filter & (@as(u32, 1) << @intCast(i)) != 0) and (mem_prop.memoryTypes[i].propertyFlags & _prop == _prop)) {
+    while (i < __vulkan.mem_prop.memoryTypeCount) : (i += 1) {
+        if ((_type_filter & (@as(u32, 1) << @intCast(i)) != 0) and (__vulkan.mem_prop.memoryTypes[i].propertyFlags & _prop == _prop)) {
             return i;
         }
     }
@@ -56,6 +55,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
         __resource_len: u32 = undefined,
         pvulkan_buffer: *vulkan_res = undefined,
         __image_view: if (_res_type == .image) vk.VkImageView else void = if (_res_type == .image) undefined,
+        __image_frames: if (_res_type == .image) f32 else void = if (_res_type == .image) 1,
 
         pub inline fn is_build(self: *vulkan_res_node_Self) bool {
             return self.*.res != null;
@@ -119,6 +119,7 @@ const vulkan_res = struct {
                 break;
             }
         }
+        self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] -= 1;
         self.*.this.*.buffers.destroy(self);
     }
     fn allocate_memory(_info: *const vk.VkMemoryAllocateInfo, _mem: *vk.VkDeviceMemory) void {
@@ -200,18 +201,24 @@ const vulkan_res = struct {
             vk.VkImage => vk.vkDestroyImage(__vulkan.vkDevice, _buf, null),
             else => @compileError("invaild buf type"),
         }
-        for (self.*.is_free) |v| {
-            if (!v) return;
+        if (self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] > MAX_IDX_COUNT) {
+            for (self.*.is_free) |v| {
+                if (!v) return;
+            }
+            self.*.deinit();
         }
-        self.*.deinit();
     }
 };
 
 pub fn init() Self {
-    return Self{
+    const res = Self{
         .buffers = MemoryPoolExtra(vulkan_res, .{}).init(__system.allocator),
         .buffer_ids = ArrayList(*vulkan_res).init(__system.allocator),
+        .memory_idx_counts = __system.allocator.alloc(u32, __vulkan.mem_prop.memoryTypeCount) catch |e| system.handle_error3("__vulkan_allocator init alloc memory_idx_counts", e),
     };
+    @memset(res.memory_idx_counts, 0);
+
+    return res;
 }
 
 fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *usize, _max_size: usize) *vulkan_res {
@@ -250,6 +257,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
             unreachable;
         };
     }
+    self.*.memory_idx_counts[res.?.*.info.memoryTypeIndex] += 1;
     return res.?;
 }
 
@@ -305,7 +313,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     if (_data != null) {
         img_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-        if (img_info.extent.width * img_info.extent.width * img_info.extent.depth * 4 > _data.?.len) {
+        if (img_info.extent.width * img_info.extent.width * img_info.extent.depth * img_info.arrayLayers * 4 > _data.?.len) {
             system.handle_error_msg2("create_image _data not enough for size(rect).");
         }
     }
@@ -333,7 +341,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,
-            .layerCount = 1,
+            .layerCount = img_info.arrayLayers,
         },
     };
     result = vk.vkCreateImageView(__vulkan.vkDevice, &image_view_create_info, null, &_out_vulkan_image_node.*.__image_view);
@@ -354,7 +362,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
         staging_alloc.*.unmap();
 
         __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth);
+        __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth, img_info.arrayLayers);
         __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     }
@@ -392,7 +400,7 @@ pub fn copy_texture(self: *Self, image: *graphics.texture, _data: []const u8, re
         if (rect != null) {
             __vulkan.copy_buffer_to_image2(staging_buf, image.*.__image.res, rect, 1);
         } else {
-            __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1);
+            __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, 1);
         }
         __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         staging_alloc.unbind_res(staging_buf, staging_buf_idx);
@@ -405,4 +413,5 @@ pub fn deinit(self: *Self) void {
     }
     self.*.buffers.deinit();
     self.*.buffer_ids.deinit();
+    __system.allocator.free(self.*.memory_idx_counts);
 }

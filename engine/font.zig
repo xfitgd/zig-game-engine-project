@@ -2,11 +2,7 @@ const std = @import("std");
 const unicode = std.unicode;
 const system = @import("system.zig");
 const __system = @import("__system.zig");
-pub const freetype = @cImport({
-    @cInclude("freetype/ft2build.h");
-    @cInclude("freetype/freetype/freetype.h");
-    @cInclude("freetype/freetype/ftoutln.h");
-});
+pub const freetype = @import("include/freetype.zig");
 const geometry = @import("geometry.zig");
 const graphics = @import("graphics.zig");
 const math = @import("math.zig");
