@@ -110,11 +110,9 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
         __system.loop();
     }
 
-    __vulkan.render_rwlock.lock();
     __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
-    __vulkan.render_rwlock.unlock();
 
     render_thread_sem.post();
 

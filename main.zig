@@ -53,7 +53,8 @@ var shape_src: graphics.shape.source = undefined;
 var image_src: graphics.texture = undefined;
 var anim_image_src: graphics.texture_array = undefined;
 var cmd: *render_command = undefined;
-var cmds: [1]*render_command = .{undefined};
+var cmd2: *render_command = undefined;
+var cmds: [2]*render_command = .{ undefined, undefined };
 
 var color_trans: graphics.color_transform = undefined;
 
@@ -190,9 +191,12 @@ pub fn xfit_init() void {
     objects.append(anim_img) catch system.handle_error_msg2("objects.append(anim_img)");
 
     cmd = render_command.init();
-    cmd.*.scene = objects.items[0..objects.items.len];
+    cmd.*.scene = objects.items[0..2];
+    cmd2 = render_command.init();
+    cmd2.*.scene = objects.items[2..objects.items.len];
 
     cmds[0] = cmd;
+    cmds[1] = cmd2;
     graphics.render_cmd = cmds[0..cmds.len];
 
     var start_sem: std.Thread.Semaphore = .{};
@@ -237,8 +241,8 @@ fn move_callback() !bool {
 
 var dx: f32 = 0;
 pub fn xfit_update() void {
-    cmd.scene.?[2].*._anim_image.next_frame();
-    cmd.scene.?[2].*._anim_image.map_update_frame();
+    cmd2.scene.?[0].*._anim_image.next_frame();
+    cmd2.scene.?[0].*._anim_image.map_update_frame();
 }
 
 pub fn xfit_size() void {
@@ -273,6 +277,7 @@ pub fn xfit_destroy() void {
     font.destroy();
 
     cmd.deinit();
+    cmd2.deinit();
     color_trans.deinit();
 }
 

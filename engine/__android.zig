@@ -124,11 +124,9 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
 }
 
 fn destroy_android() void {
-    __vulkan.render_rwlock.lock();
     __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
-    __vulkan.render_rwlock.unlock();
 
     __system.destroy();
 }

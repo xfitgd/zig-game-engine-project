@@ -18,7 +18,7 @@ const __render_command = @import("__render_command.zig");
 
 pub const MAX_FRAME: usize = 3;
 
-__refesh: bool = true,
+__refesh: [MAX_FRAME]bool = .{true} ** MAX_FRAME,
 __command_buffers: [MAX_FRAME][]vk.VkCommandBuffer = undefined,
 scene: ?[]*graphics.iobject = null,
 const Self = @This();
@@ -33,7 +33,7 @@ pub fn init() *Self {
 
         const allocInfo: vk.VkCommandBufferAllocateInfo = .{
             .commandPool = __vulkan.vkCommandPool,
-            .level = vk.VK_COMMAND_BUFFER_LEVEL_SECONDARY,
+            .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = @intCast(__vulkan.get_swapchain_image_length()),
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         };
@@ -69,7 +69,9 @@ pub fn deinit(self: *Self) void {
 
 ///render_command안의 scene(구성)이 바뀔때 마다 호출(scene 내의 iobject 내부 리소스 값이 바뀔경우는 해당없음)
 pub fn refresh(self: *Self) void {
-    @atomicStore(bool, &self.*.__refesh, true, .monotonic); //__refesh를 읽는 렌더링 부분은 이미 뮤텍스에 감싸져 있음
+    for (&self.*.__refesh) |*v| {
+        @atomicStore(bool, v, true, .monotonic);
+    }
 }
 
 const ERROR = error{IsDestroying};
