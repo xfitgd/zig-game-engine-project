@@ -61,6 +61,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
 
     const lib_names = comptime [_][]const u8{
         "libwebp.a",
+        "libwebpdemux.a",
         "libfreetype.a",
         "libogg.a",
         "libopus.a", //-fno-stack-protector 옵션으로 빌드 필요

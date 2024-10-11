@@ -51,7 +51,9 @@ var shape_src: graphics.shape.source = undefined;
 // var shape_src2: graphics.shape.source = undefined;
 // var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.texture = undefined;
+var anim_image_src: graphics.texture_array = undefined;
 var cmd: *render_command = undefined;
+var cmds: [1]*render_command = .{undefined};
 
 var color_trans: graphics.color_transform = undefined;
 
@@ -92,6 +94,7 @@ pub fn xfit_init() void {
 
     const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
     const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
+    const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
 
     text_shape.* = .{ ._shape = .{} };
@@ -102,6 +105,7 @@ pub fn xfit_init() void {
     //shape_src2.color = .{ 1, 0, 1, 1 };
 
     img.* = .{ ._image = graphics.image.init() };
+    anim_img.* = .{ ._anim_image = graphics.animate_image.init() };
 
     const data = file_.read_file("test.webp", allocator) catch |e| system.handle_error3("test.webp read_file", e);
     defer allocator.free(data);
@@ -115,9 +119,23 @@ pub fn xfit_init() void {
 
     img_decoder.decode(.RGBA, data, image_src.pixels.?) catch |e| system.handle_error3("test.webp decode", e);
 
+    const anim_data = file_.read_file("wasp.webp", allocator) catch |e| system.handle_error3("wasp.webp read_file", e);
+    defer allocator.free(anim_data);
+    img_decoder.load_anim_header(anim_data) catch |e| system.handle_error3("wasp.webp load_anim_header fail", e);
+
+    anim_image_src = graphics.texture_array.init();
+    anim_image_src.width = img_decoder.width();
+    anim_image_src.height = img_decoder.height();
+    anim_image_src.frames = img_decoder.frame_count();
+    anim_image_src.pixels = allocator.alloc(u8, img_decoder.size(.RGBA)) catch |e| system.handle_error3("anim_image_src.pixels alloc", e);
+
+    img_decoder.decode(.RGBA, data, anim_image_src.pixels.?) catch |e| system.handle_error3("wasp.webp decode", e);
+
+    anim_image_src.build();
     image_src.build();
 
     img.*._image.src = &image_src;
+    anim_img.*._anim_image.src = &anim_image_src;
 
     font0_data = file_.read_file("SourceHanSerifK-ExtraLight.otf", allocator) catch |e| system.handle_error3("read_file font0_data", e);
     font0 = font.init(font0_data, 0);
@@ -158,13 +176,24 @@ pub fn xfit_init() void {
     );
     img.*.build();
 
+    anim_img.*._anim_image.transform.camera = &g_camera;
+    anim_img.*._anim_image.transform.projection = &g_proj;
+    anim_img.*._anim_image.transform.model = matrix.scaling(
+        @as(f32, @floatFromInt(anim_image_src.width)),
+        @as(f32, @floatFromInt(anim_image_src.height)),
+        1.0,
+    ).multiply(&matrix.translation(300, -200, 0));
+    anim_img.*.build();
+
     objects.append(img) catch system.handle_error_msg2("objects.append(img)");
     objects.append(text_shape) catch system.handle_error_msg2("objects.append(text_shape)");
+    objects.append(anim_img) catch system.handle_error_msg2("objects.append(anim_img)");
 
     cmd = render_command.init();
     cmd.*.scene = objects.items[0..objects.items.len];
 
-    graphics.render_cmd = cmd;
+    cmds[0] = cmd;
+    graphics.render_cmd = cmds[0..cmds.len];
 
     var start_sem: std.Thread.Semaphore = .{};
 
@@ -207,7 +236,10 @@ fn move_callback() !bool {
 }
 
 var dx: f32 = 0;
-pub fn xfit_update() void {}
+pub fn xfit_update() void {
+    cmd.scene.?[2].*._anim_image.next_frame();
+    cmd.scene.?[2].*._anim_image.map_update_frame();
+}
 
 pub fn xfit_size() void {
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
@@ -221,7 +253,9 @@ pub fn xfit_destroy() void {
     //shape_src2.deinit_for_alloc();
 
     allocator.free(image_src.pixels.?);
+    allocator.free(anim_image_src.pixels.?);
     image_src.deinit();
+    anim_image_src.deinit();
 
     g_camera.deinit();
     g_proj.deinit();

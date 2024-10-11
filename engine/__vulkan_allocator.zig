@@ -53,25 +53,24 @@ pub fn vulkan_res_node(_res_type: res_type) type {
         res: ivulkan_res(_res_type) = null,
         idx: usize = undefined,
         __resource_len: u32 = undefined,
-        pvulkan_buffer: *vulkan_res = undefined,
+        pvulkan_buffer: ?*vulkan_res = null,
         __image_view: if (_res_type == .image) vk.VkImageView else void = if (_res_type == .image) undefined,
-        __image_frames: if (_res_type == .image) f32 else void = if (_res_type == .image) 1,
 
         pub inline fn is_build(self: *vulkan_res_node_Self) bool {
             return self.*.res != null;
         }
         pub inline fn map(self: *vulkan_res_node_Self, _out_data: *?*anyopaque) void {
-            self.*.pvulkan_buffer.*.map(self.*.idx, _out_data);
+            self.*.pvulkan_buffer.?.*.map(self.*.idx, _out_data);
         }
         pub inline fn unmap(self: *vulkan_res_node_Self) void {
-            self.*.pvulkan_buffer.*.unmap();
+            self.*.pvulkan_buffer.?.*.unmap();
         }
         pub inline fn map_update(self: *vulkan_res_node_Self, _data: anytype) void {
             var data: ?*anyopaque = undefined;
-            self.*.pvulkan_buffer.*.map(self.*.idx, &data);
+            self.*.pvulkan_buffer.?.*.map(self.*.idx, &data);
             const u8data = mem.obj_to_u8arrC(_data);
             @memcpy(@as([*]u8, @ptrCast(data.?))[0..u8data.len], u8data);
-            self.*.pvulkan_buffer.*.unmap();
+            self.*.pvulkan_buffer.?.*.unmap();
         }
         pub inline fn clean(self: *vulkan_res_node_Self) void {
             if (is_build(self)) {
@@ -81,8 +80,9 @@ pub fn vulkan_res_node(_res_type: res_type) type {
                     },
                     else => {},
                 }
-                self.*.pvulkan_buffer.*.unbind_res(self.*.res, self.*.idx);
+                if (!self.*.pvulkan_buffer.?.*.unbind_res(self.*.res, self.*.idx)) self.*.pvulkan_buffer = null;
                 self.*.res = null;
+                self.*.__resource_len = 0;
             }
         }
     };
@@ -194,7 +194,7 @@ const vulkan_res = struct {
         return res;
     }
     ///bind_buffer에서 반환된 idx를 사용.
-    fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) void {
+    fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) bool {
         self.*.is_free[_idx] = true;
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
@@ -203,10 +203,12 @@ const vulkan_res = struct {
         }
         if (self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] > MAX_IDX_COUNT) {
             for (self.*.is_free) |v| {
-                if (!v) return;
+                if (!v) return true;
             }
             self.*.deinit();
+            return false;
         }
+        return true;
     }
 };
 
@@ -293,7 +295,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
 
     if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
         __vulkan.copy_buffer(staging_buf, _out_vulkan_buffer_node.*.res, buf_info.size); // ! mem_require.size X
-        staging_alloc.unbind_res(staging_buf, staging_buf_idx);
+        _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     } else if (_data != null) {
         var _out_data: ?*anyopaque = null;
         _out_vulkan_buffer_node.*.map(&_out_data);
@@ -327,7 +329,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     _out_vulkan_image_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_image_node.*.res, &mem_require, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &_out_vulkan_image_node.*.idx, max_image_size);
 
     const image_view_create_info: vk.VkImageViewCreateInfo = .{
-        .viewType = img_info.imageType,
+        .viewType = if (img_info.arrayLayers > 1) vk.VK_IMAGE_VIEW_TYPE_2D_ARRAY else vk.VK_IMAGE_VIEW_TYPE_2D,
         .format = img_info.format,
         .components = .{
             .r = vk.VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -362,10 +364,11 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
         staging_alloc.*.unmap();
 
         __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth, img_info.arrayLayers);
+        __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth, 0, img_info.arrayLayers);
         __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        staging_alloc.unbind_res(staging_buf, staging_buf_idx);
+        _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     }
+    _out_vulkan_image_node.*.__resource_len = img_info.arrayLayers;
 }
 
 pub fn copy_texture(self: *Self, image: *graphics.texture, _data: []const u8, rect: ?math.recti) void {
@@ -375,36 +378,66 @@ pub fn copy_texture(self: *Self, image: *graphics.texture, _data: []const u8, re
     var staging_buf: vk.VkBuffer = undefined;
     var staging_buf_idx: usize = undefined;
 
-    if (_data != null) {
-        const size = if (rect == null) image.width * image.height * 4 else rect.?.width() * rect.?.height() * 4;
-        if (size > image.width * image.height * 4) {
-            system.handle_error_msg2("copy_image rect region can't bigger than image size.");
-        }
-        if (size > _data.len) {
-            system.handle_error_msg2("copy_image _data not enough for size(rect).");
-        }
-        const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-        result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateBuffer staging_buf : {d}", .{result});
-
-        vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
-
-        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, 0);
-
-        var _out_data: ?*anyopaque = null;
-        staging_alloc.*.map(staging_buf_idx, &_out_data);
-        @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
-        staging_alloc.*.unmap();
-
-        __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        if (rect != null) {
-            __vulkan.copy_buffer_to_image2(staging_buf, image.*.__image.res, rect, 1);
-        } else {
-            __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, 1);
-        }
-        __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        staging_alloc.unbind_res(staging_buf, staging_buf_idx);
+    const size = if (rect == null) image.width * image.height * 4 else rect.?.width() * rect.?.height() * 4;
+    if (size > image.width * image.height * 4) {
+        system.handle_error_msg2("copy_image rect region can't bigger than image size.");
     }
+    if (size > _data.len) {
+        system.handle_error_msg2("copy_image _data not enough for size(rect).");
+    }
+    const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+    result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateBuffer staging_buf : {d}", .{result});
+
+    vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
+
+    staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, 0);
+
+    var _out_data: ?*anyopaque = null;
+    staging_alloc.*.map(staging_buf_idx, &_out_data);
+    @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
+    staging_alloc.*.unmap();
+
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if (rect != null) {
+        __vulkan.copy_buffer_to_image2(staging_buf, image.*.__image.res, rect, 1);
+    } else {
+        __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, 0, 1);
+    }
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
+}
+
+pub fn copy_texture_array(self: *Self, image: *graphics.texture_array, _data: []const u8, frame: u32, framelen: u32) void {
+    var result: c_int = undefined;
+    var mem_require: vk.VkMemoryRequirements = undefined;
+    var staging_alloc: *vulkan_res = undefined;
+    var staging_buf: vk.VkBuffer = undefined;
+    var staging_buf_idx: usize = undefined;
+
+    if (framelen + frame >= image.*.get_frame_count_build()) system.handle_error_msg2("copy_texture_array framelen + frame too big.");
+
+    const size = image.width * image.height * 4 * framelen;
+    if (size > _data.len) {
+        system.handle_error_msg2("copy_texture_array _data not enough for size.");
+    }
+    const staging_buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = vk.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
+    result = vk.vkCreateBuffer(__vulkan.vkDevice, &staging_buf_info, null, &staging_buf);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan_allocator.create_image.vkCreateBuffer staging_buf : {d}", .{result});
+
+    vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
+
+    staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, 0);
+
+    var _out_data: ?*anyopaque = null;
+    staging_alloc.*.map(staging_buf_idx, &_out_data);
+    @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
+    staging_alloc.*.unmap();
+
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, frame, framelen);
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
 }
 
 pub fn deinit(self: *Self) void {

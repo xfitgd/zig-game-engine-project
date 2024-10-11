@@ -50,7 +50,7 @@ pub const tex_vertex_2d = extern struct {
     uv: point align(1),
 };
 
-pub var render_cmd: ?*render_command = null;
+pub var render_cmd: ?[]*render_command = null;
 
 pub const index_type = enum { U16, U32 };
 pub const DEF_IDX_TYPE_: index_type = .U32;
@@ -60,6 +60,7 @@ pub const iobject = union(enum) {
     const Self = @This();
     _shape: shape,
     _image: image,
+    _anim_image: animate_image,
 
     pub inline fn deinit(self: *Self) void {
         switch (self.*) {
@@ -349,9 +350,9 @@ pub const transform = struct {
     const Self = @This();
 
     model: matrix = matrix.identity(),
-    ///이 값이 변경되면 update 필요 또는 build로 초기화하기
+    ///이 값이 변경되면 update 필요
     camera: ?*camera = null,
-    ///이 값이 변경되면 update 필요 또는 build로 초기화하기
+    ///이 값이 변경되면 update 필요
     projection: ?*projection = null,
     __model_uniform: vulkan_res_node(.buffer) = .{},
 
@@ -375,8 +376,8 @@ pub const transform = struct {
 pub const texture = struct {
     const Self = @This();
     __image: vulkan_res_node(.image) = .{},
-    width: u32 = undefined,
-    height: u32 = undefined,
+    width: u32 = 0,
+    height: u32 = 0,
     pixels: ?[]u8 = null,
     vertices: *vertices(tex_vertex_2d),
     indices: ?*indices32,
@@ -410,6 +411,10 @@ pub const texture = struct {
     }
     pub fn build(self: *Self) void {
         self.*.__check_init.init();
+        if (self.*.width == 0 or self.*.height == 0) {
+            system.print_error("WARN can't build texture\n", .{});
+            return;
+        }
         const img_info: vk.VkImageCreateInfo = .{
             .arrayLayers = 1,
             .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
@@ -480,9 +485,9 @@ pub const texture = struct {
 pub const texture_array = struct {
     const Self = @This();
     __image: vulkan_res_node(.image) = .{},
-    width: u32 = undefined,
-    height: u32 = undefined,
-    frames: u32 = undefined,
+    width: u32 = 0,
+    height: u32 = 0,
+    frames: u32 = 0,
     ///1차원 배열에 순차적으로 이미지 프레임 데이터들을 배치
     pixels: ?[]u8 = null,
     vertices: *vertices(tex_vertex_2d),
@@ -501,6 +506,9 @@ pub const texture_array = struct {
     pub fn get_default_nearest_sampler() vk.VkSampler {
         return __vulkan.nearest_sampler;
     }
+    pub fn get_frame_count_build(self: *Self) u32 {
+        return self.*.__image.__resource_len;
+    }
 
     pub fn init() Self {
         return .{
@@ -517,6 +525,10 @@ pub const texture_array = struct {
     }
     pub fn build(self: *Self) void {
         self.*.__check_init.init();
+        if (self.*.width == 0 or self.*.height == 0 or self.*.frames == 0) {
+            system.print_error("WARN can't build texture array\n", .{});
+            return;
+        }
         const img_info: vk.VkImageCreateInfo = .{
             .arrayLayers = self.*.frames,
             .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
@@ -577,10 +589,6 @@ pub const texture_array = struct {
             },
         };
         vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
-    }
-    pub fn copy(self: *Self, _data: []const u8, rect: ?math.recti) void {
-        check_vk_allocator();
-        __vulkan.vk_allocator.?.*.copy_texture(self, _data, rect);
     }
 };
 
@@ -988,12 +996,12 @@ pub const image = struct {
 pub const animate_image = struct {
     const Self = @This();
 
-    src: *texture = undefined,
+    src: *texture_array = undefined,
     color_tran: *color_transform,
     __descriptor_set: vk.VkDescriptorSet = undefined,
     __descriptor_pool: vk.VkDescriptorPool = null,
     transform: transform = .{},
-    __frame_uniform: vulkan_res_node(.buffer),
+    __frame_uniform: vulkan_res_node(.buffer) = .{},
     frame: u32 = 0,
 
     ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
@@ -1027,6 +1035,29 @@ pub const animate_image = struct {
     pub fn deinit(self: *Self) void {
         vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
         self.*.transform.__deinit();
+        self.*.__frame_uniform.clean();
+    }
+    pub fn next_frame(self: *Self) void {
+        if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
+        if (self.*.src.*.__image.__resource_len - 1 < self.*.frame) {
+            self.*.frame = 0;
+            return;
+        }
+        self.*.frame = (self.*.frame + 1) % self.*.src.*.get_frame_count_build();
+    }
+    pub fn prev_frame(self: *Self) void {
+        if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
+        if (self.*.src.*.__image.__resource_len - 1 < self.*.frame) {
+            self.*.frame = 0;
+            return;
+        }
+        self.*.frame = if (self.*.frame > 0) (self.*.frame - 1) else (self.*.src.*.get_frame_count_build() - 1);
+    }
+
+    pub fn map_update_frame(self: *Self) void {
+        if (!self.*.__frame_uniform.is_build() or self.*.src.*.__image.__resource_len == 0 or self.*.src.*.__image.__resource_len - 1 < self.*.frame) return;
+        const F: f32 = @floatFromInt(self.*.frame);
+        self.*.__frame_uniform.map_update(&F);
     }
     pub fn update(self: *Self) void {
         if (!self.*.can_build()) {
@@ -1035,7 +1066,7 @@ pub const animate_image = struct {
         if (self.*.src.*.__image.res == null) {
             system.handle_error_msg2("image update need texture build");
         }
-        const buffer_info = [5]vk.VkDescriptorBufferInfo{
+        const buffer_info = [6]vk.VkDescriptorBufferInfo{
             vk.VkDescriptorBufferInfo{
                 .buffer = self.*.transform.__model_uniform.res,
                 .offset = 0,
@@ -1129,15 +1160,18 @@ pub const animate_image = struct {
 
         self.*.transform.__build();
 
+        const F: f32 = @floatFromInt(self.*.frame);
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(f32), &self.*.__frame_uniform, mem.obj_to_u8arrC(&F));
+
         self.*.update();
     }
     pub fn __draw(self: *Self, cmd: vk.VkCommandBuffer) void {
-        vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.tex_2d_pipeline_set.pipeline);
+        vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.animate_tex_2d_pipeline_set.pipeline);
 
         vk.vkCmdBindDescriptorSets(
             cmd,
             vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
-            __vulkan.tex_2d_pipeline_set.pipelineLayout,
+            __vulkan.animate_tex_2d_pipeline_set.pipelineLayout,
             0,
             2,
             &[_]vk.VkDescriptorSet{ self.*.__descriptor_set, self.*.src.*.__descriptor_set },

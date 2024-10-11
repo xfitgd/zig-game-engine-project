@@ -290,6 +290,7 @@ var vkRenderPass: vk.VkRenderPass = undefined;
 var vkSwapchain: vk.VkSwapchainKHR = null;
 
 pub var vkCommandPool: vk.VkCommandPool = undefined;
+pub var vkCommandBuffer: vk.VkCommandBuffer = undefined;
 
 var vkImageAvailableSemaphore: [render_command.MAX_FRAME]vk.VkSemaphore = .{null} ** render_command.MAX_FRAME;
 var vkRenderFinishedSemaphore: [render_command.MAX_FRAME]vk.VkSemaphore = .{null} ** render_command.MAX_FRAME;
@@ -392,30 +393,21 @@ fn recordCommandBuffer(commandBuffer: *render_command) void {
     }
     for (commandBuffer.*.__command_buffers) |cmds| {
         for (cmds, vk_swapchain_frame_buffers) |cmd, frame| {
-            const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
-            const clearDepthStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
-
-            const renderPassInfo: vk.VkRenderPassBeginInfo = .{
-                .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                .renderPass = vkRenderPass,
+            const in: vk.VkCommandBufferInheritanceInfo = .{
                 .framebuffer = frame,
-                .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
-                .clearValueCount = 2,
-                .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDepthStencil },
+                .renderPass = vkRenderPass,
             };
 
             const beginInfo: vk.VkCommandBufferBeginInfo = .{
                 .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                .flags = 0,
-                .pInheritanceInfo = null,
+                .flags = vk.VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+                .pInheritanceInfo = &in,
             };
             var result = vk.vkResetCommandBuffer(cmd, 0);
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkResetCommandBuffer : {d}", .{result});
 
             result = vk.vkBeginCommandBuffer(cmd, &beginInfo);
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
-
-            vk.vkCmdBeginRenderPass(cmd, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
 
             const viewport: vk.VkViewport = .{
                 .x = 0,
@@ -433,8 +425,6 @@ fn recordCommandBuffer(commandBuffer: *render_command) void {
             for (commandBuffer.scene.?) |value| {
                 value.*.__draw(cmd);
             }
-
-            vk.vkCmdEndRenderPass(cmd);
 
             result = vk.vkEndCommandBuffer(cmd);
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
@@ -1180,6 +1170,16 @@ pub fn vulkan_start() void {
     result = vk.vkCreateCommandPool(vkDevice, &poolInfo, null, &vkCommandPool);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateCommandPool vkCommandPool : {d}", .{result});
 
+    const allocInfo: vk.VkCommandBufferAllocateInfo = .{
+        .commandPool = vkCommandPool,
+        .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = @intCast(get_swapchain_image_length()),
+        .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    };
+
+    result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, &vkCommandBuffer);
+    system.handle_error(result == vk.VK_SUCCESS, "vulkan_start vkAllocateCommandBuffers vkCommandPool : {d}", .{result});
+
     __render_command.start();
 
     //graphics create
@@ -1290,7 +1290,7 @@ fn cleanup_swapchain() void {
             vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
         }
         depth_stencil_image.clean();
-        if (depth_stencil_image.pvulkan_buffer.*.is_empty()) depth_stencil_image.pvulkan_buffer.*.deinit();
+        if (depth_stencil_image.pvulkan_buffer != null and depth_stencil_image.pvulkan_buffer.?.*.is_empty()) depth_stencil_image.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
         i = 0;
         while (i < vk_swapchain_image_views.len) : (i += 1) {
@@ -1543,7 +1543,7 @@ pub fn queue_submit_and_wait(bufs: []const vk.VkCommandBuffer) void {
     vk.vkFreeCommandBuffers(vkDevice, vkCommandPool, 1, bufs.ptr);
 }
 
-pub fn copy_buffer_to_image(src_buf: vk.VkBuffer, dst_img: vk.VkImage, width: c_uint, height: c_uint, depth: c_uint, array_size: c_uint) void {
+pub fn copy_buffer_to_image(src_buf: vk.VkBuffer, dst_img: vk.VkImage, width: c_uint, height: c_uint, depth: c_uint, array_start: c_uint, array_size: c_uint) void {
     const buf = begin_single_time_commands();
 
     const region: vk.VkBufferImageCopy = .{
@@ -1554,7 +1554,7 @@ pub fn copy_buffer_to_image(src_buf: vk.VkBuffer, dst_img: vk.VkImage, width: c_
         .imageExtent = .{ .width = width, .height = height, .depth = depth },
         .imageSubresource = .{
             .aspectMask = vk.VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseArrayLayer = 0,
+            .baseArrayLayer = array_start,
             .mipLevel = 0,
             .layerCount = array_size,
         },
@@ -1654,10 +1654,16 @@ pub fn drawFrame() void {
             return;
         }
 
+        const cmds = __system.allocator.alloc(vk.VkCommandBuffer, graphics.render_cmd.?.len) catch system.handle_error_msg2("drawframe cmds alloc");
+        defer __system.allocator.free(cmds);
+
         render_rwlock.lock();
-        if (@atomicLoad(bool, &graphics.render_cmd.?.*.__refesh, .monotonic)) {
-            @atomicStore(bool, &graphics.render_cmd.?.*.__refesh, false, .monotonic);
-            recordCommandBuffer(graphics.render_cmd.?);
+        for (graphics.render_cmd.?, cmds) |cmd, *v| {
+            if (@atomicLoad(bool, &cmd.*.__refesh, .monotonic)) {
+                @atomicStore(bool, &cmd.*.__refesh, false, .monotonic);
+                recordCommandBuffer(cmd);
+            }
+            v.* = cmd.*.__command_buffers[state.frame][imageIndex];
         }
         render_rwlock.unlock();
 
@@ -1668,12 +1674,40 @@ pub fn drawFrame() void {
             .signalSemaphoreCount = 1,
             .pWaitSemaphores = &vkImageAvailableSemaphore[state.frame],
             .pWaitDstStageMask = &waitStages,
-            .pCommandBuffers = &graphics.render_cmd.?.*.__command_buffers[state.frame][imageIndex],
+            .pCommandBuffers = &vkCommandBuffer,
             .pSignalSemaphores = &vkRenderFinishedSemaphore[state.frame],
         };
 
         result = vk.vkResetFences(vkDevice, 1, &vkInFlightFence[state.frame]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});
+
+        const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
+        const clearDepthStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
+        const renderPassInfo: vk.VkRenderPassBeginInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = vkRenderPass,
+            .framebuffer = vk_swapchain_frame_buffers[imageIndex],
+            .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
+            .clearValueCount = 2,
+            .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDepthStencil },
+        };
+
+        const beginInfo: vk.VkCommandBufferBeginInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = null,
+        };
+        result = vk.vkBeginCommandBuffer(vkCommandBuffer, &beginInfo);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkBeginCommandBuffer : {d}", .{result});
+
+        vk.vkCmdBeginRenderPass(vkCommandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+        vk.vkCmdExecuteCommands(vkCommandBuffer, @intCast(cmds.len), cmds.ptr);
+
+        vk.vkCmdEndRenderPass(vkCommandBuffer);
+
+        result = vk.vkEndCommandBuffer(vkCommandBuffer);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkEndCommandBuffer : {d}", .{result});
 
         result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, vkInFlightFence[state.frame]);
 

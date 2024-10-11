@@ -33,7 +33,7 @@ pub fn init() *Self {
 
         const allocInfo: vk.VkCommandBufferAllocateInfo = .{
             .commandPool = __vulkan.vkCommandPool,
-            .level = vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .level = vk.VK_COMMAND_BUFFER_LEVEL_SECONDARY,
             .commandBufferCount = @intCast(__vulkan.get_swapchain_image_length()),
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         };
@@ -73,13 +73,3 @@ pub fn refresh(self: *Self) void {
 }
 
 const ERROR = error{IsDestroying};
-
-pub fn lock_for_update() ERROR!void {
-    if (system.exiting()) return ERROR.IsDestroying;
-
-    __vulkan.render_rwlock.lock();
-}
-
-pub fn unlock_for_update() void {
-    __vulkan.render_rwlock.unlock();
-}
