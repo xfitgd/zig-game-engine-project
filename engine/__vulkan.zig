@@ -262,7 +262,7 @@ fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
 fn chooseSwapSurfaceFormat(availableFormats: []vk.VkSurfaceFormatKHR) vk.VkSurfaceFormatKHR {
     for (availableFormats) |value| {
         switch (value.format) {
-            vk.VK_FORMAT_R8G8B8A8_UNORM, vk.VK_FORMAT_R8G8B8A8_SRGB, vk.VK_FORMAT_R8G8B8A8_UINT => return value,
+            vk.VK_FORMAT_R8G8B8A8_UNORM, vk.VK_FORMAT_R8G8B8A8_SRGB => return value,
             else => {},
         }
     }
