@@ -1748,12 +1748,8 @@ pub fn drawFrame() void {
 
         result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
 
-        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
+        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
             recreate_swapchain();
-        } else if (result == vk.VK_SUBOPTIMAL_KHR) {
-            const ww = window.window_width();
-            const hh = window.window_height();
-            if (ww != vkExtent.width or hh != vkExtent.height) recreate_swapchain();
         } else {
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
         }
