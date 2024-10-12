@@ -738,6 +738,11 @@ fn create_pipelines() void {
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines animate_tex_2d_pipeline_set.pipeline : {d}", .{result});
     }
 }
+//instance
+pub var VK_KHR_get_surface_capabilities2_support = false;
+pub var validation_layer_support = false;
+//device
+pub var VK_EXT_full_screen_exclusive_support = false;
 
 pub fn vulkan_start() void {
     const appInfo: vk.VkApplicationInfo = .{
@@ -748,69 +753,87 @@ pub fn vulkan_start() void {
         .engineVersion = vk.VK_MAKE_API_VERSION(1, 0, 0, 0),
         .apiVersion = vk.VK_API_VERSION_1_0,
     };
-    // var property_count: u32 = undefined;
-    // _ = try vkb.enumerateInstanceExtensionProperties(null, &property_count, null);
 
-    // const extensions = try allocator.alloc(vk.ExtensionProperties, property_count);
-    // defer allocator.free(extensions);
-    // _ = try vkb.enumerateInstanceExtensionProperties(null, &property_count, @ptrCast(extensions));
-    var extension_names = ArrayList([*:0]const u8).init(__system.allocator);
-    defer extension_names.deinit();
-    // var j: u32 = 0;
-    // while (j < property_count) : (j += 1) {
-    //     try extension_names.append(@ptrCast(&extensions[j].extension_name[0]));
-    // }
-
-    extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME)", e);
-    var validation_layer_support = false;
-    const validation_layer_name = "VK_LAYER_KHRONOS_validation";
     var result: c_int = undefined;
+    {
+        const ext = [_][:0]const u8{
+            "VK_KHR_get_surface_capabilities2",
+        };
+        const checked: [ext.len]*bool = .{&VK_KHR_get_surface_capabilities2_support};
 
-    if (system.platform == .windows and system.dbg) {
-        var layer_count: u32 = undefined;
-        result = vk.vkEnumerateInstanceLayerProperties(&layer_count, null);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumerateInstanceLayerProperties null : {d}", .{result});
+        const layers = [_][:0]const u8{
+            "VK_LAYER_KHRONOS_validation",
+        };
+        const checkedl: [ext.len]*bool = .{&validation_layer_support};
 
-        const available_layers = __system.allocator.alloc(vk.VkLayerProperties, layer_count) catch
+        var extension_names = ArrayList([*:0]const u8).init(__system.allocator);
+        defer extension_names.deinit();
+        var layers_names = ArrayList([*:0]const u8).init(__system.allocator);
+        defer layers_names.deinit();
+
+        extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_SURFACE_EXTENSION_NAME)", e);
+
+        var count: u32 = undefined;
+        _ = vk.vkEnumerateInstanceLayerProperties(&count, null);
+
+        const available_layers = __system.allocator.alloc(vk.VkLayerProperties, count) catch
             system.handle_error_msg2("vulkan_start.allocator.alloc(vk.VkLayerProperties) OutOfMemory");
         defer __system.allocator.free(available_layers);
 
-        result = vk.vkEnumerateInstanceLayerProperties(&layer_count, available_layers.ptr);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumerateInstanceLayerProperties available_layers.ptr : {d}", .{result});
-        var layer_found = false;
+        _ = vk.vkEnumerateInstanceLayerProperties(&count, available_layers.ptr);
 
         for (available_layers) |*value| {
-            if (std.mem.eql(u8, value.*.layerName[0..std.mem.len(@as([*c]u8, @ptrCast(&value.*.layerName)))], validation_layer_name)) {
-                layer_found = true;
-                break;
+            inline for (layers, checkedl) |t, b| {
+                if (!b.* and std.mem.eql(u8, t, value.*.layerName[0..t.len])) {
+                    layers_names.append(t) catch system.handle_error_msg2("__vulkan_start layer append");
+                    b.* = true;
+                }
             }
         }
-        if (!layer_found) {
-            system.print_error("WARN VK_LAYER_KHRONOS_validation not found disable vulkan Debug feature.\n", .{});
-        } else {
-            validation_layer_support = true;
-            extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME)", e);
+
+        _ = vk.vkEnumerateInstanceExtensionProperties(null, &count, null);
+
+        const available_ext = __system.allocator.alloc(vk.VkExtensionProperties, count) catch
+            system.handle_error_msg2("vulkan_start.allocator.alloc(vk.VkLayerProperties) OutOfMemory");
+        defer __system.allocator.free(available_ext);
+
+        _ = vk.vkEnumerateInstanceExtensionProperties(null, &count, available_ext.ptr);
+
+        for (available_ext) |*value| {
+            inline for (ext, checked) |t, b| {
+                if (!b.* and std.mem.eql(u8, t, value.*.extensionName[0..t.len])) {
+                    extension_names.append(t) catch system.handle_error_msg2("__vulkan_start ext append");
+                    b.* = true;
+                }
+            }
         }
-    }
-    if (system.platform == .windows) {
-        extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME)", e);
-    } else if (system.platform == .android) {
-        extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)", e);
-    } else {
-        @compileError("not support platform");
-    }
 
-    var createInfo: vk.VkInstanceCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &appInfo,
-        .enabledLayerCount = if (validation_layer_support) 1 else 0,
-        .ppEnabledLayerNames = if (validation_layer_support) @ptrCast(&validation_layer_name) else null,
-        .enabledExtensionCount = @intCast(extension_names.items.len),
-        .ppEnabledExtensionNames = extension_names.items.ptr,
-    };
+        if (validation_layer_support and system.platform == .windows and system.dbg) {
+            extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME)", e);
+        } else {
+            validation_layer_support = false;
+        }
 
-    result = vk.vkCreateInstance(&createInfo, null, &vkInstance);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateInstance : {d}", .{result});
+        if (system.platform == .windows) {
+            extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_WIN32_SURFACE_EXTENSION_NAME)", e);
+        } else if (system.platform == .android) {
+            extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)", e);
+        } else {
+            @compileError("not support platform");
+        }
+
+        var createInfo: vk.VkInstanceCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pApplicationInfo = &appInfo,
+            .enabledLayerCount = @intCast(layers_names.items.len),
+            .ppEnabledLayerNames = if (layers_names.items.len > 0) layers_names.items.ptr else null,
+            .enabledExtensionCount = @intCast(extension_names.items.len),
+            .ppEnabledExtensionNames = extension_names.items.ptr,
+        };
+
+        result = vk.vkCreateInstance(&createInfo, null, &vkInstance);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateInstance : {d}", .{result});
+    }
 
     if (validation_layer_support) {
         const create_info = vk.VkDebugUtilsMessengerCreateInfoEXT{
@@ -895,17 +918,44 @@ pub fn vulkan_start() void {
         .samplerAnisotropy = vk.VK_TRUE,
     };
 
-    const device_extension_names = [_][:0]const u8{vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    var deviceCreateInfo: vk.VkDeviceCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &qci,
-        .queueCreateInfoCount = queue_count,
-        .pEnabledFeatures = &deviceFeatures,
-        .ppEnabledExtensionNames = @ptrCast(&device_extension_names),
-        .enabledExtensionCount = 1,
-    };
-    result = vk.vkCreateDevice(vk_physical_device, &deviceCreateInfo, null, &vkDevice);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDevice : {d}", .{result});
+    {
+        var deviceExtensionCount: u32 = 0;
+        _ = vk.vkEnumerateDeviceExtensionProperties(vk_physical_device, null, &deviceExtensionCount, null);
+        const extensions = __system.allocator.alloc(vk.VkExtensionProperties, deviceExtensionCount) catch system.handle_error_msg2("vulkan_start extensions alloc");
+        defer __system.allocator.free(extensions);
+        _ = vk.vkEnumerateDeviceExtensionProperties(vk_physical_device, null, &deviceExtensionCount, extensions.ptr);
+
+        var device_extension_names = ArrayList([*:0]const u8).init(__system.allocator);
+        defer device_extension_names.deinit();
+        device_extension_names.append(vk.VK_KHR_SWAPCHAIN_EXTENSION_NAME) catch system.handle_error_msg2("vulkan_start dev ex append");
+        var i: u32 = 0;
+
+        const ext = [_][:0]const u8{
+            "VK_EXT_full_screen_exclusive",
+        };
+        const checked: [ext.len]*bool = .{&VK_EXT_full_screen_exclusive_support};
+
+        while (i < deviceExtensionCount) : (i += 1) {
+            inline for (ext, checked) |t, b| {
+                if (!b.* and std.mem.eql(u8, t, extensions[i].extensionName[0..t.len])) {
+                    device_extension_names.append(t.ptr) catch system.handle_error_msg2("vulkan_start dev ex append");
+                    b.* = true;
+                }
+            }
+        }
+
+        var deviceCreateInfo: vk.VkDeviceCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pQueueCreateInfos = &qci,
+            .queueCreateInfoCount = queue_count,
+            .pEnabledFeatures = &deviceFeatures,
+            .ppEnabledExtensionNames = device_extension_names.items.ptr,
+            .enabledExtensionCount = @intCast(device_extension_names.items.len),
+        };
+
+        result = vk.vkCreateDevice(vk_physical_device, &deviceCreateInfo, null, &vkDevice);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDevice : {d}", .{result});
+    }
 
     if (graphicsFamilyIndex == presentFamilyIndex) {
         vk.vkGetDeviceQueue(vkDevice, graphicsFamilyIndex, 0, &vkGraphicsQueue);
@@ -1349,7 +1399,7 @@ fn create_framebuffer() void {
         .usage = vk.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
     };
     graphics.check_vk_allocator();
-    vk_allocator.?.*.create_image(&img_info, &depth_stencil_image, null, 0);
+    vk_allocator.?.*.create_image(&img_info, &depth_stencil_image, null, 0, true);
 
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
