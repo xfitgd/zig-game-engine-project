@@ -498,19 +498,19 @@ pub inline fn Lmouse_down() bool {
     return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn Mmouse_down() bool {
-    return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
+    return __system.Mmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn Rmouse_down() bool {
-    return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
+    return __system.Rmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn Lmouse_up() bool {
-    return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
+    return !__system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn Mmouse_up() bool {
-    return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
+    return !__system.Mmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn Rmouse_up() bool {
-    return __system.Lmouse_click.load(std.builtin.AtomicOrder.monotonic);
+    return !__system.Rmouse_click.load(std.builtin.AtomicOrder.monotonic);
 }
 ///false -> up, true -> down
 pub inline fn key_down_or_up(_key: key()) bool {
