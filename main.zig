@@ -16,6 +16,7 @@ const asset_file = @import("engine/asset_file.zig");
 const webp = @import("engine/webp.zig");
 const image_util = @import("engine/image_util.zig");
 const window = @import("engine/window.zig");
+const animator = @import("engine/animator.zig");
 
 const lua = @import("engine/lua.zig");
 
@@ -57,6 +58,14 @@ var cmd2: *render_command = undefined;
 var cmds: [2]*render_command = .{ undefined, undefined };
 
 var color_trans: graphics.color_transform = undefined;
+
+const player = animator.player;
+const animate_object = animator.animate_object;
+
+var anim: player = .{
+    .target_fps = 10,
+    .obj = undefined,
+};
 
 pub const CANVAS_W: f32 = 1280;
 pub const CANVAS_H: f32 = 720;
@@ -199,6 +208,9 @@ pub fn xfit_init() void {
     cmds[1] = cmd2;
     graphics.render_cmd = cmds[0..cmds.len];
 
+    anim.obj = @ptrCast(objects.items[2]);
+    anim.play();
+
     var start_sem: std.Thread.Semaphore = .{};
 
     _ = timer_callback.start2(
@@ -241,8 +253,7 @@ fn move_callback() !bool {
 
 var dx: f32 = 0;
 pub fn xfit_update() void {
-    cmd2.scene.?[0].*._anim_image.next_frame();
-    cmd2.scene.?[0].*._anim_image.map_update_frame();
+    anim.update(system.dt());
 }
 
 pub fn xfit_size() void {

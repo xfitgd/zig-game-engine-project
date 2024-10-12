@@ -1044,6 +1044,7 @@ pub const animate_image = struct {
             return;
         }
         self.*.frame = (self.*.frame + 1) % self.*.src.*.get_frame_count_build();
+        map_update_frame(self);
     }
     pub fn prev_frame(self: *Self) void {
         if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
@@ -1052,6 +1053,15 @@ pub const animate_image = struct {
             return;
         }
         self.*.frame = if (self.*.frame > 0) (self.*.frame - 1) else (self.*.src.*.get_frame_count_build() - 1);
+        map_update_frame(self);
+    }
+    pub fn set_frame(self: *Self, _frame: u32) void {
+        if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
+        if (self.*.src.*.__image.__resource_len - 1 < _frame) {
+            return;
+        }
+        self.*.frame = _frame;
+        map_update_frame(self);
     }
 
     pub fn map_update_frame(self: *Self) void {

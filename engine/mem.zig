@@ -1,6 +1,8 @@
 const std = @import("std");
 const system = @import("system.zig");
 
+pub usingnamespace std.mem;
+
 //TODO 검증되지 않음
 
 pub inline fn memcpy_nonarray(dest: anytype, src: anytype) void {

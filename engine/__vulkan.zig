@@ -766,7 +766,7 @@ pub fn vulkan_start() void {
     const validation_layer_name = "VK_LAYER_KHRONOS_validation";
     var result: c_int = undefined;
 
-    if (system.platform == .windows and builtin.mode == std.builtin.OptimizeMode.Debug) {
+    if (system.platform == .windows and system.dbg) {
         var layer_count: u32 = undefined;
         result = vk.vkEnumerateInstanceLayerProperties(&layer_count, null);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkEnumerateInstanceLayerProperties null : {d}", .{result});
