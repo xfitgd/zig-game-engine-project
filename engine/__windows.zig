@@ -337,19 +337,25 @@ pub fn get_window_state() window.window_state {
     return .Restore;
 }
 
-fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_info) void {
-    var mode: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
-    mode.dmSize = @sizeOf(win32.DEVMODEA);
-    mode.dmFields = win32.DM_PELSWIDTH | win32.DM_PELSHEIGHT | win32.DM_DISPLAYFREQUENCY;
-    mode.dmPelsWidth = resolution.size[0];
-    mode.dmPelsHeight = resolution.size[1];
-    mode.dmDisplayFrequency = resolution.refleshrate;
+var fullscreen_mode: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
+var fullscreen_name: [32]u8 = std.mem.zeroes([32]u8);
 
-    const res = win32.ChangeDisplaySettingsExA(@ptrCast(&monitor.name), &mode, null, win32.CDS_FULLSCREEN | win32.CDS_RESET, null);
+pub fn __change_fullscreen_mode() void {
+    const res = win32.ChangeDisplaySettingsExA(@ptrCast(&fullscreen_name), &fullscreen_mode, null, win32.CDS_FULLSCREEN | win32.CDS_RESET, null);
     if (res != win32.DISP_CHANGE_SUCCESSFUL) {
         system.print("WARN change_fullscreen.ChangeDisplaySettingsExA FAILED Code {d}\n", .{res});
         return;
     }
+}
+
+fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_info) void {
+    fullscreen_mode.dmSize = @sizeOf(win32.DEVMODEA);
+    fullscreen_mode.dmFields = win32.DM_PELSWIDTH | win32.DM_PELSHEIGHT | win32.DM_DISPLAYFREQUENCY;
+    fullscreen_mode.dmPelsWidth = resolution.size[0];
+    fullscreen_mode.dmPelsHeight = resolution.size[1];
+    fullscreen_mode.dmDisplayFrequency = resolution.refleshrate;
+
+    @memcpy(fullscreen_name[0..fullscreen_name.len], monitor.name[0..monitor.name.len]);
 
     __system.current_monitor = monitor;
     __system.current_resolution = resolution;

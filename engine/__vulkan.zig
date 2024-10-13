@@ -738,7 +738,7 @@ pub fn vulkan_start() void {
         .applicationVersion = vk.VK_MAKE_API_VERSION(1, 0, 0, 0),
         .pEngineName = "No Engine",
         .engineVersion = vk.VK_MAKE_API_VERSION(1, 0, 0, 0),
-        .apiVersion = vk.VK_API_VERSION_1_0,
+        .apiVersion = vk.VK_API_VERSION_1_3,
     };
 
     var result: c_int = undefined;
@@ -751,7 +751,7 @@ pub fn vulkan_start() void {
         const layers = [_][:0]const u8{
             "VK_LAYER_KHRONOS_validation",
         };
-        const checkedl: [ext.len]*bool = .{&validation_layer_support};
+        const checkedl: [layers.len]*bool = .{&validation_layer_support};
 
         var extension_names = ArrayList([*:0]const u8).init(__system.allocator);
         defer extension_names.deinit();
@@ -1347,6 +1347,16 @@ pub fn vulkan_destroy() void {
     __render_command.destroy();
 }
 
+fn recreateSurface() void {
+    if (system.platform == .windows) {
+        __windows.vulkan_windows_start(vkInstance, &vkSurface);
+    } else if (system.platform == .android) {
+        //__android.vulkan_android_start(vkInstance, &vkSurface);
+    } else {
+        @compileError("not support platform");
+    }
+}
+
 fn cleanup_swapchain() void {
     if (vkSwapchain != null) {
         var i: usize = 0;
@@ -1354,7 +1364,7 @@ fn cleanup_swapchain() void {
             vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
         }
         depth_stencil_image.clean();
-        if (depth_stencil_image.pvulkan_buffer != null and depth_stencil_image.pvulkan_buffer.?.*.is_empty()) depth_stencil_image.pvulkan_buffer.?.*.deinit();
+        //if (depth_stencil_image.pvulkan_buffer != null and depth_stencil_image.pvulkan_buffer.?.*.is_empty()) depth_stencil_image.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
         i = 0;
         while (i < vk_swapchain_image_views.len) : (i += 1) {
@@ -1388,7 +1398,7 @@ fn create_framebuffer() void {
         .usage = vk.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
     };
     graphics.check_vk_allocator();
-    vk_allocator.?.*.create_image(&img_info, &depth_stencil_image, null, 0, true);
+    vk_allocator.?.*.create_frame_buffer_image(&img_info, &depth_stencil_image);
 
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
@@ -1608,6 +1618,7 @@ pub fn end_single_time_commands(buf: vk.VkCommandBuffer) void {
 
 pub fn set_fullscreen_ex() void {
     if (VK_EXT_full_screen_exclusive_support and is_fullscreen_ex) {
+        __windows.__change_fullscreen_mode();
         _ = vk.vkAcquireFullScreenExclusiveModeEXT(vkInstance, vkDevice, vkSwapchain);
     }
 }
@@ -1748,6 +1759,10 @@ pub fn drawFrame() void {
         if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
             recreate_swapchain();
             return;
+        } else if (result == vk.VK_SUBOPTIMAL_KHR) {} else if (result == vk.VK_ERROR_SURFACE_LOST_KHR) {
+            recreateSurface();
+            recreate_swapchain();
+            return;
         }
 
         const cmds = __system.allocator.alloc(vk.VkCommandBuffer, graphics.render_cmd.?.len + 1) catch system.handle_error_msg2("drawframe cmds alloc");
@@ -1820,7 +1835,16 @@ pub fn drawFrame() void {
 
         result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
 
-        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR or result == vk.VK_SUBOPTIMAL_KHR) {
+        if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
+            recreate_swapchain();
+        } else if (result == vk.VK_SUBOPTIMAL_KHR) {
+            var prop: vk.VkSurfaceCapabilitiesKHR = undefined;
+            _ = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_physical_device, vkSurface, &prop);
+            if (prop.currentExtent.width != vkExtent.width or prop.currentExtent.height != vkExtent.height) {
+                recreate_swapchain();
+            }
+        } else if (result == vk.VK_ERROR_SURFACE_LOST_KHR) {
+            recreateSurface();
             recreate_swapchain();
         } else {
             system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueuePresentKHR : {d}", .{result});
