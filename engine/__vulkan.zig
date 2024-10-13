@@ -1618,7 +1618,9 @@ pub fn end_single_time_commands(buf: vk.VkCommandBuffer) void {
 
 pub fn set_fullscreen_ex() void {
     if (VK_EXT_full_screen_exclusive_support and is_fullscreen_ex) {
-        __windows.__change_fullscreen_mode();
+        if (system.platform == .windows) {
+            __windows.__change_fullscreen_mode();
+        }
         _ = vk.vkAcquireFullScreenExclusiveModeEXT(vkInstance, vkDevice, vkSwapchain);
     }
 }
