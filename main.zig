@@ -50,8 +50,8 @@ var font0: font = undefined;
 var font0_data: []u8 = undefined;
 
 var shape_src: graphics.shape.source = undefined;
-// var shape_src2: graphics.shape.source = undefined;
-// var extra_src = [_]*graphics.shape.source{&shape_src2};
+var shape_src2: graphics.shape.source = undefined;
+var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.texture = undefined;
 var anim_image_src: graphics.texture_array = undefined;
 var cmd: *render_command = undefined;
@@ -112,8 +112,8 @@ pub fn xfit_init() void {
     shape_src = graphics.shape.source.init_for_alloc(allocator);
     shape_src.color = .{ 1, 1, 1, 0.5 };
 
-    //shape_src2 = graphics.shape.source.init_for_alloc(allocator);
-    //shape_src2.color = .{ 1, 0, 1, 1 };
+    shape_src2 = graphics.shape.source.init_for_alloc(allocator);
+    shape_src2.color = .{ 1, 0, 1, 1 };
 
     img.* = .{ ._image = graphics.image.init() };
     anim_img.* = .{ ._anim_image = graphics.animate_image.init() };
@@ -156,15 +156,15 @@ pub fn xfit_init() void {
     // var t1 = std.time.Timer.start() catch unreachable;
     // font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // system.print("{d}", .{t1.lap()});
-    //font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
-    //font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, .{ 0, 1, 1, 1 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    // font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    //shape_src2.build(.read_gpu);
+    shape_src2.build(.read_gpu, .readwrite_cpu);
 
     text_shape.*._shape.transform.camera = &g_camera;
     text_shape.*._shape.transform.projection = &g_proj;
     text_shape.*._shape.src = &shape_src;
-    //text_shape.*.extra_src = extra_src[0..1];
+    text_shape.*._shape.extra_src = extra_src[0..1];
 
     text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200, 0, 0));
     //text_shape.*.build();
@@ -280,7 +280,7 @@ pub fn xfit_size() void {
 ///before system clean
 pub fn xfit_destroy() void {
     shape_src.deinit_for_alloc();
-    //shape_src2.deinit_for_alloc();
+    shape_src2.deinit_for_alloc();
 
     allocator.free(image_src.pixels.?);
     allocator.free(anim_image_src.pixels.?);
