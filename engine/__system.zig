@@ -89,6 +89,9 @@ pub var key_up_func: ?*const fn (key_code: input.key) void = null;
 pub var monitors: ArrayList(system.monitor_info) = undefined;
 pub var primary_monitor: *system.monitor_info = undefined;
 
+pub var current_monitor: ?*system.monitor_info = null;
+pub var current_resolution: ?*system.screen_info = null;
+
 pub var sound_started: bool = false;
 pub var font_started: bool = false;
 pub var general_input_callback: ?input.general_input.CallbackFn = null;

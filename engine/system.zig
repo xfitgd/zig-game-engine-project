@@ -107,6 +107,7 @@ pub const monitor_info = struct {
     is_primary: bool,
     primary_resolution: ?*screen_info = null,
     resolutions: ArrayList(screen_info),
+    __hmonitor: if (platform == .windows) windows.HMONITOR else void = if (platform == .windows) undefined else {},
 
     name: [32]u8 = std.mem.zeroes([32]u8),
 
@@ -122,19 +123,19 @@ pub const monitor_info = struct {
         }
     }
 
-    pub fn set_fullscreen_mode(self: Self, resolution: *screen_info) void {
+    pub fn set_fullscreen_mode(self: *Self, resolution: *screen_info) void {
         save_prev_window_state();
         if (platform == .windows) {
-            __windows.set_fullscreen_mode(&self, resolution);
+            __windows.set_fullscreen_mode(self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
             @compileError("not support platform");
         }
     }
-    pub fn set_borderlessscreen_mode(self: Self) void {
+    pub fn set_borderlessscreen_mode(self: *Self) void {
         save_prev_window_state();
         if (platform == .windows) {
-            __windows.set_borderlessscreen_mode(&self);
+            __windows.set_borderlessscreen_mode(self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);
         } else {
             @compileError("not support platform");
@@ -180,11 +181,21 @@ pub const init_setting = struct {
     vSync: bool = true,
 };
 
-pub inline fn monitors() []const monitor_info {
-    return __windows.monitors.items;
+pub inline fn monitors() []monitor_info {
+    return __system.monitors.items;
 }
-pub inline fn primary_monitor() *const monitor_info {
+pub inline fn primary_monitor() *monitor_info {
     return __system.primary_monitor;
+}
+pub inline fn current_monitor() ?*monitor_info {
+    return __system.current_monitor;
+}
+pub inline fn current_resolution() ?*screen_info {
+    return __system.current_resolution;
+}
+pub inline fn get_monitor_from_window() *monitor_info {
+    if (platform == .windows) return __windows.get_monitor_from_window();
+    return primary_monitor();
 }
 
 ///nanosec 1 / 1000000000 sec

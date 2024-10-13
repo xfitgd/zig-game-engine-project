@@ -10712,8 +10712,6 @@ pub extern fn vkQueueInsertDebugUtilsLabelEXT(queue: VkQueue, pLabelInfo: [*c]co
 pub extern fn vkCmdBeginDebugUtilsLabelEXT(commandBuffer: VkCommandBuffer, pLabelInfo: [*c]const VkDebugUtilsLabelEXT) void;
 pub extern fn vkCmdEndDebugUtilsLabelEXT(commandBuffer: VkCommandBuffer) void;
 pub extern fn vkCmdInsertDebugUtilsLabelEXT(commandBuffer: VkCommandBuffer, pLabelInfo: [*c]const VkDebugUtilsLabelEXT) void;
-pub extern fn vkCreateDebugUtilsMessengerEXT(instance: VkInstance, pCreateInfo: [*c]const VkDebugUtilsMessengerCreateInfoEXT, pAllocator: [*c]const VkAllocationCallbacks, pMessenger: [*c]VkDebugUtilsMessengerEXT) VkResult;
-pub extern fn vkDestroyDebugUtilsMessengerEXT(instance: VkInstance, messenger: VkDebugUtilsMessengerEXT, pAllocator: [*c]const VkAllocationCallbacks) void;
 pub extern fn vkSubmitDebugUtilsMessageEXT(instance: VkInstance, messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, messageTypes: VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: [*c]const VkDebugUtilsMessengerCallbackDataEXT) void;
 pub const VkSamplerReductionModeEXT = VkSamplerReductionMode;
 pub const VkSamplerReductionModeCreateInfoEXT = VkSamplerReductionModeCreateInfo;
@@ -16294,3 +16292,57 @@ pub const VK_KHR_ANDROID_SURFACE_EXTENSION_NAME = "VK_KHR_android_surface";
 pub const VK_KHR_WIN32_SURFACE_EXTENSION_NAME = "VK_KHR_win32_surface";
 
 //?나머지는 필요할때 추가
+
+//EXTENSIONS
+pub const PFN_vkReleaseFullScreenExclusiveModeEXT = ?*const fn (VkDevice, VkSwapchainKHR) callconv(.C) VkResult;
+pub const PFN_vkAcquireFullScreenExclusiveModeEXT = ?*const fn (VkDevice, VkSwapchainKHR) callconv(.C) VkResult;
+pub fn vkReleaseFullScreenExclusiveModeEXT(instance: VkInstance, device: VkDevice, swapchain: VkSwapchainKHR) VkResult {
+    const func = @as(PFN_vkReleaseFullScreenExclusiveModeEXT, @ptrCast(vkGetInstanceProcAddr(instance, "vkReleaseFullScreenExclusiveModeEXT")));
+    if (func != null) {
+        return func.?(device, swapchain);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+pub fn vkAcquireFullScreenExclusiveModeEXT(instance: VkInstance, device: VkDevice, swapchain: VkSwapchainKHR) VkResult {
+    const func = @as(PFN_vkAcquireFullScreenExclusiveModeEXT, @ptrCast(vkGetInstanceProcAddr(instance, "vkAcquireFullScreenExclusiveModeEXT")));
+    if (func != null) {
+        return func.?(device, swapchain);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+pub const VkFullScreenExclusiveEXT = u32;
+
+pub const VK_FULL_SCREEN_EXCLUSIVE_DEFAULT_EXT: VkFullScreenExclusiveEXT = 0;
+pub const VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT: VkFullScreenExclusiveEXT = 1;
+pub const VK_FULL_SCREEN_EXCLUSIVE_DISALLOWED_EXT: VkFullScreenExclusiveEXT = 2;
+pub const VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT: VkFullScreenExclusiveEXT = 3;
+
+pub const HMONITOR = ?*anyopaque;
+pub const VkSurfaceFullScreenExclusiveWin32InfoEXT = extern struct {
+    sType: VkStructureType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT,
+    pNext: ?*anyopaque = null,
+    hmonitor: HMONITOR,
+};
+
+pub const VkSurfaceFullScreenExclusiveInfoEXT = extern struct {
+    sType: VkStructureType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT,
+    pNext: ?*anyopaque = null,
+    fullScreenExclusive: VkFullScreenExclusiveEXT,
+};
+
+pub fn vkCreateDebugUtilsMessengerEXT(instance: VkInstance, pCreateInfo: ?*const VkDebugUtilsMessengerCreateInfoEXT, pAllocator: ?*const VkAllocationCallbacks, pDebugMessenger: ?*VkDebugUtilsMessengerEXT) VkResult {
+    const func = @as(PFN_vkCreateDebugUtilsMessengerEXT, @ptrCast(vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT")));
+    if (func != null) {
+        return func.?(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+pub fn vkDestroyDebugUtilsMessengerEXT(instance: VkInstance, debugMessenger: VkDebugUtilsMessengerEXT, pAllocator: ?*const VkAllocationCallbacks) void {
+    const func = @as(PFN_vkDestroyDebugUtilsMessengerEXT, @ptrCast(vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT")));
+    if (func != null) {
+        func.?(instance, debugMessenger, pAllocator);
+    }
+}

@@ -35,8 +35,7 @@ pub const BOOL = win32.BOOL;
 pub var hWnd: HWND = undefined;
 pub var hInstance: HINSTANCE = undefined;
 pub var screen_mode: system.screen_mode = system.screen_mode.WINDOW;
-pub var current_monitor: ?*system.monitor_info = null;
-pub var current_resolution: ?*system.screen_info = null;
+
 const xbox_guid = win32.GUID{
     .Data1 = 0xec87f1e3,
     .Data2 = 0xc13b,
@@ -207,25 +206,33 @@ pub fn windows_loop() void {
 }
 
 pub fn set_window_mode() void {
-    const style: c_long = ((((win32.WS_OVERLAPPED |
+    const style: c_ulong = ((((win32.WS_OVERLAPPED |
         win32.WS_CAPTION) |
         win32.WS_SYSMENU) |
         if (window.can_resizewindow()) win32.WS_THICKFRAME else 0) |
         if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
 
-    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
+    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.prev_window.height };
     _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
-    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
+    __vulkan.fullscreen_mutex.lock();
+
+    _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, @intCast(style));
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
-    _ = win32.SetWindowPos(hWnd, 0, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
+    _ = win32.SetWindowPos(hWnd, null, __system.prev_window.x, __system.prev_window.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, switch (__system.prev_window.state) {
         .Restore => win32.SW_RESTORE,
         .Maximized => win32.SW_MAXIMIZE,
         .Minimized => win32.SW_MINIMIZE,
     });
+
+    if (__vulkan.is_fullscreen_ex) {
+        __vulkan.is_fullscreen_ex = false;
+    }
+
+    __vulkan.fullscreen_mutex.unlock();
 }
 
 pub fn set_window_size(w: u32, h: u32) void {
@@ -251,12 +258,22 @@ pub fn set_window_pos(x: i32, y: i32) void {
         if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
 
-    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.vvprev_window.height };
+    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.prev_window.height };
     _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
     _ = win32.SetWindowPos(hWnd, 0, x, y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
     __system.prev_window.x = @intCast(x);
     __system.prev_window.y = @intCast(y);
+}
+
+pub fn get_monitor_from_window() *system.monitor_info {
+    const hMonitor = win32.MonitorFromWindow(hWnd, win32.MONITOR_DEFAULTTONEAREST);
+    if (hMonitor == null) return system.primary_monitor();
+
+    for (__system.monitors.items) |*v| {
+        if (v.*.__hmonitor == hMonitor) return v;
+    }
+    return system.primary_monitor();
 }
 
 pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: window.window_state, can_maximize: bool, can_minimize: bool, can_resizewindow: bool) void {
@@ -270,6 +287,8 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
     var rect: RECT = .{ .left = 0, .top = 0, .right = @intCast(size.x), .bottom = @intCast(size.y) };
     _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
+    __vulkan.fullscreen_mutex.lock();
+
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, style);
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, 0);
     _ = win32.SetWindowPos(hWnd, 0, pos.x, pos.y, rect.right - rect.left, rect.bottom - rect.top, win32.SWP_DRAWFRAME);
@@ -279,6 +298,8 @@ pub fn set_window_mode2(pos: math.point(i32), size: math.point(u32), state: wind
         .Maximized => win32.SW_MAXIMIZE,
         .Minimized => win32.SW_MINIMIZE,
     });
+
+    __vulkan.fullscreen_mutex.unlock();
 }
 
 pub fn set_window_title() void {
@@ -289,12 +310,18 @@ pub fn set_window_title() void {
 }
 
 pub fn set_borderlessscreen_mode(monitor: *system.monitor_info) void {
+    __vulkan.fullscreen_mutex.lock();
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW);
 
     _ = win32.SetWindowPos(hWnd, 0, monitor.*.rect.left, monitor.*.rect.top, monitor.*.rect.right - monitor.*.rect.left, monitor.*.rect.bottom - monitor.*.rect.top, win32.SWP_DRAWFRAME);
 
     _ = win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
+
+    if (__vulkan.is_fullscreen_ex) {
+        __vulkan.is_fullscreen_ex = false;
+    }
+    __vulkan.fullscreen_mutex.unlock();
 }
 
 pub fn get_window_state() window.window_state {
@@ -324,19 +351,25 @@ fn change_fullscreen(monitor: *system.monitor_info, resolution: *system.screen_i
         return;
     }
 
-    current_monitor = monitor;
-    current_resolution = resolution;
+    __system.current_monitor = monitor;
+    __system.current_resolution = resolution;
+
+    if (__vulkan.VK_EXT_full_screen_exclusive_support and !__vulkan.is_fullscreen_ex) {
+        __vulkan.is_fullscreen_ex = true;
+    }
 }
 
 pub fn set_fullscreen_mode(monitor: *system.monitor_info, resolution: *system.screen_info) void {
     screen_mode = system.screen_mode.FULLSCREEN;
+    __vulkan.fullscreen_mutex.lock();
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_STYLE, win32.WS_POPUP);
     _ = win32.SetWindowLongPtrA(hWnd, win32.GWL_EXSTYLE, win32.WS_EX_APPWINDOW | win32.WS_EX_TOPMOST);
 
-    _ = win32.SetWindowPos(hWnd, win32.HWND_TOPMOST, monitor.*.rect.left, monitor.*.rect.top, resolution.*.size.x, resolution.*.size.y, 0);
+    _ = win32.SetWindowPos(hWnd, win32.HWND_TOPMOST, monitor.*.rect.left, monitor.*.rect.top, @intCast(resolution.*.size[0]), @intCast(resolution.*.size[1]), 0);
     _ = win32.ShowWindow(hWnd, win32.SW_MAXIMIZE);
 
     change_fullscreen(monitor, resolution);
+    __vulkan.fullscreen_mutex.unlock();
 }
 
 pub fn nanosleep(ns: u64) void {
@@ -602,8 +635,10 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             root.xfit_activate(activated, pause);
         },
         win32.WM_MOVE => {
-            @atomicStore(i32, &__system.init_set.window_x, @intCast(win32.LOWORD(lParam)), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.init_set.window_y, @intCast(win32.HIWORD(lParam)), std.builtin.AtomicOrder.monotonic);
+            const x: SHORT = @bitCast(win32.LOWORD(lParam));
+            const y: SHORT = @bitCast(win32.HIWORD(lParam));
+            @atomicStore(i32, &__system.init_set.window_x, x, std.builtin.AtomicOrder.monotonic);
+            @atomicStore(i32, &__system.init_set.window_y, y, std.builtin.AtomicOrder.monotonic);
 
             if (system.a_fn(__system.window_move_func) != null) system.a_fn(__system.window_move_func).?();
         },
@@ -656,7 +691,12 @@ fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor:
 
     _ = win32.GetMonitorInfoA(hMonitor, @ptrCast(&monitor_info));
 
-    __system.monitors.append(system.monitor_info{ .is_primary = false, .rect = math.recti.init(0, 0, 0, 0), .resolutions = ArrayList(system.screen_info).init(__system.allocator) }) catch |e| system.handle_error3("MonitorEnumProc __system.monitors.append", e);
+    __system.monitors.append(system.monitor_info{
+        .is_primary = false,
+        .rect = math.recti.init(0, 0, 0, 0),
+        .resolutions = ArrayList(system.screen_info).init(__system.allocator),
+        .__hmonitor = hMonitor,
+    }) catch |e| system.handle_error3("MonitorEnumProc __system.monitors.append", e);
     var last = &__system.monitors.items[__system.monitors.items.len - 1];
     last.*.is_primary = (monitor_info.monitorInfo.dwFlags & win32.MONITORINFOF_PRIMARY) != 0;
     if (last.*.is_primary) __system.primary_monitor = last;
@@ -666,7 +706,11 @@ fn MonitorEnumProc(hMonitor: win32.HMONITOR, hdcMonitor: win32.HDC, lprcMonitor:
     var dm: win32.DEVMODEA = std.mem.zeroes(win32.DEVMODEA);
     dm.dmSize = @sizeOf(win32.DEVMODEA);
     while (win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), i, &dm) != FALSE) : (i += 1) {
-        last.*.resolutions.append(.{ .monitor = last, .refleshrate = dm.dmDisplayFrequency, .size = .{ dm.dmPelsWidth, dm.dmPelsHeight } }) catch |e| system.handle_error3("MonitorEnumProc last.*.resolutions.append", e);
+        last.*.resolutions.append(.{
+            .monitor = last,
+            .refleshrate = dm.dmDisplayFrequency,
+            .size = .{ dm.dmPelsWidth, dm.dmPelsHeight },
+        }) catch |e| system.handle_error3("MonitorEnumProc last.*.resolutions.append", e);
     }
     _ = win32.EnumDisplaySettingsA(@ptrCast(&monitor_info.szDevice), win32.ENUM_CURRENT_SETTINGS, &dm);
     last.primary_resolution = null;

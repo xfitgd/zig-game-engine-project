@@ -17,6 +17,7 @@ const webp = @import("engine/webp.zig");
 const image_util = @import("engine/image_util.zig");
 const window = @import("engine/window.zig");
 const animator = @import("engine/animator.zig");
+const input = @import("engine/input.zig");
 
 const lua = @import("engine/lua.zig");
 
@@ -134,6 +135,7 @@ pub fn xfit_init() void {
     img_decoder.load_anim_header(anim_data) catch |e| system.handle_error3("wasp.webp load_anim_header fail", e);
 
     anim_image_src = graphics.texture_array.init();
+    anim_image_src.sampler = graphics.texture_array.get_default_nearest_sampler();
     anim_image_src.width = img_decoder.width();
     anim_image_src.height = img_decoder.height();
     anim_image_src.frames = img_decoder.frame_count();
@@ -213,6 +215,8 @@ pub fn xfit_init() void {
 
     var start_sem: std.Thread.Semaphore = .{};
 
+    input.set_key_down_func(key_down);
+
     _ = timer_callback.start2(
         system.sec_to_nano_sec2(0, 10, 0, 0),
         0,
@@ -225,6 +229,17 @@ pub fn xfit_init() void {
     ) catch |e| system.handle_error3("timer_callback.start", e);
 
     start_sem.wait();
+}
+
+fn key_down(_key: input.key) void {
+    if (_key == input.key.F4) {
+        if (window.get_screen_mode() == .WINDOW) {
+            const monitor = system.get_monitor_from_window();
+            monitor.*.set_fullscreen_mode(monitor.*.primary_resolution.?);
+        } else {
+            window.set_window_mode();
+        }
+    }
 }
 
 fn move_start_callback(start_sem: *std.Thread.Semaphore) bool {

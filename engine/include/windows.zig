@@ -3387,6 +3387,32 @@ pub const PEN_MASK_ROTATION: UINT32 = 0x00000002;
 pub const PEN_MASK_TILT_X: UINT32 = 0x00000004;
 pub const PEN_MASK_TILT_Y: UINT32 = 0x00000008;
 
+pub const GWL_STYLE = -16;
+pub const GWL_EXSTYLE = -20;
+pub const GWL_HINSTANCE = -6;
+pub const GWL_WNDPROC = -4;
+pub const GWL_USERDATA = -21;
+pub const GWL_ID = -12;
+
+pub const SWP_DRAWFRAME: DWORD = 0x0020;
+pub const SWP_FRAMECHANGED: DWORD = 0x0020;
+pub const SWP_HIDEWINDOW: DWORD = 0x0080;
+pub const SWP_NOACTIVATE: DWORD = 0x0010;
+pub const SWP_NOCOPYBITS: DWORD = 0x0100;
+pub const SWP_NOMOVE: DWORD = 0x0002;
+pub const SWP_NOOWNERZORDER: DWORD = 0x0200;
+pub const SWP_NOREDRAW: DWORD = 0x0008;
+pub const SWP_NOREPOSITION: DWORD = 0x0200;
+pub const SWP_NOSENDCHANGING: DWORD = 0x0400;
+pub const SWP_NOSIZE: DWORD = 0x0001;
+pub const SWP_NOZORDER: DWORD = 0x0004;
+pub const SWP_SHOWWINDOW: DWORD = 0x0040;
+
+pub const HWND_BOTTOM: HWND = @ptrFromInt(1);
+pub const HWND_NOTOPMOST: HWND = @ptrFromInt(@import("std").math.maxInt(usize) - 1);
+pub const HWND_TOP: HWND = null;
+pub const HWND_TOPMOST: HWND = @ptrFromInt(@import("std").math.maxInt(usize));
+
 pub const POINTER_PEN_INFO = extern struct {
     pointerInfo: POINTER_INFO = @import("std").mem.zeroes(POINTER_INFO),
     penFlags: PEN_FLAGS = @import("std").mem.zeroes(PEN_FLAGS),
@@ -3453,6 +3479,13 @@ pub const struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION = extern struct {
     score: UINT16 = @import("std").mem.zeroes(UINT16),
     adjustedPoint: POINT = @import("std").mem.zeroes(POINT),
 };
+
+pub extern fn MonitorFromWindow(hwnd: HWND, dwFlags: DWORD) callconv(@import("std").os.windows.WINAPI) HMONITOR;
+
+pub const MONITOR_DEFAULTTONEAREST: DWORD = 2;
+pub const MONITOR_DEFAULTTONULL: DWORD = 0;
+pub const MONITOR_DEFAULTTOPRIMARY: DWORD = 1;
+
 pub const TOUCH_HIT_TESTING_PROXIMITY_EVALUATION = struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION;
 pub const PTOUCH_HIT_TESTING_PROXIMITY_EVALUATION = [*c]struct_tagTOUCH_HIT_TESTING_PROXIMITY_EVALUATION;
 pub const struct_tagTOUCH_HIT_TESTING_INPUT = extern struct {

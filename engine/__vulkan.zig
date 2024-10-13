@@ -91,6 +91,8 @@ const inputAssembly: vk.VkPipelineInputAssemblyStateCreateInfo = .{
     .primitiveRestartEnable = vk.VK_FALSE,
 };
 
+pub var is_fullscreen_ex: bool = false;
+
 const dynamicStates = [_]vk.VkDynamicState{ vk.VK_DYNAMIC_STATE_VIEWPORT, vk.VK_DYNAMIC_STATE_SCISSOR };
 
 const dynamicState: vk.VkPipelineDynamicStateCreateInfo = .{
@@ -296,12 +298,12 @@ inline fn create_shader_state(vert_module: vk.VkShaderModule, frag_module: vk.Vk
     return [2]vk.VkPipelineShaderStageCreateInfo{ stage_infov1, stage_infof1 };
 }
 
-var vkInstance: vk.VkInstance = undefined;
+pub var vkInstance: vk.VkInstance = undefined;
 pub var vkDevice: vk.VkDevice = null;
 var vkSurface: vk.VkSurfaceKHR = null;
 var vkRenderPass: vk.VkRenderPass = undefined;
 var vkRenderPass2: vk.VkRenderPass = undefined;
-var vkSwapchain: vk.VkSwapchainKHR = null;
+pub var vkSwapchain: vk.VkSwapchainKHR = null;
 
 pub var vkCommandPool: vk.VkCommandPool = undefined;
 pub var vkCommandBuffer: vk.VkCommandBuffer = undefined;
@@ -448,21 +450,6 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
 
         result = vk.vkEndCommandBuffer(cmd);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
-    }
-}
-
-pub fn vkCreateDebugUtilsMessengerEXT(instance: vk.VkInstance, pCreateInfo: ?*const vk.VkDebugUtilsMessengerCreateInfoEXT, pAllocator: ?*const vk.VkAllocationCallbacks, pDebugMessenger: ?*vk.VkDebugUtilsMessengerEXT) vk.VkResult {
-    const func = @as(vk.PFN_vkCreateDebugUtilsMessengerEXT, @ptrCast(vk.vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT")));
-    if (func != null) {
-        return func.?(instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
-        return vk.VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-}
-pub fn vkDestroyDebugUtilsMessengerEXT(instance: vk.VkInstance, debugMessenger: vk.VkDebugUtilsMessengerEXT, pAllocator: ?*const vk.VkAllocationCallbacks) void {
-    const func = @as(vk.PFN_vkDestroyDebugUtilsMessengerEXT, @ptrCast(vk.vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT")));
-    if (func != null) {
-        func.?(instance, debugMessenger, pAllocator);
     }
 }
 
@@ -843,7 +830,7 @@ pub fn vulkan_start() void {
             .pfnUserCallback = debug_callback,
             .pUserData = null,
         };
-        result = vkCreateDebugUtilsMessengerEXT(vkInstance, &create_info, null, &vkDebugMessenger);
+        result = vk.vkCreateDebugUtilsMessengerEXT(vkInstance, &create_info, null, &vkDebugMessenger);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDebugUtilsMessengerEXT : {d}", .{result});
     }
 
@@ -1256,6 +1243,8 @@ pub fn vulkan_start() void {
 
     __render_command.start();
 
+    set_fullscreen_ex();
+
     //graphics create
     quad_image_vertices = graphics.vertices(graphics.tex_vertex_2d).init();
     quad_image_vertices.array = quad_image_vertices_array[0..quad_image_vertices_array.len];
@@ -1352,7 +1341,7 @@ pub fn vulkan_destroy() void {
 
     vk.vkDestroyDevice(vkDevice, null);
 
-    if (vkDebugMessenger != null) vkDestroyDebugUtilsMessengerEXT(vkInstance, vkDebugMessenger, null);
+    if (vkDebugMessenger != null) vk.vkDestroyDebugUtilsMessengerEXT(vkInstance, vkDebugMessenger, null);
     vk.vkDestroyInstance(vkInstance, null);
 
     __render_command.destroy();
@@ -1514,6 +1503,18 @@ fn create_swapchain_and_imageviews() void {
         imageCount = surfaceCap.maxImageCount;
     }
 
+    var fullS: vk.VkSurfaceFullScreenExclusiveInfoEXT = .{
+        .fullScreenExclusive = vk.VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT,
+    };
+
+    var fullWin: vk.VkSurfaceFullScreenExclusiveWin32InfoEXT = undefined;
+    if (system.platform == .windows and system.current_monitor() != null) {
+        fullWin = .{
+            .hmonitor = system.current_monitor().?.*.__hmonitor,
+        };
+        fullS.pNext = @ptrCast(&fullWin);
+    }
+
     var swapChainCreateInfo: vk.VkSwapchainCreateInfoKHR = .{
         .sType = vk.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = vkSurface,
@@ -1529,6 +1530,7 @@ fn create_swapchain_and_imageviews() void {
         .clipped = 1,
         .oldSwapchain = null,
         .imageSharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
+        .pNext = if (is_fullscreen_ex) @ptrCast(&fullS) else null,
     };
 
     const queueFamiliesIndices = [_]u32{ graphicsFamilyIndex, presentFamilyIndex };
@@ -1602,6 +1604,12 @@ pub fn end_single_time_commands(buf: vk.VkCommandBuffer) void {
     const result = vk.vkEndCommandBuffer(buf);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.end_single_time_commands.vkEndCommandBuffer : {d}", .{result});
     queue_submit_and_wait(&[_]vk.VkCommandBuffer{buf});
+}
+
+pub fn set_fullscreen_ex() void {
+    if (VK_EXT_full_screen_exclusive_support and is_fullscreen_ex) {
+        _ = vk.vkAcquireFullScreenExclusiveModeEXT(vkInstance, vkDevice, vkSwapchain);
+    }
 }
 
 pub fn queue_submit_and_wait(bufs: []const vk.VkCommandBuffer) void {
@@ -1680,8 +1688,17 @@ pub fn get_swapchain_image_length() usize {
     return vk_swapchain_image_views.len;
 }
 
+pub var windowed: bool = true;
+pub var fullscreen_mutex: std.Thread.Mutex = .{};
+
 pub fn recreate_swapchain() void {
     if (vkDevice == null) return;
+    fullscreen_mutex.lock();
+
+    if (!windowed and VK_EXT_full_screen_exclusive_support and !is_fullscreen_ex) {
+        _ = vk.vkReleaseFullScreenExclusiveModeEXT(vkInstance, vkDevice, vkSwapchain);
+        windowed = true;
+    }
     wait_device_idle();
 
     if (system.platform == .android) {
@@ -1698,6 +1715,11 @@ pub fn recreate_swapchain() void {
         return;
     }
     create_framebuffer();
+
+    set_fullscreen_ex();
+
+    fullscreen_mutex.unlock();
+
     create_sync_object();
 
     __render_command.refresh_all();

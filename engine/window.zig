@@ -84,6 +84,15 @@ pub fn can_resizewindow() bool {
     }
     @compileError("not support platform.");
 }
+pub fn get_screen_mode() system.screen_mode {
+    if (system.platform == .windows) {
+        return @atomicLoad(system.screen_mode, &__system.init_set.screen_mode, std.builtin.AtomicOrder.monotonic);
+    } else if (system.platform == .android) {
+        system.print("WARN get_screen_mode not support mobile platform.\n", .{});
+        return system.screen_mode.WINDOW;
+    }
+    @compileError("not support platform.");
+}
 
 pub fn get_window_title() []const u8 {
     return __system.title[0 .. __system.title.len - 1];
