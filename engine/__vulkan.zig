@@ -1834,7 +1834,7 @@ pub fn wait_device_idle() void {
     if (result != vk.VK_SUCCESS) system.print_error("__vulkan.vkDeviceWaitIdle : {d}", .{result});
 }
 
-pub fn transition_image_layout(image: vk.VkImage, mipLevels: u32, arrayLayers: u32, old_layout: vk.VkImageLayout, new_layout: vk.VkImageLayout) void {
+pub fn transition_image_layout(image: vk.VkImage, mipLevels: u32, arrayStart: u32, arrayLayers: u32, old_layout: vk.VkImageLayout, new_layout: vk.VkImageLayout) void {
     const buf = begin_single_time_commands();
 
     var barrier: vk.VkImageMemoryBarrier = .{
@@ -1847,7 +1847,7 @@ pub fn transition_image_layout(image: vk.VkImage, mipLevels: u32, arrayLayers: u
             .aspectMask = vk.VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
             .levelCount = mipLevels,
-            .baseArrayLayer = 0,
+            .baseArrayLayer = arrayStart,
             .layerCount = arrayLayers,
         },
     };

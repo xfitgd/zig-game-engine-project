@@ -380,9 +380,9 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
         @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data.?);
         staging_alloc.*.unmap();
 
-        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, 0, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth, 0, img_info.arrayLayers);
-        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, 0, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
         if (is_single) {
             if (staging_alloc.*.is_empty()) staging_alloc.*.deinit();
@@ -420,13 +420,13 @@ pub fn copy_texture(self: *Self, image: *graphics.texture, _data: []const u8, re
     @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
     staging_alloc.*.unmap();
 
-    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 0, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     if (rect != null) {
         __vulkan.copy_buffer_to_image2(staging_buf, image.*.__image.res, rect, 1);
     } else {
         __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, 0, 1);
     }
-    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    __vulkan.transition_image_layout(image.*.__image.res, 1, 0, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     if (single) {
         if (staging_alloc.*.is_empty()) staging_alloc.*.deinit();
@@ -461,9 +461,9 @@ pub fn copy_texture_array(self: *Self, image: *graphics.texture_array, _data: []
     @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data.?))), _data[0..size]);
     staging_alloc.*.unmap();
 
-    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    __vulkan.transition_image_layout(image.*.__image.res, 1, frame, framelen, vk.VK_IMAGE_LAYOUT_UNDEFINED, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     __vulkan.copy_buffer_to_image(staging_buf, image.*.__image.res, image.*.width, image.*.height, 1, frame, framelen);
-    __vulkan.transition_image_layout(image.*.__image.res, 1, 1, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    __vulkan.transition_image_layout(image.*.__image.res, 1, frame, framelen, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
     if (single) {
         if (staging_alloc.*.is_empty()) staging_alloc.*.deinit();
