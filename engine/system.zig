@@ -128,18 +128,14 @@ pub const monitor_info = struct {
         if (platform == .windows) {
             __windows.set_fullscreen_mode(self, resolution);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.FULLSCREEN, std.builtin.AtomicOrder.monotonic);
-        } else {
-            @compileError("not support platform");
-        }
+        } else {}
     }
     pub fn set_borderlessscreen_mode(self: *Self) void {
         save_prev_window_state();
         if (platform == .windows) {
             __windows.set_borderlessscreen_mode(self);
             @atomicStore(screen_mode, &__system.init_set.screen_mode, screen_mode.BORDERLESSSCREEN, std.builtin.AtomicOrder.monotonic);
-        } else {
-            @compileError("not support platform");
-        }
+        } else {}
     }
 };
 
