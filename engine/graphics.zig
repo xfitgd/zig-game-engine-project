@@ -56,7 +56,12 @@ pub const index_type = enum { U16, U32 };
 pub const DEF_IDX_TYPE_: index_type = .U32;
 pub const DEF_IDX_TYPE = indices_(DEF_IDX_TYPE_).idxT;
 
-pub const iobject = union(enum) {
+const iobject_type = enum {
+    _shape,
+    _image,
+    _anim_image,
+};
+pub const iobject = union(iobject_type) {
     const Self = @This();
     _shape: shape,
     _image: image,
@@ -345,9 +350,12 @@ pub const color_transform = struct {
         self.*.__uniform.map_update(&self.*.color_mat);
     }
 };
+
 //transform는 object와 한몸이라 따로 check_alloc 필요없음
 pub const transform = struct {
     const Self = @This();
+
+    parent_type: iobject_type,
 
     model: matrix = matrix.identity(),
     ///이 값이 변경되면 update 필요
@@ -362,14 +370,27 @@ pub const transform = struct {
         self.*.__check_init.deinit();
         self.*.__model_uniform.clean();
     }
+    inline fn get_mat_set_wh(self: *Self, _type: type) matrix {
+        const e: *_type = @fieldParentPtr("transform", self);
+        var mat = self.*.model;
+        mat.e[0][0] *= @floatFromInt(e.*.src.*.width);
+        mat.e[1][1] *= @floatFromInt(e.*.src.*.height);
+        return mat;
+    }
+    inline fn get_mat(self: *Self) matrix {
+        switch (self.*.parent_type) {
+            inline ._image, ._anim_image => |e| return get_mat_set_wh(self, std.meta.TagPayload(iobject, e)),
+            else => return self.*.model,
+        }
+    }
     pub inline fn __build(self: *Self) void {
         self.*.__check_init.init();
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(matrix), &self.*.__model_uniform, mem.obj_to_u8arrC(&self.*.model));
+        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(matrix), &self.*.__model_uniform, mem.obj_to_u8arrC(&get_mat(self)));
     }
     ///write_flag가 readwrite_cpu일때만 호출
     pub fn map_update(self: *Self) void {
         self.*.__check_init.check_inited();
-        self.*.__model_uniform.map_update(&self.*.model);
+        self.*.__model_uniform.map_update(&get_mat(self));
     }
 };
 
@@ -684,10 +705,10 @@ pub const shape = struct {
         }
     };
 
+    transform: transform = .{ .parent_type = ._shape },
     src: *source = undefined,
     extra_src: ?[]*source = null,
     __descriptor_set: vk.VkDescriptorSet = undefined,
-    transform: transform = .{},
     __descriptor_pool: vk.VkDescriptorPool = null,
 
     pub fn can_build(self: Self) bool {
@@ -823,11 +844,11 @@ pub const center_pt_pos = enum {
 pub const image = struct {
     const Self = @This();
 
+    transform: transform = .{ .parent_type = ._image },
     src: *texture = undefined,
     color_tran: *color_transform,
     __descriptor_set: vk.VkDescriptorSet = undefined,
     __descriptor_pool: vk.VkDescriptorPool = null,
-    transform: transform = .{},
 
     ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
     pub fn pixel_perfect_point(img: Self, _p: point, _canvas_w: f32, _canvas_h: f32, center: center_pt_pos) point {
@@ -996,11 +1017,12 @@ pub const image = struct {
 pub const animate_image = struct {
     const Self = @This();
 
+    transform: transform = .{ .parent_type = ._anim_image },
+
     src: *texture_array = undefined,
     color_tran: *color_transform,
     __descriptor_set: vk.VkDescriptorSet = undefined,
     __descriptor_pool: vk.VkDescriptorPool = null,
-    transform: transform = .{},
     __frame_uniform: vulkan_res_node(.buffer) = .{},
     frame: u32 = 0,
 

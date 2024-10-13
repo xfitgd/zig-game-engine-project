@@ -156,9 +156,157 @@ pub const circle = struct {
 pub const polygon = struct {
     lines: [][]line,
     colors: ?[]vector = null,
+    tickness: f32 = 3,
+
+    ///https://stackoverflow.com/a/73061541
+    fn extend_point(prev: point, cur: point, next: point, tickness: f32, ccw: f32) point {
+        const vn: point = next - cur;
+        const vnn: point = math.normalize(vn);
+        const nnnX = vnn[1];
+        const nnnY = -vnn[0];
+
+        const vp: point = cur - prev;
+        const vpn: point = math.normalize(vp);
+        const npnX = vpn[1] * ccw;
+        const npnY = -vpn[0] * ccw;
+
+        const bisX = (nnnX + npnX) * ccw;
+        const bisY = (nnnY + npnY) * ccw;
+
+        const bisn: point = math.normalize(point{ bisX, bisY });
+        const bislen = tickness / sqrt((1 + nnnX * npnX + nnnY * npnY) / 2);
+
+        return point{ cur[0] + bislen * bisn[0], cur[1] + bislen * bisn[1] };
+    }
 
     ///raw_polygon elements need alloc
-    pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon) polygon_error!void {
+    pub fn compute_outline(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon) polygon_error!void {
+        const lines_ = try allocator.alloc([]line, self.lines.len * 2);
+        defer allocator.free(lines_);
+        var i: usize = 0;
+        while (i < self.lines.len) : (i += 1) {
+            lines_[i * 2] = allocator.alloc(line, self.lines[i].len) catch |e| {
+                var j: usize = 0;
+                while (j < i * 2) : (j += 1) {
+                    allocator.free(lines_[j]);
+                }
+                return e;
+            };
+            lines_[i * 2 + 1] = allocator.alloc(line, self.lines[i].len) catch |e| {
+                var j: usize = 0;
+                while (j < i * 2 + 1) : (j += 1) {
+                    allocator.free(lines_[j]);
+                }
+                return e;
+            };
+            var j: usize = 0;
+            const ccw: f32 = if (math.cross2(self.lines[i][0].start, self.lines[i][0].end) > 0) -1 else 1;
+
+            while (j < self.lines[i].len) : (j += 1) {
+                const next = (j + 1) % self.lines[i].len;
+                const prev = if (j == 0) self.lines[i].len - 1 else (j - 1);
+
+                if (self.lines[i][j].curve_type == .line) {
+                    lines_[i * 2][j].start = extend_point(
+                        if (self.lines[i][prev].curve_type == .line) self.lines[i][prev].start else self.lines[i][prev].control1,
+                        self.lines[i][j].start,
+                        self.lines[i][j].end,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].end = extend_point(
+                        self.lines[i][j].start,
+                        self.lines[i][j].end,
+                        if (self.lines[i][next].curve_type == .line) self.lines[i][next].end else self.lines[i][next].control0,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].start = extend_point(
+                        if (self.lines[i][prev].curve_type == .line) self.lines[i][prev].start else self.lines[i][prev].control1,
+                        self.lines[i][j].start,
+                        self.lines[i][j].end,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].end = extend_point(
+                        self.lines[i][j].start,
+                        self.lines[i][j].end,
+                        if (self.lines[i][next].curve_type == .line) self.lines[i][next].end else self.lines[i][next].control0,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].curve_type = .line;
+                    lines_[i * 2 + 1][j].curve_type = .line;
+                } else {
+                    lines_[i * 2][j].start = extend_point(
+                        if (self.lines[i][prev].curve_type == .line) self.lines[i][prev].start else self.lines[i][prev].control1,
+                        self.lines[i][j].start,
+                        self.lines[i][j].control0,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].control0 = extend_point(
+                        self.lines[i][j].start,
+                        self.lines[i][j].control0,
+                        self.lines[i][j].control1,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].control1 = extend_point(
+                        self.lines[i][j].control0,
+                        self.lines[i][j].control1,
+                        self.lines[i][j].end,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].end = extend_point(
+                        self.lines[i][j].control1,
+                        self.lines[i][j].end,
+                        if (self.lines[i][next].curve_type == .line) self.lines[i][next].end else self.lines[i][next].control0,
+                        self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].start = extend_point(
+                        if (self.lines[i][prev].curve_type == .line) self.lines[i][prev].start else self.lines[i][prev].control1,
+                        self.lines[i][j].start,
+                        self.lines[i][j].control0,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].control0 = extend_point(
+                        self.lines[i][j].start,
+                        self.lines[i][j].control0,
+                        self.lines[i][j].control1,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].control1 = extend_point(
+                        self.lines[i][j].control0,
+                        self.lines[i][j].control1,
+                        self.lines[i][j].end,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2 + 1][j].end = extend_point(
+                        self.lines[i][j].control1,
+                        self.lines[i][j].end,
+                        if (self.lines[i][next].curve_type == .line) self.lines[i][next].end else self.lines[i][next].control0,
+                        -self.tickness,
+                        ccw,
+                    );
+                    lines_[i * 2][j].curve_type = self.lines[i][j].curve_type;
+                    lines_[i * 2 + 1][j].curve_type = self.lines[i][j].curve_type;
+                }
+            }
+        }
+        defer {
+            for (lines_) |l| allocator.free(l);
+        }
+
+        try _compute_polygon(allocator, _inout, lines_);
+    }
+
+    fn _compute_polygon(allocator: std.mem.Allocator, _inout: *raw_polygon, _lines: [][]line) polygon_error!void {
         var i: usize = 0;
         var count: usize = 0;
         var curve_vertice_len: usize = 0;
@@ -166,12 +314,12 @@ pub const polygon = struct {
         var indices_len: usize = 0;
 
         count = 0;
-        while (count < self.lines.len) : (count += 1) {
-            if (self.lines[count].len < 3) return polygon_error.is_not_polygon;
+        while (count < _lines.len) : (count += 1) {
+            if (_lines[count].len < 3) return polygon_error.is_not_polygon;
             i = 0;
             vertice_len += 1;
-            while (i < self.lines[count].len) : (i += 1) {
-                if (self.lines[count][i].curve_type != .line) {
+            while (i < _lines[count].len) : (i += 1) {
+                if (_lines[count][i].curve_type != .line) {
                     curve_vertice_len += 8;
                 }
                 vertice_len += 1;
@@ -184,14 +332,14 @@ pub const polygon = struct {
         vertice_len = 0;
 
         count = 0;
-        while (count < self.lines.len) : (count += 1) {
+        while (count < _lines.len) : (count += 1) {
             i = 0;
             const first_vertex = vertice_len;
             _inout.*.vertices[first_vertex].pos = .{ std.math.floatMax(f32), std.math.floatMin(f32) };
             _inout.*.vertices[first_vertex].uvw = .{ 1, 0, 0 };
             vertice_len += 1;
-            while (i < self.lines[count].len) : (i += 1) {
-                _inout.*.vertices[vertice_len].pos = self.lines[count][i].start;
+            while (i < _lines[count].len) : (i += 1) {
+                _inout.*.vertices[vertice_len].pos = _lines[count][i].start;
                 vertice_len += 1;
             }
             i = first_vertex + 1;
@@ -214,14 +362,19 @@ pub const polygon = struct {
             _inout.*.vertices[first_vertex].pos[1] += (_inout.*.vertices[first_vertex].pos[1] - minY) / 2;
         }
         count = 0;
-        while (count < self.lines.len) : (count += 1) {
+        while (count < _lines.len) : (count += 1) {
             i = 0;
-            while (i < self.lines[count].len) : (i += 1) {
-                try self.lines[count][i].compute_curve(_inout.*.vertices, _inout.*.indices, &vertice_len, &indices_len);
+            while (i < _lines[count].len) : (i += 1) {
+                try _lines[count][i].compute_curve(_inout.*.vertices, _inout.*.indices, &vertice_len, &indices_len);
             }
         }
         _inout.*.vertices = try allocator.realloc(_inout.*.vertices, vertice_len);
         _inout.*.indices = try allocator.realloc(_inout.*.indices, indices_len);
+    }
+
+    ///raw_polygon elements need alloc
+    pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon) polygon_error!void {
+        try _compute_polygon(allocator, _inout, self.lines);
     }
 };
 
@@ -232,8 +385,16 @@ pub const line = struct {
     control1: point,
     end: point,
     curve_type: curve_TYPE = curve_TYPE.unknown,
-    divide: f32 = 0,
 
+    pub fn reverse(self: Self) Self {
+        return .{
+            .start = self.end,
+            .control0 = self.control1,
+            .control1 = self.control0,
+            .end = self.start,
+            .curve_type = self.curve_type,
+        };
+    }
     pub fn quadratic_init(_start: point, _control01: point, _end: point) Self {
         return .{
             .start = _start,

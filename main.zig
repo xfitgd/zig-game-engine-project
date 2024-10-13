@@ -50,13 +50,13 @@ var font0: font = undefined;
 var font0_data: []u8 = undefined;
 
 var shape_src: graphics.shape.source = undefined;
+var rect_src: graphics.shape.source = undefined;
 var shape_src2: graphics.shape.source = undefined;
 var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.texture = undefined;
 var anim_image_src: graphics.texture_array = undefined;
 var cmd: *render_command = undefined;
-var cmd2: *render_command = undefined;
-var cmds: [2]*render_command = .{ undefined, undefined };
+var cmds: [1]*render_command = .{undefined};
 
 var color_trans: graphics.color_transform = undefined;
 
@@ -65,7 +65,7 @@ const animate_object = animator.animate_object;
 
 var anim: player = .{
     .target_fps = 10,
-    .obj = undefined,
+    .obj = .{ .obj = undefined },
 };
 
 pub const CANVAS_W: f32 = 1280;
@@ -80,6 +80,13 @@ pub const CANVAS_H: f32 = 720;
 //     _ = fs.write(stack_trace) catch unreachable;
 //     fs.close();
 // }
+
+var rect_line: [4]geometry.line = .{
+    geometry.line.line_init(.{ -300, 300 }, .{ 300, 300 }),
+    geometry.line.quadratic_init(.{ 300, 300 }, .{ 600, 0 }, .{ 300, -300 }),
+    geometry.line.line_init(.{ 300, -300 }, .{ -300, -300 }),
+    geometry.line.line_init(.{ -300, -300 }, .{ -300, 300 }),
+};
 
 pub fn xfit_init() void {
     // const luaT = lua.c.luaL_newstate();
@@ -104,6 +111,7 @@ pub fn xfit_init() void {
     g_proj.build(.readwrite_cpu);
 
     const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
+    const rect_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 4 OutOfMemory");
     const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
     const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
@@ -111,6 +119,10 @@ pub fn xfit_init() void {
     text_shape.* = .{ ._shape = .{} };
     shape_src = graphics.shape.source.init_for_alloc(allocator);
     shape_src.color = .{ 1, 1, 1, 0.5 };
+
+    rect_shape.* = .{ ._shape = .{} };
+    rect_src = graphics.shape.source.init_for_alloc(allocator);
+    rect_src.color = .{ 1, 1, 1, 0.5 };
 
     shape_src2 = graphics.shape.source.init_for_alloc(allocator);
     shape_src2.color = .{ 1, 0, 1, 1 };
@@ -181,36 +193,47 @@ pub fn xfit_init() void {
     img.*._image.color_tran = &color_trans;
     img.*._image.transform.camera = &g_camera;
     img.*._image.transform.projection = &g_proj;
-    img.*._image.transform.model = matrix.scaling(
-        @as(f32, @floatFromInt(image_src.width)) * 2,
-        @as(f32, @floatFromInt(image_src.height)) * 2,
-        1.0,
-    );
+    img.*._image.transform.model = matrix.scaling(2, 2, 1.0);
     img.*.build();
 
     anim_img.*._anim_image.transform.camera = &g_camera;
     anim_img.*._anim_image.transform.projection = &g_proj;
-    anim_img.*._anim_image.transform.model = matrix.scaling(
-        @as(f32, @floatFromInt(anim_image_src.width)),
-        @as(f32, @floatFromInt(anim_image_src.height)),
-        1.0,
-    ).multiply(&matrix.translation(300, -200, 0));
+    anim_img.*._anim_image.transform.model = matrix.translation(300, -200, 0);
     anim_img.*.build();
+
+    var rl = [1][]geometry.line{rect_line[0..rect_line.len]};
+    var rect_poly: geometry.polygon = .{
+        .tickness = 2,
+        .lines = rl[0..1],
+    };
+    var raw_polygon = geometry.raw_polygon{
+        .vertices = allocator.alloc(graphics.shape_color_vertex_2d, 0) catch unreachable,
+        .indices = allocator.alloc(u32, 0) catch unreachable,
+    };
+
+    rect_poly.compute_outline(allocator, &raw_polygon) catch unreachable;
+
+    rect_src.vertices.array = raw_polygon.vertices;
+    rect_src.indices.array = raw_polygon.indices;
+    rect_src.build(.read_gpu, .readwrite_cpu);
+
+    rect_shape.*._shape.transform.camera = &g_camera;
+    rect_shape.*._shape.transform.projection = &g_proj;
+    rect_shape.*._shape.src = &rect_src;
+    rect_shape.*.build();
 
     objects.append(img) catch system.handle_error_msg2("objects.append(img)");
     objects.append(text_shape) catch system.handle_error_msg2("objects.append(text_shape)");
     objects.append(anim_img) catch system.handle_error_msg2("objects.append(anim_img)");
+    objects.append(rect_shape) catch system.handle_error_msg2("objects.append(rect_shape)");
 
     cmd = render_command.init();
-    cmd.*.scene = objects.items[0..2];
-    cmd2 = render_command.init();
-    cmd2.*.scene = objects.items[2..objects.items.len];
+    cmd.*.scene = objects.items[0..objects.items.len];
 
     cmds[0] = cmd;
-    cmds[1] = cmd2;
     graphics.render_cmd = cmds[0..cmds.len];
 
-    anim.obj = @ptrCast(objects.items[2]);
+    anim.obj.obj = objects.items[2];
     anim.play();
 
     var start_sem: std.Thread.Semaphore = .{};
@@ -281,6 +304,7 @@ pub fn xfit_size() void {
 pub fn xfit_destroy() void {
     shape_src.deinit_for_alloc();
     shape_src2.deinit_for_alloc();
+    rect_src.deinit_for_alloc();
 
     allocator.free(image_src.pixels.?);
     allocator.free(anim_image_src.pixels.?);
@@ -303,7 +327,6 @@ pub fn xfit_destroy() void {
     font.destroy();
 
     cmd.deinit();
-    cmd2.deinit();
     color_trans.deinit();
 }
 
