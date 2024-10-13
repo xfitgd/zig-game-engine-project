@@ -1771,10 +1771,10 @@ pub fn drawFrame() void {
         cmds[0] = vkCommandBuffer;
 
         for (graphics.render_cmd.?, cmds[1..cmds.len]) |cmd, *v| {
-            //if (@atomicLoad(bool, &cmd.*.__refesh[state.frame], .monotonic)) {
-            // @atomicStore(bool, &cmd.*.__refesh[state.frame], false, .monotonic);
-            recordCommandBuffer(cmd, @intCast(state.frame));
-            // }
+            if (@atomicLoad(bool, &cmd.*.__refesh[state.frame], .monotonic)) {
+                @atomicStore(bool, &cmd.*.__refesh[state.frame], false, .monotonic);
+                recordCommandBuffer(cmd, @intCast(state.frame));
+            }
             v.* = cmd.*.__command_buffers[state.frame][imageIndex];
         }
 
