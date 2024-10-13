@@ -965,14 +965,23 @@ pub fn vulkan_start() void {
 
     create_swapchain_and_imageviews();
 
+    const dependency: vk.VkSubpassDependency = .{
+        .srcSubpass = vk.VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .srcAccessMask = 0,
+        .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    };
+
     var renderPassInfo: vk.VkRenderPassCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 2,
         .pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachment, depthAttachment },
         .subpassCount = 1,
         .pSubpasses = &[_]vk.VkSubpassDescription{subpass},
-        .pDependencies = null,
-        .dependencyCount = 0,
+        .pDependencies = &dependency,
+        .dependencyCount = 1,
     };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
