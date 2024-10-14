@@ -954,15 +954,35 @@ pub fn vulkan_start() void {
 
     vk.vkGetPhysicalDeviceMemoryProperties(vk_physical_device, &mem_prop);
     vk.vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
-
-    if (mem_prop.memoryHeaps[0].size < 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 16;
-    } else if (mem_prop.memoryHeaps[0].size < 2 * 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 8;
-    } else if (mem_prop.memoryHeaps[0].size < 4 * 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 4;
-    } else if (mem_prop.memoryHeaps[0].size < 8 * 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 2;
+    {
+        var i: u32 = 0;
+        var change: bool = false;
+        while (i < mem_prop.memoryHeapCount) : (i += 1) {
+            if (mem_prop.memoryHeaps[i].flags & vk.VK_MEMORY_HEAP_DEVICE_LOCAL_BIT != 0) {
+                if (mem_prop.memoryHeaps[i].size < 1024 * 1024 * 1024) {
+                    __vulkan_allocator.BLOCK_LEN /= 16;
+                } else if (mem_prop.memoryHeaps[i].size < 2 * 1024 * 1024 * 1024) {
+                    __vulkan_allocator.BLOCK_LEN /= 8;
+                } else if (mem_prop.memoryHeaps[i].size < 4 * 1024 * 1024 * 1024) {
+                    __vulkan_allocator.BLOCK_LEN /= 4;
+                } else if (mem_prop.memoryHeaps[i].size < 8 * 1024 * 1024 * 1024) {
+                    __vulkan_allocator.BLOCK_LEN /= 2;
+                }
+                change = true;
+                break;
+            }
+        }
+        if (!change) { //글카 전용 메모리가 없을 경우
+            if (mem_prop.memoryHeaps[0].size < 2 * 1024 * 1024 * 1024) {
+                __vulkan_allocator.BLOCK_LEN /= 16;
+            } else if (mem_prop.memoryHeaps[0].size < 2 * 2 * 1024 * 1024 * 1024) {
+                __vulkan_allocator.BLOCK_LEN /= 8;
+            } else if (mem_prop.memoryHeaps[0].size < 2 * 4 * 1024 * 1024 * 1024) {
+                __vulkan_allocator.BLOCK_LEN /= 4;
+            } else if (mem_prop.memoryHeaps[0].size < 2 * 8 * 1024 * 1024 * 1024) {
+                __vulkan_allocator.BLOCK_LEN /= 2;
+            }
+        }
     }
 
     vk_allocators = ArrayList(*__vulkan_allocator_node).init(__system.allocator);
