@@ -89,7 +89,8 @@ pub fn init(
         const build_options_module = build_options.createModule();
 
         if (PLATFORM == XfitPlatform.android) {
-            if (is_console) @compileError("mobile do not support console");
+            if (is_console) @panic("mobile do not support console");
+
             const target = b.resolveTargetQuery(targets[i]);
             result = b.addSharedLibrary(.{
                 .target = target,
