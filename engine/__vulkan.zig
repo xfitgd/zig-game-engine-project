@@ -956,10 +956,12 @@ pub fn vulkan_start() void {
     vk.vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
 
     if (mem_prop.memoryHeaps[0].size < 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 8;
+        __vulkan_allocator.BLOCK_LEN /= 16;
     } else if (mem_prop.memoryHeaps[0].size < 2 * 1024 * 1024 * 1024) {
-        __vulkan_allocator.BLOCK_LEN /= 4;
+        __vulkan_allocator.BLOCK_LEN /= 8;
     } else if (mem_prop.memoryHeaps[0].size < 4 * 1024 * 1024 * 1024) {
+        __vulkan_allocator.BLOCK_LEN /= 4;
+    } else if (mem_prop.memoryHeaps[0].size < 8 * 1024 * 1024 * 1024) {
         __vulkan_allocator.BLOCK_LEN /= 2;
     }
 

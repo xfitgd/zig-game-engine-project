@@ -13,8 +13,8 @@ const math = @import("math.zig");
 const mem = @import("mem.zig");
 const graphics = @import("graphics.zig");
 
-//8192*16384 = 128MB
-pub var BLOCK_LEN: usize = 8192 * 16384;
+//16384*16384 = 256
+pub var BLOCK_LEN: usize = 16384 * 16384;
 
 const MAX_IDX_COUNT = 8;
 const Self = @This();
