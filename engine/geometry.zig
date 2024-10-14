@@ -200,7 +200,7 @@ pub const polygon = struct {
                 return e;
             };
             var j: usize = 0;
-            const ccw: f32 = if (math.cross2(self.lines[i][0].start, self.lines[i][0].end) > 0) -1 else 1;
+            const ccw: f32 = if (math.cross2(self.lines[i][0].start, if (self.lines[i][0].curve_type == .line) self.lines[i][0].end else self.lines[i][0].control0) > 0) -1 else 1;
 
             while (j < self.lines[i].len) : (j += 1) {
                 const next = (j + 1) % self.lines[i].len;
