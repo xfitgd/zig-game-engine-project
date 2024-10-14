@@ -30,13 +30,22 @@ inline fn get_arch_text(arch: std.Target.Cpu.Arch) []const u8 {
     };
 }
 
-pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine_path: []const u8, PLATFORM: XfitPlatform, OPTIMIZE: std.builtin.OptimizeMode, callback: fn (*std.Build.Step.Compile, std.Build.ResolvedTarget) void) void {
+pub fn init(
+    b: *std.Build,
+    root_source_file: std.Build.LazyPath,
+    comptime engine_path: []const u8,
+    PLATFORM: XfitPlatform,
+    OPTIMIZE: std.builtin.OptimizeMode,
+    callback: fn (*std.Build.Step.Compile, std.Build.ResolvedTarget) void,
+    is_console: bool, //ignores for target mobile
+) void {
     var pro = std.process.Child.init(&[_][]const u8{ engine_path ++ "/shader_compile", engine_path }, b.allocator);
     _ = pro.spawnAndWait() catch unreachable;
 
     const build_options = b.addOptions();
 
     build_options.addOption(XfitPlatform, "platform", PLATFORM);
+    build_options.addOption(std.Target.SubSystem, "subsystem", if (is_console) .Console else .Windows);
 
     const arch_text = comptime [_][]const u8{
         "aarch64-linux-android",
@@ -80,6 +89,7 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
         const build_options_module = build_options.createModule();
 
         if (PLATFORM == XfitPlatform.android) {
+            if (is_console) @compileError("mobile do not support console");
             const target = b.resolveTargetQuery(targets[i]);
             result = b.addSharedLibrary(.{
                 .target = target,
@@ -123,8 +133,6 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/android/{s}/{s}", .{ engine_path, get_arch_text(targets[i].cpu_arch.?), name }) catch unreachable));
             }
 
-            result.root_module.addImport("build_options", build_options_module);
-
             callback(result, target);
 
             install_step.dependOn(&b.addInstallArtifact(result, .{
@@ -140,7 +148,11 @@ pub fn init(b: *std.Build, root_source_file: std.Build.LazyPath, comptime engine
             });
             result.linkLibC();
 
-            result.subsystem = .Windows;
+            if (is_console) {
+                result.subsystem = .Console;
+            } else {
+                result.subsystem = .Windows;
+            }
             result.linkSystemLibrary("setupapi");
             result.linkSystemLibrary("hid");
             //result.linkSystemLibrary("Gdi32");

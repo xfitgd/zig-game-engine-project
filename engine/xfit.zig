@@ -1,8 +1,8 @@
 pub const UNICODE = true;
 
 const std = @import("std");
-const builtin = @import("builtin");
 const root = @import("root");
+const builtin = @import("builtin");
 
 const system = @import("system.zig");
 const __system = @import("__system.zig");
@@ -15,10 +15,17 @@ pub fn xfit_main(_allocator: std.mem.Allocator, init_setting: *const system.init
 
     if (system.platform == .windows) {
         __windows.system_windows_start();
-        __windows.windows_start();
-        //vulkan_start, root.xfit_init()는 별도의 작업 스레드에서 호출(거기서 렌더링)
 
-        __windows.windows_loop();
+        if (system.subsystem == system.SubSystem.Console) {
+            root.xfit_init();
+
+            root.xfit_destroy();
+        } else {
+            __windows.windows_start();
+            //vulkan_start, root.xfit_init()는 별도의 작업 스레드에서 호출(거기서 렌더링)
+
+            __windows.windows_loop();
+        }
 
         __system.destroy();
 

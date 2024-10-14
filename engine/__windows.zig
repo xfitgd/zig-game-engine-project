@@ -96,6 +96,10 @@ pub fn system_windows_start() void {
     }
 
     _ = win32.EnumDisplayMonitors(null, null, MonitorEnumProc, 0);
+
+    hInstance = win32.GetModuleHandleA(null) orelse system.handle_error2("windows_start.GetModuleHandleA {d}", .{win32.GetLastError()});
+
+    __raw_input.start();
     return;
 }
 
@@ -119,8 +123,6 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
 }
 
 pub fn windows_start() void {
-    hInstance = win32.GetModuleHandleA(null) orelse system.handle_error2("windows_start.GetModuleHandleA {d}", .{win32.GetLastError()});
-
     const CLASS_NAME = "Xfit Window Class";
 
     var wc = win32.WNDCLASSA{
@@ -679,6 +681,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             win32.PostQuitMessage(0);
             __system.exiting.store(true, std.builtin.AtomicOrder.release);
             render_thread_sem.wait();
+
+            __raw_input.destroy();
             return 0;
         },
         else => {},

@@ -31,7 +31,7 @@ pub inline fn get_processor_core_len() u32 {
     return __system.processor_core_len;
 }
 
-pub inline fn pause() bool {
+pub inline fn paused() bool {
     return __system.pause.load(std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn activated() bool {
@@ -92,7 +92,9 @@ pub const platform_version = struct {
 };
 
 pub const platform = @import("build_options").platform;
+pub const subsystem = @import("build_options").subsystem;
 pub const XfitPlatform = @TypeOf(platform);
+pub const SubSystem = @TypeOf(subsystem);
 
 pub const screen_info = struct {
     monitor: *monitor_info,
@@ -221,21 +223,30 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
     if (platform != .android) {
         std.debug.print(fmt, args);
     } else {
-        const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch unreachable2();
+        const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch return;
         defer __system.allocator.free(str);
 
         str[str.len - 1] = 0;
         _ = __android.LOGV(str.ptr, .{});
     }
 }
+pub fn write(_str: []const u8) void {
+    if (platform != .android) {
+        _ = std.io.getStdOut().write(_str) catch return;
+    } else {
+        const str = __system.allocator.dupeZ(u8, _str) catch return;
+        defer __system.allocator.free(str);
+        _ = android.__android_log_write(android.ANDROID_LOG_VERBOSE, "xfit", str.ptr);
+    }
+}
 pub fn print_with_time(comptime fmt: []const u8, args: anytype) void {
-    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch return;
     defer __system.allocator.free(now_str);
 
     print("{s} @ " ++ fmt, .{now_str} ++ args);
 }
 pub fn print_debug_with_time(comptime fmt: []const u8, args: anytype) void {
-    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch return;
     defer __system.allocator.free(now_str);
 
     print_debug("{s} @ " ++ fmt, .{now_str} ++ args);
@@ -263,79 +274,65 @@ pub fn print_debug(comptime fmt: []const u8, args: anytype) void {
         if (platform != .android) {
             std.log.debug(fmt, args);
         } else {
-            const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch {
-                unreachable2();
-            };
+            const str = std.fmt.allocPrint(__system.allocator, fmt ++ " ", args) catch return;
             defer __system.allocator.free(str);
 
             str[str.len - 1] = 0;
-            _ = __android.LOGD(str.ptr, .{});
+            _ = android.__android_log_write(android.ANDROID_LOG_DEBUG, "xfit", str.ptr);
         }
     }
 }
 
 pub fn print_error(comptime fmt: []const u8, args: anytype) void {
     @branchHint(.cold);
-    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch unreachable2();
+    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch return;
     defer __system.allocator.free(now_str);
 
     // var fs: file = .{};
     // defer fs.close();
-    const debug_info = std.debug.getSelfDebugInfo() catch unreachable2();
+    const debug_info = std.debug.getSelfDebugInfo() catch return;
     if (platform != .android) {
-        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt, .{now_str} ++ args) catch unreachable2();
+        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt, .{now_str} ++ args) catch return;
         defer __system.allocator.free(str);
 
         var str2 = ArrayList(u8).init(__system.allocator);
         defer str2.deinit();
-        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch unreachable2();
+        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch return;
         std.debug.print("{s}\n{s}", .{ str, str2.items });
 
         if (a_fn(__system.error_handling_func) != null) a_fn(__system.error_handling_func).?(str, str2.items);
-        // fs.open("xfit_err.log", .{ .truncate = false }) catch fs.open("xfit_err.log", .{ .exclusive = true }) catch unreachable2();
+        // fs.open("xfit_err.log", .{ .truncate = false }) catch fs.open("xfit_err.log", .{ .exclusive = true }) catch  return;
     } else {
-        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt ++ " ", .{now_str} ++ args) catch unreachable2();
+        const str = std.fmt.allocPrint(__system.allocator, "{s} @ " ++ fmt ++ " ", .{now_str} ++ args) catch return;
         defer __system.allocator.free(str);
 
-        // const path = std.fmt.allocPrint(__system.allocator, "{s}/xfit_err.log" ++ fmt, .{__android.get_file_dir()} ++ args) catch unreachable2();
+        // const path = std.fmt.allocPrint(__system.allocator, "{s}/xfit_err.log" ++ fmt, .{__android.get_file_dir()} ++ args) catch  return;
         // defer __system.allocator.free(path);
 
-        // fs.open(path, .{ .truncate = false }) catch fs.open(path, .{ .exclusive = true }) catch unreachable2();
+        // fs.open(path, .{ .truncate = false }) catch fs.open(path, .{ .exclusive = true }) catch  return;
 
         str[str.len - 1] = 0;
-        _ = __android.LOGE(str.ptr, .{});
+        _ = android.__android_log_write(android.ANDROID_LOG_ERROR, "xfit", str.ptr);
 
         var str2 = ArrayList(u8).init(__system.allocator);
         defer str2.deinit();
 
-        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch unreachable2();
-        str2.append(0) catch unreachable2();
-        _ = __android.LOGE(str2.items.ptr, .{});
+        std.debug.writeCurrentStackTrace(str2.writer(), debug_info, .no_color, @returnAddress()) catch return;
+        str2.append(0) catch return;
+        _ = android.__android_log_write(android.ANDROID_LOG_ERROR, "xfit", str2.items.ptr);
 
         if (a_fn(__system.error_handling_func) != null) a_fn(__system.error_handling_func).?(str, str2.items);
     }
-    // fs.seekFromEnd(0) catch unreachable2();
-    // _ = fs.write(str) catch unreachable2();
+    // fs.seekFromEnd(0) catch return;
+    // _ = fs.write(str) catch return;
 
-    // std.debug.writeCurrentStackTrace(fs.writer(), debug_info, std.io.tty.detectConfig(fs.hFile), @returnAddress()) catch unreachable2();
+    // std.debug.writeCurrentStackTrace(fs.writer(), debug_info, std.io.tty.detectConfig(fs.hFile), @returnAddress()) catch return;
 
-    // _ = fs.write("\n") catch unreachable2();
+    // _ = fs.write("\n") catch return;
 }
 
 pub inline fn set_error_handling_func(_func: *const fn (text: []u8, stack_trace: []u8) void) void {
     @atomicStore(@TypeOf(__system.error_handling_func), &__system.error_handling_func, _func, std.builtin.AtomicOrder.monotonic);
-}
-
-pub inline fn unreachable2() void {
-    if (platform == .android) {
-        std.c.abort();
-        return;
-    }
-    if (builtin.mode == std.builtin.OptimizeMode.Debug or builtin.mode == std.builtin.OptimizeMode.ReleaseSafe) {
-        unreachable;
-    } else {
-        std.process.abort();
-    }
 }
 
 pub inline fn handle_error_msg(errtest: bool, msg: []const u8) void {
@@ -372,4 +369,13 @@ pub inline fn sleep(ns: u64) void {
     } else {
         std.time.sleep(ns);
     }
+}
+
+extern fn system([*c]const u8) callconv(.C) c_int;
+
+pub inline fn console_pause() void {
+    _ = system("pause");
+}
+pub inline fn console_cls() void {
+    _ = system("cls");
 }

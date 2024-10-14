@@ -9,18 +9,20 @@ pub const XfitPlatform = engine.XfitPlatform;
 const PLATFORM = XfitPlatform.windows;
 const OPTIMIZE = std.builtin.OptimizeMode.Debug;
 
-const EXAMPLE: EXAMPLES = EXAMPLES.GRAPHICS2D;
+const EXAMPLE: EXAMPLES = EXAMPLES.CONSOLE;
 //*
 
 const examples = [_][]const u8{
     "main.zig",
     "main_input.zig",
     "main_sound.zig",
+    "main_console.zig",
 };
 const EXAMPLES = enum(usize) {
     GRAPHICS2D,
     INPUT,
     SOUND,
+    CONSOLE,
 };
 
 fn callback(result: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
@@ -32,5 +34,13 @@ fn callback(result: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) v
 pub fn build(b: *std.Build) void {
     const platform = b.option(XfitPlatform, "platform", "build platform") orelse PLATFORM;
     b.release_mode = .fast;
-    engine.init(b, b.path(examples[@intFromEnum(EXAMPLE)]), "engine", platform, b.standardOptimizeOption(.{ .preferred_optimize_mode = OPTIMIZE }), callback);
+    engine.init(
+        b,
+        b.path(examples[@intFromEnum(EXAMPLE)]),
+        "engine",
+        platform,
+        b.standardOptimizeOption(.{ .preferred_optimize_mode = OPTIMIZE }),
+        callback,
+        EXAMPLE == .CONSOLE,
+    );
 }
