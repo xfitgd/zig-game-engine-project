@@ -955,6 +955,14 @@ pub fn vulkan_start() void {
     vk.vkGetPhysicalDeviceMemoryProperties(vk_physical_device, &mem_prop);
     vk.vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
 
+    if (mem_prop.memoryHeaps[0].size < 1024 * 1024 * 1024) {
+        __vulkan_allocator.BLOCK_LEN /= 8;
+    } else if (mem_prop.memoryHeaps[0].size < 2 * 1024 * 1024 * 1024) {
+        __vulkan_allocator.BLOCK_LEN /= 4;
+    } else if (mem_prop.memoryHeaps[0].size < 4 * 1024 * 1024 * 1024) {
+        __vulkan_allocator.BLOCK_LEN /= 2;
+    }
+
     vk_allocators = ArrayList(*__vulkan_allocator_node).init(__system.allocator);
     pvk_allocators = MemoryPoolExtra(__vulkan_allocator_node, .{}).init(__system.allocator);
     const res = pvk_allocators.create() catch |e| system.handle_error3("vulkan_start.pvk_allocators.create()", e);

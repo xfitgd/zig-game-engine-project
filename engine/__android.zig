@@ -385,7 +385,7 @@ fn android_app_pre_exec_cmd(_cmd: u8) void {
         },
         AppEvent.APP_CMD_DESTROY => {
             if (system.dbg) _ = LOGV("APP_CMD_DESTROY", .{});
-            app.destroryRequested = true;
+            @atomicStore(bool, &app.destroryRequested, true, .monotonic);
         },
         else => {},
     }
@@ -491,61 +491,62 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
 
 var input_state: general_input.INPUT_STATE = std.mem.zeroes(general_input.INPUT_STATE);
 
-fn handle_input_buttons(_event: ?*android.AInputEvent, keycode: u32, updown: bool) void {
-    if (system.a_fn(__system.general_input_callback) == null) return;
+fn handle_input_buttons(_event: ?*android.AInputEvent, keycode: u32, updown: bool) bool {
+    if (system.a_fn(__system.general_input_callback) == null) return false;
     switch (keycode) {
         android.AKEYCODE_BUTTON_A => {
-            if (input_state.buttons.A and updown) return;
+            if (input_state.buttons.A and updown) return false;
             input_state.buttons.A = updown;
         },
         android.AKEYCODE_BUTTON_B => {
-            if (input_state.buttons.B and updown) return;
+            if (input_state.buttons.B and updown) return false;
             input_state.buttons.B = updown;
         },
         android.AKEYCODE_BUTTON_X => {
-            if (input_state.buttons.X and updown) return;
+            if (input_state.buttons.X and updown) return false;
             input_state.buttons.X = updown;
         },
         android.AKEYCODE_BUTTON_Y => {
-            if (input_state.buttons.Y and updown) return;
+            if (input_state.buttons.Y and updown) return false;
             input_state.buttons.Y = updown;
         },
         android.AKEYCODE_BUTTON_START => {
-            if (input_state.buttons.START and updown) return;
+            if (input_state.buttons.START and updown) return false;
             input_state.buttons.START = updown;
         },
         android.AKEYCODE_BUTTON_SELECT => {
-            if (input_state.buttons.BACK and updown) return;
+            if (input_state.buttons.BACK and updown) return false;
             input_state.buttons.BACK = updown;
         },
         android.AKEYCODE_BUTTON_L1 => {
-            if (input_state.buttons.LEFT_SHOULDER and updown) return;
+            if (input_state.buttons.LEFT_SHOULDER and updown) return false;
             input_state.buttons.LEFT_SHOULDER = updown;
         },
         android.AKEYCODE_BUTTON_R1 => {
-            if (input_state.buttons.RIGHT_SHOULDER and updown) return;
+            if (input_state.buttons.RIGHT_SHOULDER and updown) return false;
             input_state.buttons.RIGHT_SHOULDER = updown;
         },
         android.AKEYCODE_BUTTON_THUMBL => {
-            if (input_state.buttons.LEFT_THUMB and updown) return;
+            if (input_state.buttons.LEFT_THUMB and updown) return false;
             input_state.buttons.LEFT_THUMB = updown;
         },
         android.AKEYCODE_BUTTON_THUMBR => {
-            if (input_state.buttons.RIGHT_THUMB and updown) return;
+            if (input_state.buttons.RIGHT_THUMB and updown) return false;
             input_state.buttons.RIGHT_THUMB = updown;
         },
         android.AKEYCODE_VOLUME_UP => {
-            if (input_state.buttons.VOLUME_UP and updown) return;
+            if (input_state.buttons.VOLUME_UP and updown) return false;
             input_state.buttons.VOLUME_UP = updown;
         },
         android.AKEYCODE_VOLUME_DOWN => {
-            if (input_state.buttons.VOLUME_DOWN and updown) return;
+            if (input_state.buttons.VOLUME_DOWN and updown) return false;
             input_state.buttons.VOLUME_DOWN = updown;
         },
-        else => return,
+        else => return false,
     }
     input_state.handle = @ptrFromInt(@as(usize, @intCast(android.AInputEvent_getDeviceId(_event))));
     system.a_fn(__system.general_input_callback).?(input_state);
+    return true;
 }
 
 fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
@@ -662,36 +663,46 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
         const keycode: u32 = @max(0, android.AKeyEvent_getKeyCode(_event));
         if (act == android.AKEY_EVENT_ACTION_DOWN) {
             if ((src & android.AINPUT_SOURCE_JOYSTICK) != 0 or (src & android.AINPUT_SOURCE_GAMEPAD) != 0) {
-                handle_input_buttons(_event, keycode, true);
-            } else {
-                if (keycode < __system.KEY_SIZE) {
-                    if (!__system.keys[keycode].load(std.builtin.AtomicOrder.monotonic)) {
-                        __system.keys[keycode].store(true, std.builtin.AtomicOrder.monotonic);
-                        //system.print_debug("input key_down {d}", .{wParam});
-                        if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(keycode));
-                    }
-                } else {
-                    @branchHint(.unlikely);
-                    system.print("WARN engine_handle_input AKEY_EVENT_ACTION_DOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
-                    return 0;
+                if (handle_input_buttons(_event, keycode, true)) return 1;
+            }
+            if (keycode < __system.KEY_SIZE) {
+                if (!__system.keys[keycode].load(std.builtin.AtomicOrder.monotonic)) {
+                    __system.keys[keycode].store(true, std.builtin.AtomicOrder.monotonic);
+                    //system.print_debug("input key_down {d}", .{keycode});
+                    if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(keycode));
                 }
+            } else {
+                @branchHint(.unlikely);
+                system.print("WARN engine_handle_input AKEY_EVENT_ACTION_DOWN out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
+                return 0;
             }
         } else if (act == android.AKEY_EVENT_ACTION_UP) {
             if ((src & android.AINPUT_SOURCE_CLASS_JOYSTICK) != 0 or (src & android.AINPUT_SOURCE_GAMEPAD) != 0) {
-                handle_input_buttons(_event, keycode, false);
+                if (handle_input_buttons(_event, keycode, true)) return 1;
+            }
+            if (keycode < __system.KEY_SIZE) {
+                __system.keys[keycode].store(false, std.builtin.AtomicOrder.monotonic);
+                //system.print_debug("input key_up {d}", .{keycode});
+                if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(keycode));
             } else {
-                if (keycode < __system.KEY_SIZE) {
-                    __system.keys[keycode].store(false, std.builtin.AtomicOrder.monotonic);
-                    //system.print_debug("input key_up {d}", .{wParam});
-                    if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(keycode));
-                } else {
-                    @branchHint(.unlikely);
-                    system.print("WARN engine_handle_input AKEY_EVENT_ACTION_UP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
-                    return 0;
-                }
+                @branchHint(.unlikely);
+                system.print("WARN engine_handle_input AKEY_EVENT_ACTION_UP out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
+                return 0;
             }
         } else {
-            return 0;
+            if (keycode < __system.KEY_SIZE) {
+                const cnt = android.AKeyEvent_getRepeatCount(_event);
+                var i: i32 = 0;
+                while (i < cnt) : (i += 1) {
+                    //system.print_debug("input key_multiple({d}) {d}", .{ i, keycode });
+                    if (system.a_fn(__system.key_down_func) != null) system.a_fn(__system.key_down_func).?(@enumFromInt(keycode));
+                    if (system.a_fn(__system.key_up_func) != null) system.a_fn(__system.key_up_func).?(@enumFromInt(keycode));
+                }
+            } else {
+                @branchHint(.unlikely);
+                system.print("WARN engine_handle_input AKEY_EVENT_ACTION_MULTIPLE out of range __system.keys[{d}] value : {d}\n", .{ __system.KEY_SIZE, keycode });
+                return 0;
+            }
         }
         return 1;
     }
@@ -797,7 +808,7 @@ fn anrdoid_app_entry() void {
             source.?.*.process.?(source);
         }
 
-        if (app.destroryRequested) {
+        if (system.a_fn(app.destroryRequested)) {
             destroy_android();
             break;
         }

@@ -379,3 +379,14 @@ pub inline fn console_pause() void {
 pub inline fn console_cls() void {
     _ = system("cls");
 }
+pub fn exit() void {
+    if (subsystem == .Console) {
+        std.posix.exit(0);
+        return;
+    }
+    if (platform == .windows) {
+        _ = __windows.win32.DestroyWindow(__windows.hWnd);
+    } else if (platform == .android) {
+        @atomicStore(bool, &__android.app.destroryRequested, true, .monotonic);
+    }
+}

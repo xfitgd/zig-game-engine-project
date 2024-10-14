@@ -259,8 +259,22 @@ fn key_down(_key: input.key) void {
         if (window.get_screen_mode() == .WINDOW) {
             const monitor = system.get_monitor_from_window();
             monitor.*.set_fullscreen_mode(monitor.*.primary_resolution.?);
+            //monitor.*.set_borderlessscreen_mode();
         } else {
             window.set_window_mode();
+        }
+    } else {
+        switch (system.platform) {
+            .android => {
+                if (_key == input.key.Back) {
+                    system.exit();
+                }
+            },
+            else => {
+                if (_key == input.key.Esc) {
+                    system.exit();
+                }
+            },
         }
     }
 }

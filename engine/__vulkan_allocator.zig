@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
 const MemoryPoolExtra = std.heap.MemoryPoolExtra;
+const DoublyLinkedList = std.DoublyLinkedList;
 
 const __vulkan = @import("__vulkan.zig");
 const vk = __vulkan.vk;
@@ -12,11 +13,8 @@ const math = @import("math.zig");
 const mem = @import("mem.zig");
 const graphics = @import("graphics.zig");
 
-//16384*16384 = 256MB
-const BLOCK_LEN = 16384;
-const NODE_SIZE = 16384;
-const MINIMUM_CELL_SIZE = 4096;
-const SMALL_CELL_SIZE = 128; //이 수치보다 크기가 크지 않을 경우 MINIMUM_CELL_SIZE은 무시된다.
+//8192*16384 = 128MB
+pub var BLOCK_LEN: usize = 8192 * 16384;
 
 const MAX_IDX_COUNT = 8;
 const Self = @This();
@@ -51,7 +49,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
     return struct {
         const vulkan_res_node_Self = @This();
         res: ivulkan_res(_res_type) = null,
-        idx: usize = undefined,
+        idx: *anyopaque = undefined,
         __resource_len: u32 = undefined,
         pvulkan_buffer: ?*vulkan_res = null,
         __image_view: if (_res_type == .image) vk.VkImageView else void = if (_res_type == .image) undefined,
@@ -89,28 +87,32 @@ pub fn vulkan_res_node(_res_type: res_type) type {
 }
 
 const vulkan_res = struct {
-    is_free: []bool,
+    const node = packed struct {
+        size: usize,
+        idx: usize,
+        free: bool,
+    };
+
     cell_size: usize,
     //alignment: usize,
     len: usize,
-    cur: usize,
+    cur: *DoublyLinkedList(node).Node = undefined,
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
     this: *Self,
-    is_full: bool = false,
-    small: bool,
     framebuffer: bool = false,
+    pool: MemoryPoolExtra(DoublyLinkedList(node).Node, .{}) = undefined,
+    list: DoublyLinkedList(node) = undefined,
 
     ///! 따로 vulkan_res.deinit2를 호출하지 않는다.
     fn deinit2(self: *vulkan_res) void {
         vk.vkFreeMemory(__vulkan.vkDevice, self.*.mem, null);
-        __system.allocator.free(self.*.is_free);
+        if (!self.*.framebuffer) {
+            self.*.pool.deinit();
+        }
     }
     pub fn is_empty(self: *vulkan_res) bool {
-        for (self.*.is_free) |v| {
-            if (!v) return false;
-        }
-        return true;
+        return self.*.list.len == 1 and self.*.list.first.?.*.data.free;
     }
     pub fn deinit(self: *vulkan_res) void {
         self.*.deinit2();
@@ -130,27 +132,27 @@ const vulkan_res = struct {
         system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.allocate_memory.vkAllocateMemory code : {d}", .{result});
     }
     /// ! 따로 vulkan_res.init를 호출하지 않는다.
-    fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags, _this: *Self, _small: bool) vulkan_res {
+    fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags, _this: *Self) vulkan_res {
         var res = vulkan_res{
             .cell_size = _cell_size,
             .len = _len,
-            .cur = 0,
             .mem = undefined,
-            .is_free = __system.allocator.alloc(bool, _len) catch |err|
-                system.handle_error3("vulkan_res.init.alloc is_free", err),
             .info = .{
                 .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .allocationSize = _len * _cell_size,
                 .memoryTypeIndex = find_memory_type(type_filter, _prop),
             },
             .this = _this,
-            .small = _small,
+            .list = .{},
+            .pool = MemoryPoolExtra(DoublyLinkedList(node).Node, .{}).init(__system.allocator),
         };
         allocate_memory(&res.info, &res.mem);
 
-        for (res.is_free) |*value| {
-            value.* = true;
-        }
+        res.list.append(res.pool.create() catch system.handle_error_msg2("vulkan_res.init.res.pool.create"));
+        res.list.first.?.*.data.free = true;
+        res.list.first.?.*.data.size = res.len;
+        res.list.first.?.*.data.idx = 0;
+        res.cur = res.list.first.?;
 
         return res;
     }
@@ -158,24 +160,16 @@ const vulkan_res = struct {
         var res = vulkan_res{
             .cell_size = _cell_size,
             .len = 1,
-            .cur = 0,
             .mem = undefined,
-            .is_free = __system.allocator.alloc(bool, 1) catch |err|
-                system.handle_error3("vulkan_res.init.alloc is_free", err),
             .info = .{
                 .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .allocationSize = _cell_size,
                 .memoryTypeIndex = find_memory_type(type_filter, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
             },
             .this = _this,
-            .small = false,
             .framebuffer = true,
         };
         allocate_memory(&res.info, &res.mem);
-
-        for (res.is_free) |*value| {
-            value.* = true;
-        }
 
         return res;
     }
@@ -192,51 +186,94 @@ const vulkan_res = struct {
             else => @compileError("__bind_any invaild res type."),
         }
     }
-    pub fn map(self: *vulkan_res, _buf_idx: u64, _out_data: *?*anyopaque) void {
-        const result = vk.vkMapMemory(__vulkan.vkDevice, self.*.mem, _buf_idx * self.*.cell_size, self.*.cell_size, 0, _out_data);
+    ///bind_buffer에서 반환된 _res를 사용.
+    pub fn map(self: *vulkan_res, _buf_idx: *anyopaque, _out_data: *?*anyopaque) void {
+        const res: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(_buf_idx));
+        const result = vk.vkMapMemory(
+            __vulkan.vkDevice,
+            self.*.mem,
+            res.*.data.idx * self.*.cell_size,
+            self.*.cell_size * res.*.data.size,
+            0,
+            _out_data,
+        );
         system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.map.vkMapMemory code : {d}", .{result});
     }
     pub fn unmap(self: *vulkan_res) void {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
-    ///_buf 크기는 따로 확인하지 않는다. 호출 쪽에서 확인해서 오류가 없게한다.
-    fn bind_any(self: *vulkan_res, _buf: anytype) ERROR!usize {
-        if (self.*.is_full) return ERROR.device_memory_limit;
-
-        var count: u64 = 0;
-        while (!self.*.is_free[self.*.cur]) {
-            self.*.cur += 1;
-            count += 1;
-            if (self.*.cur >= self.*.len) self.*.cur = 0;
-            if (count >= self.*.len) {
-                self.*.is_full = true;
-                return ERROR.device_memory_limit;
+    fn bind_any(self: *vulkan_res, _buf: anytype, _cell_count: usize) ERROR!*anyopaque {
+        if (self.*.framebuffer) {
+            __bind_any(self, self.*.mem, _buf, 0);
+            return undefined;
+        }
+        //system.print("start:{d}, size:{d}, free:{}\n", .{ self.*.cur.*.data.idx, self.*.cur.*.data.size, self.*.cur.*.data.free });
+        var cur = self.*.cur;
+        while (true) {
+            if (cur.*.data.free and _cell_count <= cur.*.data.size) break;
+            cur = cur.*.next orelse self.*.list.first.?;
+            if (cur == self.*.cur) return ERROR.device_memory_limit;
+        }
+        //system.print("end:{d}, size:{d}, count:{d}\n", .{ cur.*.data.idx, cur.*.data.size, _cell_count });
+        __bind_any(self, self.*.mem, _buf, cur.*.data.idx);
+        cur.*.data.free = false;
+        const remain = cur.*.data.size - _cell_count;
+        self.*.cur = cur;
+        const res: *anyopaque = @alignCast(@ptrCast(cur));
+        const cur2 = cur.*.next orelse self.*.list.first.?;
+        if (cur == cur2) {
+            if (remain > 0) {
+                self.*.list.append(self.*.pool.create() catch system.handle_error_msg2("vulkan_res.bind_any.pool.create"));
+                self.*.list.last.?.*.data.free = true;
+                self.*.list.last.?.*.data.size = remain;
+                self.*.list.last.?.*.data.idx = _cell_count;
+            }
+        } else {
+            if (remain > 0) {
+                if (cur2.*.data.free) {
+                    if (cur2.*.data.idx < cur.*.data.idx) {
+                        self.*.list.insertAfter(cur, self.*.pool.create() catch system.handle_error_msg2("vulkan_res.bind_any.pool.create"));
+                        cur.*.next.?.*.data.free = true;
+                        cur.*.next.?.*.data.idx = cur.*.data.idx + _cell_count;
+                        cur.*.next.?.*.data.size = remain;
+                    } else {
+                        cur2.*.data.idx -= remain;
+                        cur2.*.data.size += remain;
+                    }
+                } else {
+                    self.*.list.insertAfter(cur, self.*.pool.create() catch system.handle_error_msg2("vulkan_res.bind_any.pool.create"));
+                    cur.*.next.?.*.data.free = true;
+                    cur.*.next.?.*.data.idx = cur.*.data.idx + _cell_count;
+                    cur.*.next.?.*.data.size = remain;
+                }
             }
         }
-        __bind_any(self, self.*.mem, _buf, self.*.cur);
-        self.*.is_free[self.*.cur] = false;
-
-        const res = self.*.cur;
-        self.*.cur += 1;
-        if (self.*.cur >= self.*.len) self.*.cur = 0;
+        cur.*.data.size = _cell_count;
         return res;
     }
-    ///bind_buffer에서 반환된 idx를 사용.
-    fn unbind_res(self: *vulkan_res, _buf: anytype, _idx: usize) bool {
-        self.*.is_free[_idx] = true;
+    ///bind_buffer에서 반환된 _res를 사용.
+    fn unbind_res(self: *vulkan_res, _buf: anytype, _res: *anyopaque) bool {
+        if (self.*.framebuffer) {
+            vk.vkDestroyImage(__vulkan.vkDevice, @ptrCast(_buf), null);
+            self.*.deinit();
+            return false;
+        }
+        const res: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(_res));
+        res.*.data.free = true;
+        const next = res.*.next orelse self.*.list.first.?;
+
+        if (next.*.data.free and res != next and res.*.data.idx < next.*.data.idx) {
+            res.*.data.size += next.*.data.size;
+            self.*.list.remove(next);
+            self.*.pool.destroy(next);
+        }
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
             vk.VkImage => vk.vkDestroyImage(__vulkan.vkDevice, _buf, null),
             else => @compileError("invaild buf type"),
         }
-        if (self.*.framebuffer) {
-            self.*.deinit();
-            return false;
-        }
         if (self.*.len == 1 or self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] > MAX_IDX_COUNT) {
-            for (self.*.is_free) |v| {
-                if (!v) return true;
-            }
+            if (!self.*.is_empty()) return true;
             self.*.deinit();
             return false;
         }
@@ -255,20 +292,17 @@ pub fn init() Self {
     return res;
 }
 
-fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: *usize, _max_size: usize, is_single: bool) *vulkan_res {
+fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _prop: vk.VkMemoryPropertyFlags, _out_idx: **anyopaque, _max_size: usize) *vulkan_res {
     var res: ?*vulkan_res = null;
     var max_size = _max_size;
     if (max_size < _mem_require.*.size) {
         max_size = _mem_require.*.size;
     }
-    var cell = math.ceil_up(max_size, _mem_require.*.alignment);
+    const cnt = std.math.divCeil(usize, max_size, _mem_require.*.alignment) catch 1;
     for (self.buffer_ids.items) |value| {
-        //버퍼 크기가 MINIMUM_SIZE보다 크면서 셀 크기의 MINIMUM_SIZE_DIV_CELL비율 보다 작을 경우 공간 활용을 위해 다른 버퍼에 넣는다.
-        if (cell > value.*.cell_size or ((value.*.cell_size % _mem_require.*.alignment) != 0)) continue;
+        if (value.*.cell_size != _mem_require.*.alignment) continue;
         if (value.*.info.memoryTypeIndex != find_memory_type(_mem_require.*.memoryTypeBits, _prop)) continue;
-        if (cell <= SMALL_CELL_SIZE and !value.*.small) continue;
-        if (cell > SMALL_CELL_SIZE and value.*.small) continue;
-        _out_idx.* = value.*.bind_any(_res) catch continue;
+        _out_idx.* = value.*.bind_any(_res, cnt) catch continue;
         //system.print_debug("(1) {d} {d} {d} {d}", .{ max_size, value.*.cell_size, value.*.len, _mem_require.*.alignment });
         res = value;
         break;
@@ -284,23 +318,15 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
         //     std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
         //     _mem_require.*.alignment,
         // });
-        if (is_single and cell > SMALL_CELL_SIZE) {
-            res.?.* = vulkan_res.init(cell, 1, _mem_require.*.memoryTypeBits, _prop, self, false);
-        } else {
-            if (cell <= SMALL_CELL_SIZE) {} else {
-                while (MINIMUM_CELL_SIZE > cell) : (cell += _mem_require.*.alignment) {}
-            }
-            res.?.* = vulkan_res.init(
-                cell,
-                std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
-                _mem_require.*.memoryTypeBits,
-                _prop,
-                self,
-                cell <= SMALL_CELL_SIZE,
-            );
-        }
+        res.?.* = vulkan_res.init(
+            _mem_require.*.alignment,
+            std.math.divCeil(usize, @max(BLOCK_LEN, max_size), _mem_require.*.alignment) catch 1,
+            _mem_require.*.memoryTypeBits,
+            _prop,
+            self,
+        );
 
-        _out_idx.* = res.?.*.bind_any(_res) catch unreachable; //발생할수 없는 오류
+        _out_idx.* = res.?.*.bind_any(_res, cnt) catch unreachable; //발생할수 없는 오류
         self.*.buffer_ids.append(res.?) catch |err| {
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
             unreachable;
@@ -310,7 +336,7 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _mem_require: *const vk
     return res.?;
 }
 
-fn create_allocator_and_bind_framebuffer(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements, _out_idx: *usize) *vulkan_res {
+fn create_allocator_and_bind_framebuffer(self: *Self, _res: anytype, _mem_require: *const vk.VkMemoryRequirements) *vulkan_res {
     var res: ?*vulkan_res = null;
     const max_size = _mem_require.*.size;
     res = self.*.buffers.create() catch |err| {
@@ -318,14 +344,9 @@ fn create_allocator_and_bind_framebuffer(self: *Self, _res: anytype, _mem_requir
         unreachable;
     };
 
-    // system.print_debug("(2) {d} {d} {d}", .{
-    //     max_size,
-    //     std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
-    //     _mem_require.*.alignment,
-    // });
     res.?.* = vulkan_res.init_framebuffer(max_size, _mem_require.*.memoryTypeBits, self);
 
-    _out_idx.* = res.?.*.bind_any(_res) catch unreachable; //발생할수 없는 오류
+    _ = res.?.*.bind_any(_res, 1) catch unreachable; //발생할수 없는 오류
     self.*.buffer_ids.append(res.?) catch |err| {
         system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
         unreachable;
@@ -338,7 +359,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
     var mem_require: vk.VkMemoryRequirements = undefined;
     var staging_alloc: *vulkan_res = undefined;
     var staging_buf: vk.VkBuffer = undefined;
-    var staging_buf_idx: usize = undefined;
+    var staging_buf_idx: *anyopaque = undefined;
     var buf_info = _buf_info.*;
 
     if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
@@ -350,7 +371,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
 
         buf_info.usage |= vk.VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, mem_require.size, false);
+        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, mem_require.size);
         var _out_data: ?*anyopaque = null;
         staging_alloc.*.map(staging_buf_idx, &_out_data);
         @memcpy(@as([*]u8, @alignCast(@ptrCast(_out_data))), _data.?);
@@ -361,7 +382,7 @@ pub fn create_buffer(self: *Self, _buf_info: *const vk.VkBufferCreateInfo, _prop
 
     vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, _out_vulkan_buffer_node.*.res, &mem_require);
 
-    _out_vulkan_buffer_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_buffer_node.*.res, &mem_require, _prop, &_out_vulkan_buffer_node.*.idx, mem_require.size, false);
+    _out_vulkan_buffer_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_buffer_node.*.res, &mem_require, _prop, &_out_vulkan_buffer_node.*.idx, mem_require.size);
 
     if (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT != 0) {
         __vulkan.copy_buffer(staging_buf, _out_vulkan_buffer_node.*.res, buf_info.size); // ! mem_require.size X
@@ -384,7 +405,7 @@ pub fn create_frame_buffer_image(self: *Self, _img_info: *const vk.VkImageCreate
 
     vk.vkGetImageMemoryRequirements(__vulkan.vkDevice, _out_vulkan_image_node.*.res, &mem_require);
 
-    _out_vulkan_image_node.*.pvulkan_buffer = create_allocator_and_bind_framebuffer(self, _out_vulkan_image_node.*.res, &mem_require, &_out_vulkan_image_node.*.idx);
+    _out_vulkan_image_node.*.pvulkan_buffer = create_allocator_and_bind_framebuffer(self, _out_vulkan_image_node.*.res, &mem_require);
 
     const image_view_create_info: vk.VkImageViewCreateInfo = .{
         .viewType = if (img_info.arrayLayers > 1) vk.VK_IMAGE_VIEW_TYPE_2D_ARRAY else vk.VK_IMAGE_VIEW_TYPE_2D,
@@ -410,12 +431,12 @@ pub fn create_frame_buffer_image(self: *Self, _img_info: *const vk.VkImageCreate
     _out_vulkan_image_node.*.__resource_len = img_info.arrayLayers;
 }
 
-pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vulkan_image_node: *vulkan_res_node(.image), _data: ?[]const u8, max_image_size: usize, is_single: bool) void {
+pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vulkan_image_node: *vulkan_res_node(.image), _data: ?[]const u8, max_image_size: usize) void {
     var result: c_int = undefined;
     var mem_require: vk.VkMemoryRequirements = undefined;
     var staging_alloc: *vulkan_res = undefined;
     var staging_buf: vk.VkBuffer = undefined;
-    var staging_buf_idx: usize = undefined;
+    var staging_buf_idx: *anyopaque = undefined;
     var img_info = _img_info.*;
 
     if (_data != null) {
@@ -432,7 +453,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
     vk.vkGetImageMemoryRequirements(__vulkan.vkDevice, _out_vulkan_image_node.*.res, &mem_require);
     const img_size = mem_require.size;
 
-    _out_vulkan_image_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_image_node.*.res, &mem_require, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &_out_vulkan_image_node.*.idx, max_image_size, is_single);
+    _out_vulkan_image_node.*.pvulkan_buffer = create_allocator_and_bind(self, _out_vulkan_image_node.*.res, &mem_require, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &_out_vulkan_image_node.*.idx, max_image_size);
 
     const image_view_create_info: vk.VkImageViewCreateInfo = .{
         .viewType = if (img_info.arrayLayers > 1) vk.VK_IMAGE_VIEW_TYPE_2D_ARRAY else vk.VK_IMAGE_VIEW_TYPE_2D,
@@ -462,7 +483,7 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
 
         vk.vkGetBufferMemoryRequirements(__vulkan.vkDevice, staging_buf, &mem_require);
 
-        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, max_image_size, is_single);
+        staging_alloc = create_allocator_and_bind(self, staging_buf, &mem_require, vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buf_idx, max_image_size);
 
         var _out_data: ?*anyopaque = null;
         staging_alloc.*.map(staging_buf_idx, &_out_data);
@@ -473,9 +494,6 @@ pub fn create_image(self: *Self, _img_info: *const vk.VkImageCreateInfo, _out_vu
         __vulkan.copy_buffer_to_image(staging_buf, _out_vulkan_image_node.*.res, img_info.extent.width, img_info.extent.height, img_info.extent.depth, 0, img_info.arrayLayers);
         __vulkan.transition_image_layout(_out_vulkan_image_node.*.res, img_info.mipLevels, 0, img_info.arrayLayers, vk.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         _ = staging_alloc.unbind_res(staging_buf, staging_buf_idx);
-        if (is_single) {
-            if (staging_alloc.*.is_empty()) staging_alloc.*.deinit();
-        }
     }
     _out_vulkan_image_node.*.__resource_len = img_info.arrayLayers;
 }

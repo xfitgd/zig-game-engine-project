@@ -117,7 +117,7 @@ pub fn loop() void {
         var start = false;
         var now: Timer = undefined;
     };
-    const ispause = system.pause();
+    const ispause = system.paused();
     if (!S.start) {
         S.now = Timer.start() catch |e| system.handle_error3("S.now = Timer.start()", e);
         S.start = true;

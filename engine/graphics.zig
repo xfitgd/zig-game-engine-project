@@ -452,7 +452,7 @@ pub const texture = struct {
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
         check_vk_allocator();
-        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0, false);
+        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
 
         var result: vk.VkResult = undefined;
 
@@ -566,7 +566,7 @@ pub const texture_array = struct {
             .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
         };
         check_vk_allocator();
-        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0, false);
+        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
 
         var result: vk.VkResult = undefined;
 
