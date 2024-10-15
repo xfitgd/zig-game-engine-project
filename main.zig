@@ -85,7 +85,7 @@ fn error_func(text: []u8, stack_trace: []u8) void {
         .truncate = false,
     }) catch return;
     defer fs.close();
-    _ = fs.seekFromEnd(0);
+    _ = fs.seekFromEnd(0) catch return;
     _ = fs.write(text) catch return;
     _ = fs.write(stack_trace) catch return;
 }
