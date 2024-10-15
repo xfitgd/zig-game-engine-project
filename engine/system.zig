@@ -246,10 +246,12 @@ pub fn print_with_time(comptime fmt: []const u8, args: anytype) void {
     print("{s} @ " ++ fmt, .{now_str} ++ args);
 }
 pub fn print_debug_with_time(comptime fmt: []const u8, args: anytype) void {
-    const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch return;
-    defer __system.allocator.free(now_str);
+    if (dbg) {
+        const now_str = datetime.Datetime.now().formatHttp(__system.allocator) catch return;
+        defer __system.allocator.free(now_str);
 
-    print_debug("{s} @ " ++ fmt, .{now_str} ++ args);
+        print_debug("{s} @ " ++ fmt, .{now_str} ++ args);
+    }
 }
 pub fn notify() void {
     if (platform == .windows) {
