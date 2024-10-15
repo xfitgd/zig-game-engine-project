@@ -172,8 +172,8 @@ pub fn xfit_init() void {
     img.*._image.src = &image_src;
     anim_img.*._anim_image.src = &anim_image_src;
 
-    font0_data = file_.read_file("SDMiSaeng.ttf", allocator) catch |e| system.handle_error3("read_file font0_data", e);
-    font0 = font.init(font0_data, 0);
+    font0_data = file_.read_file("Spoqa Han Sans Regular.woff", allocator) catch |e| system.handle_error3("read_file font0_data", e);
+    font0 = font.init(font0_data, 0) catch |e| system.handle_error3("font0.init", e);
 
     font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // var t1 = std.time.Timer.start() catch unreachable;
@@ -182,8 +182,8 @@ pub fn xfit_init() void {
     font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    const but_text_scale = math.point{ 6, 6 };
-    font0.render_string_transform("버튼", but_text_scale, but_text_scale * math.point{ -10, -5 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    const but_text_scale = math.point{ 4.5, 4.5 };
+    font0.render_string_transform("버튼", but_text_scale, but_text_scale * math.point{ -14, -6 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
     shape_src2.build(.read_gpu, .readwrite_cpu);
     rect_button_text_src.src.color = .{ 0, 0, 0, 1 };

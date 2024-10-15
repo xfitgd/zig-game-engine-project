@@ -17,6 +17,7 @@ var library: freetype.FT_Library = null;
 
 pub const font_error = error{
     undefined_char_code,
+    load_error,
 } || std.mem.Allocator.Error;
 
 pub const char_data = struct {
@@ -32,7 +33,7 @@ __face: freetype.FT_Face = null,
 
 fn handle_error(code: freetype.FT_Error) void {
     if (code != freetype.FT_Err_Ok) {
-        system.handle_error2("Code : {d}, msg : {s}\n", .{ code, freetype.FT_Error_String(code) });
+        system.handle_error2("freetype err Code : {d}\n", .{code});
     }
 }
 
@@ -48,12 +49,14 @@ pub fn destroy() void {
     if (system.dbg) __system.font_started = false;
 }
 
-pub fn init(_font_data: []const u8, _face_index: freetype.FT_Long) Self {
+pub fn init(_font_data: []const u8, _face_index: u32) !Self {
     var font: Self = .{
         .__char_array = AutoHashMap(u21, char_data).init(__system.allocator),
     };
-    handle_error(freetype.FT_New_Memory_Face(library, _font_data.ptr, @intCast(_font_data.len), _face_index, &font.__face));
-
+    const err = freetype.FT_New_Memory_Face(library, _font_data.ptr, @intCast(_font_data.len), @intCast(_face_index), &font.__face);
+    if (err != freetype.FT_Err_Ok) {
+        return font_error.load_error;
+    }
     return font;
 }
 
@@ -78,12 +81,12 @@ fn get_char_idx(self: *Self, _char: u21) font_error!u32 {
     const idx = freetype.FT_Get_Char_Index(self.*.__face, @intCast(_char));
     if (idx != 0) return idx;
 
-    system.print_error("undefined character code (charcode) : {d}, (char) : {u}\n", .{ @as(u32, @intCast(_char)), _char });
+    system.print_debug("undefined character code (charcode) : {d}, (char) : {u}", .{ @as(u32, @intCast(_char)), _char });
     return font_error.undefined_char_code;
 }
 
-fn load_glyph(self: *Self, _char: u21) font_error!void {
-    handle_error(freetype.FT_Load_Glyph(self.*.__face, try get_char_idx(self, _char), freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
+fn load_glyph(self: *Self, _char: u21) !void {
+    handle_error(freetype.FT_Load_Glyph(self.*.__face, get_char_idx(self, _char) catch try get_char_idx(self, '□'), freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
 }
 
 fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {

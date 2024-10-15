@@ -1764,6 +1764,7 @@ pub fn recreate_swapchain() void {
     create_swapchain_and_imageviews();
     if (vkExtent.width <= 0 or vkExtent.height <= 0) {
         create_sync_object();
+        fullscreen_mutex.unlock();
         return;
     }
     create_framebuffer();
