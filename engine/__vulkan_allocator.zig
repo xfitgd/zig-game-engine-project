@@ -103,6 +103,7 @@ const vulkan_res = struct {
     framebuffer: bool = false,
     pool: MemoryPoolExtra(DoublyLinkedList(node).Node, .{}) = undefined,
     list: DoublyLinkedList(node) = undefined,
+    mutex: std.Thread.Mutex = .{},
 
     ///! 따로 vulkan_res.deinit2를 호출하지 않는다.
     fn deinit2(self: *vulkan_res) void {
@@ -174,6 +175,8 @@ const vulkan_res = struct {
         return res;
     }
     fn __bind_any(self: *vulkan_res, _mem: vk.VkDeviceMemory, _buf: anytype, _idx: u64) void {
+        self.*.mutex.lock();
+        defer self.*.mutex.unlock();
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => {
                 const result = vk.vkBindBufferMemory(__vulkan.vkDevice, _buf, _mem, self.*.cell_size * _idx);
@@ -189,6 +192,8 @@ const vulkan_res = struct {
     ///bind_buffer에서 반환된 _res를 사용.
     pub fn map(self: *vulkan_res, _buf_idx: *anyopaque, _out_data: *?*anyopaque) void {
         const res: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(_buf_idx));
+        self.*.mutex.lock();
+        defer self.*.mutex.unlock();
         const result = vk.vkMapMemory(
             __vulkan.vkDevice,
             self.*.mem,
@@ -200,6 +205,8 @@ const vulkan_res = struct {
         system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.map.vkMapMemory code : {d}", .{result});
     }
     pub fn unmap(self: *vulkan_res) void {
+        self.*.mutex.lock();
+        defer self.*.mutex.unlock();
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
     fn bind_any(self: *vulkan_res, _buf: anytype, _cell_count: usize) ERROR!*anyopaque {
@@ -267,11 +274,13 @@ const vulkan_res = struct {
             self.*.list.remove(next);
             self.*.pool.destroy(next);
         }
+        self.*.mutex.lock();
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
             vk.VkImage => vk.vkDestroyImage(__vulkan.vkDevice, _buf, null),
             else => @compileError("invaild buf type"),
         }
+        self.*.mutex.unlock();
         if (self.*.len == 1 or self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] > MAX_IDX_COUNT) {
             if (!self.*.is_empty()) return true;
             self.*.deinit();
