@@ -83,11 +83,11 @@ fn error_func(text: []u8, stack_trace: []u8) void {
     var fs: file = .{};
     fs.open("xfit_err.log", .{
         .truncate = false,
-    }) catch unreachable;
+    }) catch return;
+    defer fs.close();
     _ = fs.seekFromEnd(0);
-    _ = fs.write(text) catch unreachable;
-    _ = fs.write(stack_trace) catch unreachable;
-    fs.close();
+    _ = fs.write(text) catch return;
+    _ = fs.write(stack_trace) catch return;
 }
 
 var g_rect_button: *components.button = undefined;
