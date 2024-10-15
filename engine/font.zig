@@ -120,11 +120,13 @@ pub fn render_string(self: *Self, _str: []const u8, _render_option: render_optio
             continue;
         }
         try _render_char(self, codepoint, out_shape_src, &offset, _render_option.area, _render_option.scale, allocator);
-        maxP = @max(maxP, point{ offset[0], offset[1] + @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1 });
-        minP = @min(minP, offset);
+        if (_render_option.area == null) {
+            maxP = @max(maxP, point{ offset[0], offset[1] + @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1 });
+            minP = @min(minP, offset);
+        }
     }
     var i: usize = start_;
-    const size: point = (maxP - minP) * point{ 2, 2 };
+    const size: point = (if (_render_option.area != null) _render_option.area else (maxP - minP)) * point{ 2, 2 };
     while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
         out_shape_src.*.vertices.array.?[i].pos -= _render_option.pivot * size;
     }
