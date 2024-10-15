@@ -117,6 +117,20 @@ pub fn point_in_polygon(p: point, pts: []point) bool {
     }
     return (crosses % 2) > 0;
 }
+pub fn center_point_in_polygon(pts: []point) point {
+    var i: usize = 0;
+    var area: f32 = 0;
+    var p: point = .{ 0, 0 };
+    while (i < pts.len) : (i += 1) {
+        const j = (i + 1) % pts.len;
+        const factor = math.cross2(pts[i], pts[j]);
+        area += factor;
+        p = @mulAdd(point, pts[i] + pts[j], @splat(factor), p);
+    }
+    area = area / 2.0 * 6.0;
+    p *= @splat(1.0 / area);
+    return p;
+}
 pub fn line_in_polygon(a: point, b: point, pts: []point, check_inside_line: bool) bool {
     if (check_inside_line and point_in_polygon(a, pts)) return true; //반드시 점 ab가 다각형 내에 모두 있어야 선 ab와 다각형 선분이 교차하지 않는다. 따라서 b는 확인할 필요 없다.
     var i: usize = 0;
@@ -151,6 +165,10 @@ pub const circle = struct {
     pub fn circle_in_point(c: @This(), p: point) bool {
         return math.length_pow(c.p, p.p) <= c.radius * c.radius;
     }
+};
+
+pub const compute_option = struct {
+    mat: math.matrix,
 };
 
 pub const polygon = struct {
@@ -303,17 +321,28 @@ pub const polygon = struct {
             for (lines_) |l| allocator.free(l);
         }
 
-        try _compute_polygon(allocator, _inout, lines_);
+        try _compute_polygon(self, allocator, _inout, lines_);
     }
 
-    fn _compute_polygon(allocator: std.mem.Allocator, _inout: *raw_polygon, _lines: [][]line) polygon_error!void {
+    pub fn apply_option(self: polygon, option: compute_option, _out_lines: [][]line) polygon_error!void {
+        if (_out_lines.len != self.lines.len) return polygon_error.invaild_line;
+
+        for (_out_lines, self.lines) |v, l| {
+            if (v.len != l.len) return polygon_error.invaild_line;
+            for (v, l) |*v2, l2| {
+                v2.* = l2.mul_mat(option.mat);
+            }
+        }
+    }
+
+    fn _compute_polygon(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon, _lines: [][]line) polygon_error!void {
         var i: usize = 0;
         var count: usize = 0;
         var curve_vertice_len: usize = 0;
         var vertice_len: usize = 0;
         var indices_len: usize = 0;
+        _ = self;
 
-        count = 0;
         while (count < _lines.len) : (count += 1) {
             if (_lines[count].len < 3) return polygon_error.is_not_polygon;
             i = 0;
@@ -325,11 +354,12 @@ pub const polygon = struct {
                 vertice_len += 1;
             }
         }
-
         _inout.*.vertices = try allocator.realloc(_inout.*.vertices, _inout.*.vertices.len + vertice_len + curve_vertice_len);
         //인덱스 갯수는 대충 최대값
         _inout.*.indices = try allocator.realloc(_inout.*.indices, _inout.*.vertices.len * 3);
         vertice_len = 0;
+        count = 0;
+        while (count < _lines.len) : (count += 1) {}
 
         count = 0;
         while (count < _lines.len) : (count += 1) {
@@ -374,7 +404,7 @@ pub const polygon = struct {
 
     ///raw_polygon elements need alloc
     pub fn compute_polygon(self: polygon, allocator: std.mem.Allocator, _inout: *raw_polygon) polygon_error!void {
-        try _compute_polygon(allocator, _inout, self.lines);
+        try _compute_polygon(self, allocator, _inout, self.lines);
     }
 };
 
@@ -392,6 +422,26 @@ pub const line = struct {
             .control0 = self.control1,
             .control1 = self.control0,
             .end = self.start,
+            .curve_type = self.curve_type,
+        };
+    }
+    pub fn mul_mat(self: Self, _mat: math.matrix) Self {
+        if (self.curve_type == .line) {
+            const start_ = _mat.mul_point(self.start);
+            const end_ = _mat.mul_point(self.end);
+            return .{
+                .start = start_,
+                .control0 = start_,
+                .control1 = end_,
+                .end = end_,
+                .curve_type = .line,
+            };
+        }
+        return .{
+            .start = _mat.mul_point(self.start),
+            .control0 = _mat.mul_point(self.control0),
+            .control1 = _mat.mul_point(self.control1),
+            .end = _mat.mul_point(self.end),
             .curve_type = self.curve_type,
         };
     }
