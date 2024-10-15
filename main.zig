@@ -56,6 +56,7 @@ var rect_button_src: components.button.source = undefined;
 var rect_button_src2: components.button.source = undefined;
 var rect_button_text_src: components.button.source = undefined;
 var rect_button_srcs = [3]*components.button.source{ &rect_button_src, &rect_button_src2, &rect_button_text_src };
+var button_area_rect = math.rect{ .left = -100, .right = 100, .top = 50, .bottom = -50 };
 
 var shape_src: graphics.shape.source = undefined;
 var shape_src2: graphics.shape.source = undefined;
@@ -78,15 +79,16 @@ var anim: player = .{
 pub const CANVAS_W: f32 = 1280;
 pub const CANVAS_H: f32 = 720;
 
-// fn error_func(text: []u8, stack_trace: []u8) void {
-//     var fs: file = .{};
-//     fs.open("xfit_err.log", .{
-//         .truncate = false,
-//     }) catch unreachable;
-//     _ = fs.write(text) catch unreachable;
-//     _ = fs.write(stack_trace) catch unreachable;
-//     fs.close();
-// }
+fn error_func(text: []u8, stack_trace: []u8) void {
+    var fs: file = .{};
+    fs.open("xfit_err.log", .{
+        .truncate = false,
+    }) catch unreachable;
+    _ = fs.seekFromEnd(0);
+    _ = fs.write(text) catch unreachable;
+    _ = fs.write(stack_trace) catch unreachable;
+    fs.close();
+}
 
 var g_rect_button: *components.button = undefined;
 
@@ -100,7 +102,7 @@ pub fn xfit_init() void {
     // ress = lua.c.lua_getglobal(luaT, "Printhello");
     // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
 
-    //system.set_error_handling_func(error_func);
+    system.set_error_handling_func(error_func);
 
     font.start();
 
@@ -118,12 +120,7 @@ pub fn xfit_init() void {
     const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
 
-    rect_button.* = .{ ._button = .{ .area = .{ .rect = math.rect.calc_with_canvas(math.rect{
-        .left = -100,
-        .right = 100,
-        .top = 50,
-        .bottom = -50,
-    }, CANVAS_W, CANVAS_H) } } };
+    rect_button.* = .{ ._button = .{ .area = .{ .rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H) } } };
     components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator) catch unreachable;
     rect_button.*._button.transform.camera = &g_camera;
     rect_button.*._button.transform.projection = &g_proj;
@@ -175,15 +172,12 @@ pub fn xfit_init() void {
     font0_data = file_.read_file("Spoqa Han Sans Regular.woff", allocator) catch |e| system.handle_error3("read_file font0_data", e);
     font0 = font.init(font0_data, 0) catch |e| system.handle_error3("font0.init", e);
 
-    font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("Hello World!\n안녕하세요. break;", .{}, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // var t1 = std.time.Timer.start() catch unreachable;
-    // font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // system.print("{d}", .{t1.lap()});
-    font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
-    // font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("CONTINUE계속", .{}, &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    const but_text_scale = math.point{ 4.5, 4.5 };
-    font0.render_string_transform("버튼", but_text_scale, but_text_scale * math.point{ -14, -6 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.5 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
     shape_src2.build(.read_gpu, .readwrite_cpu);
     rect_button_text_src.src.color = .{ 0, 0, 0, 1 };
@@ -338,12 +332,7 @@ pub fn xfit_size() void {
 
     g_proj.map_update();
 
-    g_rect_button.*.area.rect = math.rect.calc_with_canvas(math.rect{
-        .left = -100,
-        .right = 100,
-        .top = 50,
-        .bottom = -50,
-    }, CANVAS_W, CANVAS_H);
+    g_rect_button.*.area.rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H);
 }
 
 ///before system clean

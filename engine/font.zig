@@ -96,51 +96,37 @@ fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allo
     out_shape_src.*.indices.array = try allocator.alloc(u32, 0);
 }
 
-pub fn render_string(self: *Self, _str: []const u8, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
+pub const render_option = struct {
+    scale: point = .{ 1, 1 },
+    _offset: point = .{ 0, 0 },
+    pivot: point = .{ 0, 0 },
+    area: ?point = null,
+};
+
+pub fn render_string(self: *Self, _str: []const u8, _render_option: render_option, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
     try init_shape_src(out_shape_src, allocator);
+    const start_ = out_shape_src.*.vertices.array.?.len;
+    var maxP: point = .{ std.math.floatMin(f32), std.math.floatMin(f32) };
+    var minP: point = .{ std.math.floatMax(f32), std.math.floatMax(f32) };
 
     //https://gencmurat.com/en/posts/zig-strings/
     var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
-    var offset: point = .{ 0, 0 };
+    var offset: point = _render_option._offset;
     while (utf8.nextCodepoint()) |codepoint| {
+        if (_render_option.area != null and offset[1] <= -_render_option.area.?[1]) break;
         if (codepoint == '\n') {
             offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1;
             offset[0] = 0;
             continue;
         }
-        try _render_char(self, codepoint, out_shape_src, &offset, null, .{ 1, 1 }, allocator);
+        try _render_char(self, codepoint, out_shape_src, &offset, _render_option.area, _render_option.scale, allocator);
+        maxP = @max(maxP, point{ offset[0], offset[1] + @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1 });
+        minP = @min(minP, offset);
     }
-}
-
-pub fn render_string_transform(self: *Self, _str: []const u8, scale: point, _offset: point, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
-    try init_shape_src(out_shape_src, allocator);
-
-    //https://gencmurat.com/en/posts/zig-strings/
-    var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
-    var offset: point = _offset;
-    while (utf8.nextCodepoint()) |codepoint| {
-        if (codepoint == '\n') {
-            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1;
-            offset[0] = 0;
-            continue;
-        }
-        try _render_char(self, codepoint, out_shape_src, &offset, null, scale, allocator);
-    }
-}
-
-pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
-    try init_shape_src(out_shape_src, allocator);
-
-    var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
-    var offset: point = .{ 0, 0 };
-    while (utf8.nextCodepoint()) |codepoint| {
-        if (offset[1] <= -area[1]) break;
-        if (codepoint == '\n') {
-            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.glyph.*.metrics.height)) / 64.0 * 1.3;
-            offset[0] = 0;
-            continue;
-        }
-        try _render_char(self, codepoint, out_shape_src, &offset, area, .{ 1, 1 }, allocator);
+    var i: usize = start_;
+    const size: point = (maxP - minP) * point{ 2, 2 };
+    while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
+        out_shape_src.*.vertices.array.?[i].pos -= _render_option.pivot * size;
     }
 }
 
