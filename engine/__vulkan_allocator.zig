@@ -210,6 +210,7 @@ const vulkan_res = struct {
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
     fn bind_any(self: *vulkan_res, _buf: anytype, _cell_count: usize) ERROR!*anyopaque {
+        if (_cell_count == 0) unreachable;
         if (self.*.framebuffer) {
             __bind_any(self, self.*.mem, _buf, 0);
             return undefined;
@@ -274,6 +275,14 @@ const vulkan_res = struct {
             self.*.list.remove(next);
             self.*.pool.destroy(next);
         }
+        const prev = res.*.prev orelse self.*.list.last.?;
+        if (prev.*.data.free and res != prev and res.*.data.idx > prev.*.data.idx) {
+            res.*.data.size += prev.*.data.size;
+            res.*.data.idx -= prev.*.data.size;
+            self.*.list.remove(prev);
+            self.*.pool.destroy(prev);
+        }
+
         self.*.mutex.lock();
         switch (@TypeOf(_buf)) {
             vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),

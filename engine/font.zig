@@ -23,8 +23,6 @@ pub const font_error = error{
 pub const char_data = struct {
     raw_p: ?geometry.raw_polygon = null,
     advance: point,
-    left: f32,
-    top: f32,
     allocator: std.mem.Allocator,
 };
 
@@ -85,8 +83,14 @@ fn get_char_idx(self: *Self, _char: u21) font_error!u32 {
     return font_error.undefined_char_code;
 }
 
-fn load_glyph(self: *Self, _char: u21) !void {
-    handle_error(freetype.FT_Load_Glyph(self.*.__face, get_char_idx(self, _char) catch try get_char_idx(self, '□'), freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
+fn load_glyph(self: *Self, _char: u21) u21 {
+    const idx = get_char_idx(self, _char) catch {
+        const idx2 = get_char_idx(self, '□') catch unreachable;
+        handle_error(freetype.FT_Load_Glyph(self.*.__face, idx2, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
+        return '□';
+    };
+    handle_error(freetype.FT_Load_Glyph(self.*.__face, idx, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_BITMAP));
+    return _char;
 }
 
 fn init_shape_src(out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
@@ -115,28 +119,29 @@ pub fn render_string(self: *Self, _str: []const u8, _render_option: render_optio
     while (utf8.nextCodepoint()) |codepoint| {
         if (_render_option.area != null and offset[1] <= -_render_option.area.?[1]) break;
         if (codepoint == '\n') {
-            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1;
+            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0;
             offset[0] = 0;
             continue;
         }
+        minP = @min(minP, offset);
         try _render_char(self, codepoint, out_shape_src, &offset, _render_option.area, _render_option.scale, allocator);
-        if (_render_option.area == null) {
-            maxP = @max(maxP, point{ offset[0], offset[1] + @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1 });
-            minP = @min(minP, offset);
-        }
+        maxP = @max(maxP, point{ offset[0], offset[1] + @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 });
     }
     var i: usize = start_;
-    const size: point = (if (_render_option.area != null) _render_option.area.? else (maxP - minP)) * point{ 2, 2 };
+    const size: point = (if (_render_option.area != null) _render_option.area.? else (maxP - minP)) * point{ 1, 1 };
     while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
-        out_shape_src.*.vertices.array.?[i].pos -= _render_option.pivot * size;
+        out_shape_src.*.vertices.array.?[i].pos -= _render_option.pivot * size * _render_option.scale;
     }
 }
 
 fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, offset: *point, area: ?math.point, scale: point, allocator: std.mem.Allocator) !void {
     var char_d: ?*char_data = self.*.__char_array.getPtr(char);
 
-    if (char_d != null) {} else {
-        try load_glyph(self, char);
+    if (char_d != null) {} else blk: {
+        const res = load_glyph(self, char);
+        if (res != char) {
+            if (self.*.__char_array.getPtr(res) != null) break :blk;
+        }
 
         var char_d2: char_data = undefined;
 
@@ -183,7 +188,7 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         if (freetype.FT_Outline_Decompose(&self.*.__face.*.glyph.*.outline, &funcs, &data) != freetype.FT_Err_Ok) {
             return font_error.OutOfMemory;
         }
-        if (data.idx == 0) {
+        if (data.len == 0) {
             char_d2.raw_p = null;
         } else {
             poly.lines[data.idx - 1] = try allocator.realloc(poly.lines[data.idx - 1], data.idx2);
@@ -196,19 +201,17 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         }
         char_d2.advance[0] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.x)) / 64.0;
         char_d2.advance[1] = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.advance.y)) / 64.0;
-        char_d2.left = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.bitmap_left)) / 64.0;
-        char_d2.top = @as(f32, @floatFromInt(self.*.__face.*.glyph.*.bitmap_top)) / 64.0;
 
         char_d2.allocator = allocator;
-        self.*.__char_array.put(char, char_d2) catch |e| {
+        self.*.__char_array.put(res, char_d2) catch |e| {
             allocator.free(char_d2.raw_p.?.vertices);
             allocator.free(char_d2.raw_p.?.indices);
             return e;
         };
         char_d = &char_d2;
     }
-    if (area != null and offset.*[0] + char_d.?.*.advance[0] * scale[0] >= area.?[0]) {
-        offset.*[1] -= @as(f32, @floatFromInt(self.*.__face.*.glyph.*.metrics.height)) / 64.0 * 1.3;
+    if (area != null and offset.*[0] + char_d.?.*.advance[0] >= area.?[0]) {
+        offset.*[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0;
         offset.*[0] = 0;
         if (offset.*[1] <= -area.?[1]) return;
     }
@@ -218,9 +221,8 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         @memcpy(out_shape_src.*.vertices.array.?[len..], char_d.?.raw_p.?.vertices);
         var i: usize = len;
         while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
-            out_shape_src.*.vertices.array.?[i].pos += point{ char_d.?.*.left, char_d.?.*.top };
-            out_shape_src.*.vertices.array.?[i].pos *= scale;
             out_shape_src.*.vertices.array.?[i].pos += offset.*;
+            out_shape_src.*.vertices.array.?[i].pos *= scale;
         }
         const ilen = out_shape_src.*.indices.array.?.len;
         out_shape_src.*.indices.array = try allocator.realloc(out_shape_src.*.indices.array.?, ilen + char_d.?.raw_p.?.indices.len);
@@ -230,8 +232,8 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
             out_shape_src.*.indices.array.?[i] += @intCast(len);
         }
     }
-    offset.*[0] += char_d.?.*.advance[0] * scale[0];
-    offset.*[1] -= char_d.?.*.advance[1] * scale[1];
+    offset.*[0] += char_d.?.*.advance[0];
+    //offset.*[1] -= char_d.?.*.advance[1];
 }
 
 const font_user_data = struct {

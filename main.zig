@@ -177,7 +177,7 @@ pub fn xfit_init() void {
     // system.print("{d}", .{t1.lap()});
     font0.render_string("CONTINUE계속", .{}, &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.5 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.3 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
     shape_src2.build(.read_gpu, .readwrite_cpu);
     rect_button_text_src.src.color = .{ 0, 0, 0, 1 };
