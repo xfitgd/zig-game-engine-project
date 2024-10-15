@@ -126,7 +126,7 @@ pub fn render_string(self: *Self, _str: []const u8, _render_option: render_optio
         }
     }
     var i: usize = start_;
-    const size: point = (if (_render_option.area != null) _render_option.area else (maxP - minP)) * point{ 2, 2 };
+    const size: point = (if (_render_option.area != null) _render_option.area.? else (maxP - minP)) * point{ 2, 2 };
     while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
         out_shape_src.*.vertices.array.?[i].pos -= _render_option.pivot * size;
     }
