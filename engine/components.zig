@@ -57,6 +57,7 @@ pub const button = struct {
     on_over: ?*const fn (self: *Self, _mouse_pos: point) void = null,
     on_down: ?*const fn (self: *Self, _mouse_pos: point) void = null,
     on_up: ?*const fn (self: *Self, _mouse_pos: ?point) void = null,
+    _touch_idx: ?u32 = null,
 
     fn update_color(self: *Self) void {
         for (self.*.src) |v| {
@@ -115,6 +116,29 @@ pub const button = struct {
             } else {
                 self.state = .UP;
             }
+            self.update_color();
+            if (self.on_up != null) self.on_up.?(self, _mouse_pos);
+        }
+    }
+    pub fn on_touch_down(self: *Self, touch_idx: u32, _mouse_pos: point) void {
+        if (self.state == .UP) {
+            if (self.area.rect.is_point_in(_mouse_pos)) {
+                self.state = .DOWN;
+                self.update_color();
+                self._touch_idx = touch_idx;
+                if (self.on_down != null) self.on_down.?(self, _mouse_pos);
+            }
+        } else if (self._touch_idx != null and self._touch_idx.? == touch_idx) {
+            self.state = .UP;
+            self._touch_idx = null;
+            self.update_color();
+            if (self.on_up != null) self.on_up.?(self, _mouse_pos);
+        }
+    }
+    pub fn on_touch_up(self: *Self, touch_idx: u32, _mouse_pos: point) void {
+        if (self.state == .DOWN and self._touch_idx.? == touch_idx) {
+            self.state = .UP;
+            self._touch_idx = null;
             self.update_color();
             if (self.on_up != null) self.on_up.?(self, _mouse_pos);
         }

@@ -610,6 +610,26 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
             var count: u32 = undefined;
             if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
                 count = 1;
+                const act = android.AMotionEvent_getAction(_event);
+                var mm = point{ android.AMotionEvent_getX(_event, 0), android.AMotionEvent_getY(_event, 0) };
+                mm = input.convert_set_mouse_pos(mm);
+
+                if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(mm);
+                switch (act & android.AMOTION_EVENT_ACTION_MASK) {
+                    android.AMOTION_EVENT_ACTION_DOWN => {
+                        if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(mm);
+                    },
+                    android.AMOTION_EVENT_ACTION_UP => {
+                        if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(mm);
+                    },
+                    android.AMOTION_EVENT_ACTION_SCROLL => {
+                        const dt: i32 = @intFromFloat(android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_VSCROLL, 0) * 100);
+                        __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
+                        if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
+                    },
+                    else => {},
+                }
+                return 1;
             } else if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_FINGER) {
                 count = @min(100, android.AMotionEvent_getPointerCount(_event));
             } else return 0;
@@ -624,18 +644,15 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
             }
             @atomicStore(f32, &__system.cursor_pos[0], poses[0][0], std.builtin.AtomicOrder.monotonic);
             @atomicStore(f32, &__system.cursor_pos[1], poses[0][1], std.builtin.AtomicOrder.monotonic);
-            if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
-                if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(poses[0]);
-            }
 
             const act = android.AMotionEvent_getAction(_event);
             switch (act & android.AMOTION_EVENT_ACTION_MASK) {
                 android.AMOTION_EVENT_ACTION_DOWN => {
-                    if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(poses[0]);
+                    //if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(poses[0]);
                     if (system.a_fn(__system.touch_down_func) != null) system.a_fn(__system.touch_down_func).?(0, poses[0]);
                 },
                 android.AMOTION_EVENT_ACTION_UP => {
-                    if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(poses[0]);
+                    //if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(poses[0]);
                     if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(0, poses[0]);
                 },
                 android.AMOTION_EVENT_ACTION_POINTER_DOWN => {
@@ -651,11 +668,6 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
                 android.AMOTION_EVENT_ACTION_POINTER_UP => {
                     const pointer_id: u32 = @max(0, @min(9, (act & android.AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> android.AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT));
                     if (system.a_fn(__system.touch_up_func) != null) system.a_fn(__system.touch_up_func).?(pointer_id, poses[pointer_id]);
-                },
-                android.AMOTION_EVENT_ACTION_SCROLL => {
-                    const dt: i32 = @intFromFloat(android.AMotionEvent_getAxisValue(_event, android.AMOTION_EVENT_AXIS_VSCROLL, 0) * 100);
-                    __system.mouse_scroll_dt.store(dt, std.builtin.AtomicOrder.monotonic);
-                    if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
                 },
                 else => {},
             }

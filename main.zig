@@ -182,7 +182,8 @@ pub fn xfit_init() void {
     font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    font0.render_string_transform("버튼", .{ 5, 5 }, .{ -50, -25 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    const but_text_scale = math.point{ 6, 6 };
+    font0.render_string_transform("버튼", but_text_scale, but_text_scale * math.point{ -10, -5 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
     shape_src2.build(.read_gpu, .readwrite_cpu);
     rect_button_text_src.src.color = .{ 0, 0, 0, 1 };
@@ -241,6 +242,8 @@ pub fn xfit_init() void {
     input.set_mouse_out_func(mouse_out);
     input.set_Lmouse_down_func(mouse_down);
     input.set_Lmouse_up_func(mouse_up);
+    input.set_touch_down_func(touch_down);
+    input.set_touch_up_func(touch_up);
 
     _ = timer_callback.start2(
         system.sec_to_nano_sec2(0, 10, 0, 0),
@@ -267,6 +270,13 @@ fn mouse_down(pos: math.point) void {
 }
 fn mouse_up(pos: math.point) void {
     g_rect_button.on_mouse_up(pos);
+}
+
+fn touch_down(touch_idx: u32, pos: math.point) void {
+    g_rect_button.on_touch_down(touch_idx, pos);
+}
+fn touch_up(touch_idx: u32, pos: math.point) void {
+    g_rect_button.on_touch_up(touch_idx, pos);
 }
 
 fn key_down(_key: input.key) void {
