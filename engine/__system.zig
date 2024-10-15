@@ -75,7 +75,7 @@ pub var window_size_func: ?*const fn () void = null;
 
 pub var error_handling_func: ?*const fn (text: []u8, stack_trace: []u8) void = null;
 
-pub var cursor_pos: math.pointi = undefined;
+pub var cursor_pos: math.point = undefined;
 
 pub var pause: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 pub var activated: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);

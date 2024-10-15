@@ -1,6 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const system = @import("system.zig");
+const window = @import("window.zig");
+const input = @import("input.zig");
+
 //https://github.com/zig-gamedev/zig-gamedev/blob/main/libs/zmath/src/zmath.zig
 
 pub fn ceil_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
@@ -42,7 +46,12 @@ pub inline fn pow(v0: anytype, p: comptime_float) @TypeOf(v0) {
 }
 
 pub fn rect_(comptime T: type) type {
-    test_number_type(T);
+    const pointT = switch (T) {
+        u32 => pointu,
+        f32 => point,
+        i32 => pointi,
+        else => @compileError("not a rect compatible type"),
+    };
     return struct {
         const Self = @This();
         left: T,
@@ -64,11 +73,54 @@ pub fn rect_(comptime T: type) type {
                 .bottom = _bottom,
             };
         }
+        pub fn flipY(self: Self) Self {
+            return .{
+                .left = self.left,
+                .right = self.right,
+                .top = self.bottom,
+                .bottom = self.top,
+            };
+        }
+        pub fn calc_with_canvas(self: Self, _CANVAS_W: f32, _CANVAS_H: f32) Self {
+            const _width = @as(f32, @floatFromInt(window.window_width()));
+            const _height = @as(f32, @floatFromInt(window.window_height()));
+            const ratio = if (_width / _height > _CANVAS_W / _CANVAS_H) _height / _CANVAS_H else _width / _CANVAS_W;
+
+            return .{
+                .left = self.left * ratio,
+                .right = self.right * ratio,
+                .top = self.top * ratio,
+                .bottom = self.bottom * ratio,
+            };
+        }
+        pub fn mul_matrix(self: Self, mat: matrix) Self {
+            return .{
+                .left = mat.mul_point(self.left),
+                .right = mat.mul_point(self.right),
+                .top = mat.mul_point(self.top),
+                .bottom = mat.mul_point(self.bottom),
+            };
+        }
+        pub fn div_matrix(self: Self, mat: matrix) !Self {
+            return .{
+                .left = try mat.div_point(self.left),
+                .right = try mat.div_point(self.right),
+                .top = try mat.div_point(self.top),
+                .bottom = try mat.div_point(self.bottom),
+            };
+        }
+        pub fn is_point_in(self: Self, pt: pointT) bool {
+            return self.left <= pt[0] and self.right >= pt[0] and self.top >= pt[1] and self.bottom <= pt[1];
+        }
+        pub fn is_mouse_in(self: Self) bool {
+            return self.is_point_in(input.get_cursor_pos());
+        }
     };
 }
 
 pub const rect = rect_(f32);
 pub const recti = rect_(i32);
+pub const rectu = rect_(u32);
 
 comptime {
     if (@sizeOf(point) != @sizeOf([2]f32)) @compileError("\'point\' type size not equal [2]f32!");
@@ -628,6 +680,25 @@ pub const matrix4x4 = struct {
             result.e[row] = mulAdd(vx, _matrix.*.e[0], vz * _matrix.*.e[2]) + mulAdd(vy, _matrix.*.e[1], vw * _matrix.*.e[3]);
         }
         return result;
+    }
+    pub fn mul_vector(self: Self, v: vector) vector {
+        const vx = @shuffle(f32, v, undefined, [4]i32{ 0, 0, 0, 0 });
+        const vy = @shuffle(f32, v, undefined, [4]i32{ 1, 1, 1, 1 });
+        const vz = @shuffle(f32, v, undefined, [4]i32{ 2, 2, 2, 2 });
+        const vw = @shuffle(f32, v, undefined, [4]i32{ 3, 3, 3, 3 });
+        const matT = self.transpose();
+        return mulAdd(vx, matT.e[0], vz * matT.e[2]) + mulAdd(vy, matT.e[1], vw * matT.e[3]);
+    }
+    pub inline fn div_vector(self: Self, v: vector) !vector {
+        return mul_vector(try self.inverse(), v);
+    }
+    pub inline fn mul_point(self: Self, pt: point) point {
+        const xx = point{ self.e[0][0], self.e[0][1] };
+        const yy = point{ self.e[1][0], self.e[1][1] };
+        return .{ dot3(pt, xx) + self.e[0][3], dot3(pt, yy) + self.e[1][3] };
+    }
+    pub inline fn div_point(self: Self, pt: point) !point {
+        return mul_point(try self.inverse(), pt);
     }
     pub fn addition(self: *const Self, _matrix: *const Self) Self {
         var result: Self = undefined;

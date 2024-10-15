@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const ArrayList = std.ArrayList;
 
 const system = @import("system.zig");
+const input = @import("input.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
@@ -411,27 +412,33 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
     switch (uMsg) {
         win32.WM_LBUTTONDOWN => {
             __system.Lmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Lmouse_down_func) != null) system.a_fn(__system.Lmouse_down_func).?(mm);
         },
         win32.WM_MBUTTONDOWN => {
             __system.Mmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Mmouse_down_func) != null) system.a_fn(__system.Mmouse_down_func).?(mm);
         },
         win32.WM_RBUTTONDOWN => {
             __system.Rmouse_click.store(true, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Rmouse_down_func) != null) system.a_fn(__system.Rmouse_down_func).?(mm);
         },
         win32.WM_LBUTTONUP => {
             __system.Lmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Lmouse_up_func) != null) system.a_fn(__system.Lmouse_up_func).?(mm);
         },
         win32.WM_MBUTTONUP => {
             __system.Mmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Mmouse_up_func) != null) system.a_fn(__system.Mmouse_up_func).?(mm);
         },
         win32.WM_RBUTTONUP => {
             __system.Rmouse_click.store(false, std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?(.{ @floatFromInt(win32.LOWORD(lParam)), @floatFromInt(win32.HIWORD(lParam)) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.Rmouse_up_func) != null) system.a_fn(__system.Rmouse_up_func).?(mm);
         },
         win32.WM_KEYDOWN => {
             if (wParam < __system.KEY_SIZE) {
@@ -479,16 +486,16 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                 _ = win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, null, &size, @sizeOf(win32.RAWINPUTHEADER));
                 const inputT: []align(@alignOf(*win32.RAWINPUT)) u8 = __system.allocator.alignedAlloc(u8, @alignOf(*win32.RAWINPUT), size) catch |e| system.handle_error3("alignedAlloc RAWINPUT", e);
                 defer __system.allocator.free(inputT);
-                const input: *win32.RAWINPUT = @ptrCast(inputT.ptr);
+                const input_: *win32.RAWINPUT = @ptrCast(inputT.ptr);
 
-                if (0 < win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, @ptrCast(input), &size, @sizeOf(win32.RAWINPUTHEADER))) {
-                    if (0 != win32.GetRawInputDeviceInfoA(input.*.header.hDevice, win32.RIDI_PREPARSEDDATA, null, &size)) break :end;
+                if (0 < win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, @ptrCast(input_), &size, @sizeOf(win32.RAWINPUTHEADER))) {
+                    if (0 != win32.GetRawInputDeviceInfoA(input_.*.header.hDevice, win32.RIDI_PREPARSEDDATA, null, &size)) break :end;
 
                     const processHeap = win32.GetProcessHeap();
                     const pPreparsedData = win32.HeapAlloc(processHeap, 0, size) orelse break :end;
                     defer _ = win32.HeapFree(processHeap, 0, pPreparsedData);
 
-                    const res = win32.GetRawInputDeviceInfoA(input.*.header.hDevice, win32.RIDI_PREPARSEDDATA, pPreparsedData, &size);
+                    const res = win32.GetRawInputDeviceInfoA(input_.*.header.hDevice, win32.RIDI_PREPARSEDDATA, pPreparsedData, &size);
                     if (res == 0 or res == std.math.maxInt(u32)) break :end;
 
                     if (win32.HIDP_STATUS_SUCCESS != win32.HidP_GetCaps(pPreparsedData, &S.caps)) break :end;
@@ -530,8 +537,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                         &S.usage,
                         &usage_len,
                         pPreparsedData,
-                        &input.*.data.hid.bRawData,
-                        input.*.data.hid.dwSizeHid,
+                        &input_.*.data.hid.bRawData,
+                        input_.*.data.hid.dwSizeHid,
                     )) break :end;
 
                     S.general_state = std.mem.zeroes(general_input.INPUT_STATE);
@@ -567,8 +574,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                             pValueCaps[i].R.Range.UsageMin,
                             &value,
                             pPreparsedData,
-                            &input.*.data.hid.bRawData,
-                            input.*.data.hid.dwSizeHid,
+                            &input_.*.data.hid.bRawData,
+                            input_.*.data.hid.dwSizeHid,
                         )) break :end;
                         switch (pValueCaps[i].R.Range.UsageMin) {
                             0x30 => S.general_state.left_thumb_x = (@as(f32, @floatFromInt(value)) / 255 - 0.5) * 2, //x
@@ -604,7 +611,7 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                             else => {},
                         }
                     }
-                    S.general_state.handle = input.*.header.hDevice;
+                    S.general_state.handle = input_.*.header.hDevice;
                     __system.general_input_callback.?(S.general_state);
                 }
             }
@@ -655,9 +662,8 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (win32.TrackMouseEvent(&mouse_event) == FALSE) {
                 system.print_error("WARN WindowProc.TrackMouseEvent Failed Code : {}\n", .{win32.GetLastError()});
             }
-            @atomicStore(i32, &__system.cursor_pos[0], win32.GET_X_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.cursor_pos[1], win32.GET_Y_LPARAM(lParam), std.builtin.AtomicOrder.monotonic);
-            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(.{ @floatFromInt(__system.cursor_pos[0]), @floatFromInt(__system.cursor_pos[1]) });
+            const mm = input.convert_set_mouse_pos(.{ @floatFromInt(win32.GET_X_LPARAM(lParam)), @floatFromInt(win32.GET_Y_LPARAM(lParam)) });
+            if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(mm);
         },
         // MOUSEMOVE 메시지에서 TrackMouseEvent를 호출하면 호출되는 메시지
         win32.WM_MOUSELEAVE => {

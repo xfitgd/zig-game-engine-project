@@ -458,22 +458,22 @@ else if (system.platform == .android)
 else
     @compileError("not support platform");
 
-pub inline fn set_Lmouse_down_func(_func: *const fn () void) void {
+pub inline fn set_Lmouse_down_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Lmouse_down_func), &__system.Lmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_Rmouse_down_func(_func: *const fn () void) void {
+pub inline fn set_Rmouse_down_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Rmouse_down_func), &__system.Rmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_Mmouse_down_func(_func: *const fn () void) void {
+pub inline fn set_Mmouse_down_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Mmouse_down_func), &__system.Mmouse_down_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_Lmouse_up_func(_func: *const fn () void) void {
+pub inline fn set_Lmouse_up_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Lmouse_up_func), &__system.Lmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_Rmouse_up_func(_func: *const fn () void) void {
+pub inline fn set_Rmouse_up_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Rmouse_up_func), &__system.Rmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_Mmouse_up_func(_func: *const fn () void) void {
+pub inline fn set_Mmouse_up_func(_func: *const fn (pos: math.point) void) void {
     @atomicStore(@TypeOf(__system.Mmouse_up_func), &__system.Mmouse_up_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn set_key_down_func(_func: *const fn (key) void) void {
@@ -488,7 +488,7 @@ pub inline fn set_mouse_move_func(_func: *const fn (pos: math.point) void) void 
 pub inline fn set_mouse_hover_func(_func: *const fn () void) void {
     @atomicStore(@TypeOf(__system.mouse_hover_func), &__system.mouse_hover_func, _func, std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn set_mouse_leave_func(_func: *const fn () void) void {
+pub inline fn set_mouse_out_func(_func: *const fn () void) void {
     @atomicStore(@TypeOf(__system.mouse_leave_func), &__system.mouse_leave_func, _func, std.builtin.AtomicOrder.monotonic);
 }
 
@@ -518,9 +518,31 @@ pub inline fn key_down_or_up(_key: key) bool {
     }
     return __system.keys[@intFromEnum(_key)].load(std.builtin.AtomicOrder.monotonic);
 }
-pub inline fn get_cursor_pos() math.point(i32) {
-    return math.point(i32).init(@atomicLoad(i32, &__system.cursor_pos.x, std.builtin.AtomicOrder.monotonic), @atomicLoad(i32, &__system.cursor_pos.y, std.builtin.AtomicOrder.monotonic));
+pub inline fn get_cursor_pos() math.point {
+    const p: math.point = .{
+        @atomicLoad(f32, &__system.cursor_pos[0], std.builtin.AtomicOrder.monotonic),
+        @atomicLoad(f32, &__system.cursor_pos[1], std.builtin.AtomicOrder.monotonic),
+    };
+    return p;
 }
 pub inline fn get_mouse_scroll_dt() i32 {
     return __system.mouse_scroll_dt.load(std.builtin.AtomicOrder.monotonic);
+}
+pub fn convert_set_mouse_pos(mouse_pos: math.point) math.point {
+    const mx: f32 = mouse_pos[0];
+    const my: f32 = mouse_pos[1];
+    const w = @as(f32, @floatFromInt(window.window_width())) / 2.0;
+    const h = @as(f32, @floatFromInt(window.window_height())) / 2.0;
+    const mm = math.point{ mx - w, -my + h };
+    @atomicStore(f32, &__system.cursor_pos[0], mm[0], std.builtin.AtomicOrder.monotonic);
+    @atomicStore(f32, &__system.cursor_pos[1], mm[1], std.builtin.AtomicOrder.monotonic);
+    return mm;
+}
+pub fn convert_mouse_pos(mouse_pos: math.point) math.point {
+    const mx: f32 = mouse_pos[0];
+    const my: f32 = mouse_pos[1];
+    const w = @as(f32, @floatFromInt(window.window_width())) / 2.0;
+    const h = @as(f32, @floatFromInt(window.window_height())) / 2.0;
+    const mm = math.point{ mx - w, -my + h };
+    return mm;
 }

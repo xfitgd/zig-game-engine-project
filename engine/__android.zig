@@ -4,6 +4,7 @@ const expect = std.testing.expect;
 const root = @import("root");
 const math = @import("math.zig");
 const point = math.point;
+const input = @import("input.zig");
 const __vulkan = @import("__vulkan.zig");
 
 const system = @import("system.zig");
@@ -618,9 +619,11 @@ fn engine_handle_input(_event: ?*android.AInputEvent) i32 {
             while (i < poses.len) : (i += 1) {
                 poses[i][0] = android.AMotionEvent_getX(_event, i);
                 poses[i][1] = android.AMotionEvent_getY(_event, i);
+
+                poses[i] = input.convert_mouse_pos(poses[i]);
             }
-            @atomicStore(i32, &__system.cursor_pos[0], @intFromFloat(poses[0][0]), std.builtin.AtomicOrder.monotonic);
-            @atomicStore(i32, &__system.cursor_pos[1], @intFromFloat(poses[0][1]), std.builtin.AtomicOrder.monotonic);
+            @atomicStore(f32, &__system.cursor_pos[0], poses[0][0], std.builtin.AtomicOrder.monotonic);
+            @atomicStore(f32, &__system.cursor_pos[1], poses[0][1], std.builtin.AtomicOrder.monotonic);
             if (tool_type == android.AMOTION_EVENT_TOOL_TYPE_MOUSE) {
                 if (system.a_fn(__system.mouse_move_func) != null) system.a_fn(__system.mouse_move_func).?(poses[0]);
             }

@@ -18,6 +18,8 @@ const image_util = @import("engine/image_util.zig");
 const window = @import("engine/window.zig");
 const animator = @import("engine/animator.zig");
 const input = @import("engine/input.zig");
+const collision = @import("engine/collision.zig");
+const components = @import("engine/components.zig");
 
 const lua = @import("engine/lua.zig");
 
@@ -37,6 +39,7 @@ const render_command = @import("engine/render_command.zig");
 const geometry = @import("engine/geometry.zig");
 
 const matrix = math.matrix;
+const iarea = collision.iarea;
 
 pub var objects: ArrayList(*graphics.iobject) = undefined;
 pub var vertices_mem_pool: MemoryPoolExtra(graphics.dummy_vertices, .{}) = undefined;
@@ -49,8 +52,12 @@ pub var g_camera: graphics.camera = undefined;
 var font0: font = undefined;
 var font0_data: []u8 = undefined;
 
+var rect_button_src: components.button.source = undefined;
+var rect_button_src2: components.button.source = undefined;
+var rect_button_text_src: components.button.source = undefined;
+var rect_button_srcs = [3]*components.button.source{ &rect_button_src, &rect_button_src2, &rect_button_text_src };
+
 var shape_src: graphics.shape.source = undefined;
-var rect_src: graphics.shape.source = undefined;
 var shape_src2: graphics.shape.source = undefined;
 var extra_src = [_]*graphics.shape.source{&shape_src2};
 var image_src: graphics.texture = undefined;
@@ -81,12 +88,7 @@ pub const CANVAS_H: f32 = 720;
 //     fs.close();
 // }
 
-var rect_line: [4]geometry.line = .{
-    geometry.line.line_init(.{ -300, 300 }, .{ 300, 300 }),
-    geometry.line.quadratic_init(.{ 300, 300 }, .{ 600, 0 }, .{ 300, -300 }),
-    geometry.line.line_init(.{ 300, -300 }, .{ -300, -300 }),
-    geometry.line.line_init(.{ -300, -300 }, .{ -300, 300 }),
-};
+var g_rect_button: *components.button = undefined;
 
 pub fn xfit_init() void {
     // const luaT = lua.c.luaL_newstate();
@@ -111,21 +113,30 @@ pub fn xfit_init() void {
     g_proj.build(.readwrite_cpu);
 
     const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
-    const rect_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 4 OutOfMemory");
+    const rect_button = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 4 OutOfMemory");
     const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
     const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
+
+    rect_button.* = .{ ._button = .{ .area = .{ .rect = math.rect.calc_with_canvas(math.rect{
+        .left = -100,
+        .right = 100,
+        .top = 50,
+        .bottom = -50,
+    }, CANVAS_W, CANVAS_H) } } };
+    components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator) catch unreachable;
+    rect_button.*._button.transform.camera = &g_camera;
+    rect_button.*._button.transform.projection = &g_proj;
+    rect_button.*.build();
 
     text_shape.* = .{ ._shape = .{} };
     shape_src = graphics.shape.source.init_for_alloc(allocator);
     shape_src.color = .{ 1, 1, 1, 0.5 };
 
-    rect_shape.* = .{ ._shape = .{} };
-    rect_src = graphics.shape.source.init_for_alloc(allocator);
-    rect_src.color = .{ 1, 1, 1, 0.5 };
-
     shape_src2 = graphics.shape.source.init_for_alloc(allocator);
     shape_src2.color = .{ 1, 0, 1, 1 };
+
+    rect_button_text_src = components.button.source.init_for_alloc(allocator);
 
     img.* = .{ ._image = graphics.image.init() };
     anim_img.* = .{ ._anim_image = graphics.animate_image.init() };
@@ -161,7 +172,7 @@ pub fn xfit_init() void {
     img.*._image.src = &image_src;
     anim_img.*._anim_image.src = &anim_image_src;
 
-    font0_data = file_.read_file("SourceHanSerifK-ExtraLight.otf", allocator) catch |e| system.handle_error3("read_file font0_data", e);
+    font0_data = file_.read_file("SDMiSaeng.ttf", allocator) catch |e| system.handle_error3("read_file font0_data", e);
     font0 = font.init(font0_data, 0);
 
     font0.render_string("Hello World!\n안녕하세요. break;", &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
@@ -171,7 +182,13 @@ pub fn xfit_init() void {
     font0.render_string("CONTINUE계속", &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
     // font0.render_string_box("Hello World!\nbreak;byebyeseretedfegherjht", .{ 50, 30 }, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
+    font0.render_string_transform("버튼", .{ 5, 5 }, .{ -50, -25 }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+
     shape_src2.build(.read_gpu, .readwrite_cpu);
+    rect_button_text_src.src.color = .{ 0, 0, 0, 1 };
+    rect_button_text_src.src.build(.read_gpu, .readwrite_cpu);
+
+    rect_button.*._button.src = rect_button_srcs[0..3];
 
     text_shape.*._shape.transform.camera = &g_camera;
     text_shape.*._shape.transform.projection = &g_proj;
@@ -201,31 +218,12 @@ pub fn xfit_init() void {
     anim_img.*._anim_image.transform.model = matrix.translation(300, -200, 0);
     anim_img.*.build();
 
-    var rl = [1][]geometry.line{rect_line[0..rect_line.len]};
-    var rect_poly: geometry.polygon = .{
-        .tickness = 2,
-        .lines = rl[0..1],
-    };
-    var raw_polygon = geometry.raw_polygon{
-        .vertices = allocator.alloc(graphics.shape_color_vertex_2d, 0) catch unreachable,
-        .indices = allocator.alloc(u32, 0) catch unreachable,
-    };
-
-    rect_poly.compute_outline(allocator, &raw_polygon) catch unreachable;
-
-    rect_src.vertices.array = raw_polygon.vertices;
-    rect_src.indices.array = raw_polygon.indices;
-    rect_src.build(.read_gpu, .readwrite_cpu);
-
-    rect_shape.*._shape.transform.camera = &g_camera;
-    rect_shape.*._shape.transform.projection = &g_proj;
-    rect_shape.*._shape.src = &rect_src;
-    rect_shape.*.build();
-
     objects.append(img) catch system.handle_error_msg2("objects.append(img)");
     objects.append(text_shape) catch system.handle_error_msg2("objects.append(text_shape)");
     objects.append(anim_img) catch system.handle_error_msg2("objects.append(anim_img)");
-    objects.append(rect_shape) catch system.handle_error_msg2("objects.append(rect_shape)");
+    objects.append(rect_button) catch system.handle_error_msg2("objects.append(rect_button)");
+
+    g_rect_button = &rect_button.*._button;
 
     cmd = render_command.init();
     cmd.*.scene = objects.items[0..objects.items.len];
@@ -239,6 +237,10 @@ pub fn xfit_init() void {
     var start_sem: std.Thread.Semaphore = .{};
 
     input.set_key_down_func(key_down);
+    input.set_mouse_move_func(mouse_move);
+    input.set_mouse_out_func(mouse_out);
+    input.set_Lmouse_down_func(mouse_down);
+    input.set_Lmouse_up_func(mouse_up);
 
     _ = timer_callback.start2(
         system.sec_to_nano_sec2(0, 10, 0, 0),
@@ -252,6 +254,19 @@ pub fn xfit_init() void {
     ) catch |e| system.handle_error3("timer_callback.start", e);
 
     start_sem.wait();
+}
+
+fn mouse_move(pos: math.point) void {
+    g_rect_button.on_mouse_move(pos);
+}
+fn mouse_out() void {
+    g_rect_button.on_mouse_out();
+}
+fn mouse_down(pos: math.point) void {
+    g_rect_button.on_mouse_down(pos);
+}
+fn mouse_up(pos: math.point) void {
+    g_rect_button.on_mouse_up(pos);
 }
 
 fn key_down(_key: input.key) void {
@@ -312,13 +327,22 @@ pub fn xfit_size() void {
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
 
     g_proj.map_update();
+
+    g_rect_button.*.area.rect = math.rect.calc_with_canvas(math.rect{
+        .left = -100,
+        .right = 100,
+        .top = 50,
+        .bottom = -50,
+    }, CANVAS_W, CANVAS_H);
 }
 
 ///before system clean
 pub fn xfit_destroy() void {
     shape_src.deinit_for_alloc();
     shape_src2.deinit_for_alloc();
-    rect_src.deinit_for_alloc();
+    rect_button_src.src.deinit_for_alloc();
+    rect_button_src2.src.deinit_for_alloc();
+    rect_button_text_src.src.deinit_for_alloc();
 
     allocator.free(image_src.pixels.?);
     allocator.free(anim_image_src.pixels.?);

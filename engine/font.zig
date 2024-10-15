@@ -109,6 +109,22 @@ pub fn render_string(self: *Self, _str: []const u8, out_shape_src: *graphics.sha
     }
 }
 
+pub fn render_string_transform(self: *Self, _str: []const u8, scale: point, _offset: point, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
+    try init_shape_src(out_shape_src, allocator);
+
+    //https://gencmurat.com/en/posts/zig-strings/
+    var utf8 = (try std.unicode.Utf8View.init(_str)).iterator();
+    var offset: point = _offset;
+    while (utf8.nextCodepoint()) |codepoint| {
+        if (codepoint == '\n') {
+            offset[1] -= @as(f32, @floatFromInt(self.*.__face.*.height)) / 64.0 * 1;
+            offset[0] = 0;
+            continue;
+        }
+        try _render_char(self, codepoint, out_shape_src, &offset, null, scale, allocator);
+    }
+}
+
 pub fn render_string_box(self: *Self, _str: []const u8, area: math.point, out_shape_src: *graphics.shape.source, allocator: std.mem.Allocator) !void {
     try init_shape_src(out_shape_src, allocator);
 
@@ -211,8 +227,9 @@ fn _render_char(self: *Self, char: u21, out_shape_src: *graphics.shape.source, o
         @memcpy(out_shape_src.*.vertices.array.?[len..], char_d.?.raw_p.?.vertices);
         var i: usize = len;
         while (i < out_shape_src.*.vertices.array.?.len) : (i += 1) {
+            out_shape_src.*.vertices.array.?[i].pos += point{ char_d.?.*.left, char_d.?.*.top };
             out_shape_src.*.vertices.array.?[i].pos *= scale;
-            out_shape_src.*.vertices.array.?[i].pos += (offset.* + point{ char_d.?.*.left, char_d.?.*.top }) * scale;
+            out_shape_src.*.vertices.array.?[i].pos += offset.*;
         }
         const ilen = out_shape_src.*.indices.array.?.len;
         out_shape_src.*.indices.array = try allocator.realloc(out_shape_src.*.indices.array.?, ilen + char_d.?.raw_p.?.indices.len);
