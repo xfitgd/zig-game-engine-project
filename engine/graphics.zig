@@ -16,7 +16,6 @@ const vk = __vulkan.vk;
 const math = @import("math.zig");
 const geometry = @import("geometry.zig");
 const render_command = @import("render_command.zig");
-const line = geometry.line;
 const mem = @import("mem.zig");
 const point = math.point;
 const vector = math.vector;
@@ -56,16 +55,20 @@ pub const index_type = enum { U16, U32 };
 pub const DEF_IDX_TYPE_: index_type = .U32;
 pub const DEF_IDX_TYPE = indices_(DEF_IDX_TYPE_).idxT;
 
+const components = @import("components.zig");
+
 const iobject_type = enum {
     _shape,
     _image,
     _anim_image,
+    _button,
 };
 pub const iobject = union(iobject_type) {
     const Self = @This();
     _shape: shape,
     _image: image,
     _anim_image: animate_image,
+    _button: components.button,
 
     pub inline fn deinit(self: *Self) void {
         switch (self.*) {
@@ -758,9 +761,6 @@ pub const shape = struct {
     pub fn build(self: *Self) void {
         if (!self.*.can_build()) {
             system.handle_error_msg2("shape build need transform.camera, projection build(invaild)");
-        }
-        if (!self.*.src.__uniform.is_build()) {
-            system.handle_error_msg2("shape build need vertices");
         }
         var result: vk.VkResult = undefined;
 
