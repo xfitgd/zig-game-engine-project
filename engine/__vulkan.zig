@@ -1287,7 +1287,7 @@ pub fn vulkan_start() void {
     //graphics create
     quad_image_vertices = graphics.vertices(graphics.tex_vertex_2d).init();
     quad_image_vertices.array = quad_image_vertices_array[0..quad_image_vertices_array.len];
-    quad_image_vertices.build(.read_gpu);
+    quad_image_vertices.build(.read_gpu) catch unreachable;
 
     no_color_tran = graphics.color_transform.init();
     no_color_tran.build(.read_gpu);

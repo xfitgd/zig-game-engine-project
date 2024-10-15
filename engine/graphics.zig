@@ -118,8 +118,12 @@ pub fn vertices(comptime vertexT: type) type {
             deinit(self);
             self.allocator.free(self.array.?);
         }
-        pub fn build(self: *Self, _flag: write_flag) void {
+        pub fn build(self: *Self, _flag: write_flag) !void {
             self.*.__check_init.init();
+            if (self.*.array == null or self.*.array.?.len == 0) {
+                system.print_error("WARN vertice array 0 or null\n", .{});
+                return error.is_not_polygon;
+            }
             create_buffer(vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, _flag, @sizeOf(vertexT) * self.*.array.?.len, &self.*.node, std.mem.sliceAsBytes(self.*.array.?));
             self.*.node.__resource_len = @intCast(self.*.array.?.len);
         }
@@ -640,7 +644,8 @@ pub const shape = struct {
             };
         }
         pub fn build(self: *source, _flag: write_flag, _colorflag: write_flag) void {
-            self.*.vertices.build(_flag);
+            if (self.*.vertices.array == null or self.*.vertices.array.?.len == 0) return;
+            self.*.vertices.build(_flag) catch return;
             self.*.indices.build(_flag);
 
             create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _colorflag, @sizeOf(vector), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]vector, @ptrCast(&self.*.color))[0..1]));
