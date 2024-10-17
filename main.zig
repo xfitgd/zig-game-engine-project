@@ -91,6 +91,7 @@ fn error_func(text: []u8, stack_trace: []u8) void {
 }
 
 var g_rect_button: *components.button = undefined;
+var move_callback_thread: std.Thread = undefined;
 
 pub fn xfit_init() void {
     // const luaT = lua.c.luaL_newstate();
@@ -239,7 +240,7 @@ pub fn xfit_init() void {
     input.set_touch_down_func(touch_down);
     input.set_touch_up_func(touch_up);
 
-    _ = timer_callback.start2(
+    move_callback_thread = timer_callback.start2(
         system.sec_to_nano_sec2(0, 10, 0, 0),
         0,
         move_callback,
@@ -318,10 +319,12 @@ fn move_callback() !bool {
     shape_src.map_color_update();
 
     dx += 1;
-    if (dx >= 200) dx = 0;
+    if (dx >= 200) {
+        dx = 0;
+        system.print("{d}\n", .{system.dt_i64()});
+    }
     return true;
 }
-
 var dx: f32 = 0;
 pub fn xfit_update() void {
     anim.update(system.dt());
@@ -337,6 +340,8 @@ pub fn xfit_size() void {
 
 ///before system clean
 pub fn xfit_destroy() void {
+    move_callback_thread.join();
+
     shape_src.deinit_for_alloc();
     shape_src2.deinit_for_alloc();
     rect_button_src.src.deinit_for_alloc();
