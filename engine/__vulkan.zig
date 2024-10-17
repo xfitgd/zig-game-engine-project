@@ -1501,7 +1501,7 @@ pub fn vulkan_start() void {
 
         const pool_size = [1]vk.VkDescriptorPoolSize{.{
             .descriptorCount = 1,
-            .type = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .type = vk.VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
         }};
         const pool_info: vk.VkDescriptorPoolCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
