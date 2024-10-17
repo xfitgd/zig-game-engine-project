@@ -436,7 +436,7 @@ pub fn create_frame_buffer_image(self: *Self, _img_info: *const vk.VkImageCreate
         },
         .image = _out_vulkan_image_node.*.res,
         .subresourceRange = .{
-            .aspectMask = if (img_info.format == vk.VK_FORMAT_D24_UNORM_S8_UINT) vk.VK_IMAGE_ASPECT_DEPTH_BIT | vk.VK_IMAGE_ASPECT_STENCIL_BIT else vk.VK_IMAGE_ASPECT_COLOR_BIT,
+            .aspectMask = if (img_info.usage & vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT != 0) vk.VK_IMAGE_ASPECT_COLOR_BIT else if (img_info.usage & vk.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT != 0) vk.VK_IMAGE_ASPECT_DEPTH_BIT | vk.VK_IMAGE_ASPECT_STENCIL_BIT else 0,
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,

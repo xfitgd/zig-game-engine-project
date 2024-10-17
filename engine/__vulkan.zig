@@ -60,6 +60,9 @@ const animate_tex_frag = @embedFile("shaders/out/animate_tex_frag.spv");
 var animate_tex_vert_shader: vk.VkShaderModule = undefined;
 var animate_tex_frag_shader: vk.VkShaderModule = undefined;
 
+const screen_copy_frag = @embedFile("shaders/out/screen_copy_frag.spv");
+var screen_copy_frag_shader: vk.VkShaderModule = undefined;
+
 pub var __pre_mat_uniform: __vulkan_allocator.vulkan_res_node(.buffer) = .{};
 
 pub const pipeline_set = struct {
@@ -76,6 +79,7 @@ pub var shape_color_2d_pipeline_set: pipeline_set = .{};
 pub var tex_2d_pipeline_set: pipeline_set = .{};
 pub var quad_shape_2d_pipeline_set: pipeline_set = .{};
 pub var animate_tex_2d_pipeline_set: pipeline_set = .{};
+pub var copy_screen_pipeline_set: pipeline_set = .{};
 //
 
 //const shape_shader_stages = create_shader_state(shape_vert_shader, shape_frag_shader);
@@ -83,6 +87,10 @@ var shape_curve_shader_stages: [2]vk.VkPipelineShaderStageCreateInfo = undefined
 var quad_shape_shader_stages: [2]vk.VkPipelineShaderStageCreateInfo = undefined;
 var tex_shader_stages: [2]vk.VkPipelineShaderStageCreateInfo = undefined;
 var animate_tex_shader_stages: [2]vk.VkPipelineShaderStageCreateInfo = undefined;
+var screen_copy_shader_frag_stage: vk.VkPipelineShaderStageCreateInfo = undefined;
+
+var copy_image_pool: vk.VkDescriptorPool = undefined;
+var copy_image_set: vk.VkDescriptorSet = undefined;
 
 pub var properties: vk.VkPhysicalDeviceProperties = undefined;
 const inputAssembly: vk.VkPipelineInputAssemblyStateCreateInfo = .{
@@ -133,6 +141,16 @@ const multisampling: vk.VkPipelineMultisampleStateCreateInfo = .{
     .alphaToOneEnable = vk.VK_FALSE,
 };
 
+const multisampling4: vk.VkPipelineMultisampleStateCreateInfo = .{
+    .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    .sampleShadingEnable = vk.VK_FALSE,
+    .rasterizationSamples = vk.VK_SAMPLE_COUNT_4_BIT,
+    .minSampleShading = 1,
+    .pSampleMask = null,
+    .alphaToCoverageEnable = vk.VK_FALSE,
+    .alphaToOneEnable = vk.VK_FALSE,
+};
+
 const colorBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
     .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
     .blendEnable = vk.VK_FALSE,
@@ -147,11 +165,33 @@ const colorBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
 const colorAlphaBlendAttachment: vk.VkPipelineColorBlendAttachmentState = .{
     .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
     .blendEnable = vk.VK_TRUE,
+    .srcColorBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+    .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .colorBlendOp = vk.VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+    .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .alphaBlendOp = vk.VK_BLEND_OP_ADD,
+};
+
+///https://stackoverflow.com/a/34963588
+const colorAlphaBlendAttachmentExternal: vk.VkPipelineColorBlendAttachmentState = .{
+    .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
+    .blendEnable = vk.VK_TRUE,
     .srcColorBlendFactor = vk.VK_BLEND_FACTOR_SRC_ALPHA,
     .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
     .colorBlendOp = vk.VK_BLEND_OP_ADD,
     .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE,
-    .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+    .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .alphaBlendOp = vk.VK_BLEND_OP_ADD,
+};
+const colorAlphaBlendAttachmentCopy: vk.VkPipelineColorBlendAttachmentState = .{
+    .colorWriteMask = vk.VK_COLOR_COMPONENT_R_BIT | vk.VK_COLOR_COMPONENT_G_BIT | vk.VK_COLOR_COMPONENT_B_BIT | vk.VK_COLOR_COMPONENT_A_BIT,
+    .blendEnable = vk.VK_TRUE,
+    .srcColorBlendFactor = vk.VK_BLEND_FACTOR_ONE,
+    .dstColorBlendFactor = vk.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .colorBlendOp = vk.VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = vk.VK_BLEND_FACTOR_ZERO,
+    .dstAlphaBlendFactor = vk.VK_BLEND_FACTOR_ONE,
     .alphaBlendOp = vk.VK_BLEND_OP_ADD,
 };
 
@@ -184,6 +224,24 @@ const colorAlphaBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
     .blendConstants = .{ 0, 0, 0, 0 },
 };
 
+const colorAlphaBlendingExternal: vk.VkPipelineColorBlendStateCreateInfo = .{
+    .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .logicOpEnable = vk.VK_FALSE,
+    .logicOp = vk.VK_LOGIC_OP_COPY,
+    .attachmentCount = 1,
+    .pAttachments = @ptrCast(&colorAlphaBlendAttachmentExternal),
+    .blendConstants = .{ 0, 0, 0, 0 },
+};
+
+const colorAlphaBlendingCopy: vk.VkPipelineColorBlendStateCreateInfo = .{
+    .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .logicOpEnable = vk.VK_FALSE,
+    .logicOp = vk.VK_LOGIC_OP_COPY,
+    .attachmentCount = 1,
+    .pAttachments = @ptrCast(&colorAlphaBlendAttachmentCopy),
+    .blendConstants = .{ 0, 0, 0, 0 },
+};
+
 const noBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
     .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     .logicOpEnable = vk.VK_FALSE,
@@ -191,60 +249,6 @@ const noBlending: vk.VkPipelineColorBlendStateCreateInfo = .{
     .attachmentCount = 1,
     .pAttachments = &noBlendAttachment,
     .blendConstants = .{ 0, 0, 0, 0 },
-};
-
-var colorAttachment: vk.VkAttachmentDescription = .{
-    .format = 0,
-    .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-    .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
-    .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .stencilLoadOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-    .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-    .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
-    .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-};
-
-const depthAttachment: vk.VkAttachmentDescription = .{
-    .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
-    .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-    .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
-    .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
-    .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
-    .finalLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-};
-
-var colorAttachment2: vk.VkAttachmentDescription = .{
-    .format = 0,
-    .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-    .loadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
-    .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .stencilLoadOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-    .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-    .initialLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-    .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-};
-
-const depthAttachment2: vk.VkAttachmentDescription = .{
-    .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
-    .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-    .loadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
-    .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
-    .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
-    .initialLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    .finalLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-};
-
-const colorAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 0, .layout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-const depthAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 1, .layout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-
-const subpass: vk.VkSubpassDescription = .{
-    .pipelineBindPoint = vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
-    .colorAttachmentCount = 1,
-    .pColorAttachments = @ptrCast(&colorAttachmentRef),
-    .pDepthStencilAttachment = @ptrCast(&depthAttachmentRef),
 };
 
 fn chooseSwapExtent(capabilities: vk.VkSurfaceCapabilitiesKHR) vk.VkExtent2D {
@@ -280,6 +284,14 @@ fn chooseSwapPresentMode(availablePresentModes: []vk.VkPresentModeKHR, _vSync: b
     }
     return vk.VK_PRESENT_MODE_FIFO_KHR;
 }
+inline fn create_frag_shader_state(frag_module: vk.VkShaderModule) vk.VkPipelineShaderStageCreateInfo {
+    return .{
+        .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_module,
+        .pName = "main",
+    };
+}
 
 inline fn create_shader_state(vert_module: vk.VkShaderModule, frag_module: vk.VkShaderModule) [2]vk.VkPipelineShaderStageCreateInfo {
     const stage_infov1: vk.VkPipelineShaderStageCreateInfo = .{
@@ -301,12 +313,16 @@ inline fn create_shader_state(vert_module: vk.VkShaderModule, frag_module: vk.Vk
 pub var vkInstance: vk.VkInstance = undefined;
 pub var vkDevice: vk.VkDevice = null;
 var vkSurface: vk.VkSurfaceKHR = null;
-var vkRenderPass: vk.VkRenderPass = undefined;
-var vkRenderPass2: vk.VkRenderPass = undefined;
+pub var vkRenderPass: vk.VkRenderPass = undefined;
+pub var vkRenderPassSampleClear: vk.VkRenderPass = undefined;
+pub var vkRenderPassImage: vk.VkRenderPass = undefined;
+pub var vkRenderPassShape: vk.VkRenderPass = undefined;
+pub var vkRenderPassCopy: vk.VkRenderPass = undefined;
 pub var vkSwapchain: vk.VkSwapchainKHR = null;
 
 pub var vkCommandPool: vk.VkCommandPool = undefined;
 pub var vkCommandBuffer: vk.VkCommandBuffer = undefined;
+pub var vkCopyCommandBuffer: vk.VkCommandBuffer = undefined;
 
 var vkImageAvailableSemaphore: [render_command.MAX_FRAME]vk.VkSemaphore = .{null} ** render_command.MAX_FRAME;
 var vkRenderFinishedSemaphore: [render_command.MAX_FRAME]vk.VkSemaphore = .{null} ** render_command.MAX_FRAME;
@@ -321,6 +337,8 @@ var vkPresentQueue: vk.VkQueue = undefined;
 pub var vkExtent: vk.VkExtent2D = undefined;
 var vkExtent_rotation: vk.VkExtent2D = undefined;
 pub var vk_swapchain_frame_buffers: []vk.VkFramebuffer = undefined;
+pub var vk_swapchain_frame_buffers_shape: []vk.VkFramebuffer = undefined;
+pub var vk_swapchain_frame_buffers_copy: []vk.VkFramebuffer = undefined;
 var vk_swapchain_image_views: []vk.VkImageView = undefined;
 
 pub var vk_physical_device: vk.VkPhysicalDevice = undefined;
@@ -365,7 +383,9 @@ pub var quad_image_vertices_array: [6]graphics.tex_vertex_2d = .{
 };
 pub var no_color_tran: graphics.color_transform = undefined;
 
-pub var depth_stencil_image = __vulkan_allocator.vulkan_res_node(.image){};
+pub var depth_stencil_image_sample = __vulkan_allocator.vulkan_res_node(.image){};
+pub var color_image_sample = __vulkan_allocator.vulkan_res_node(.image){};
+pub var color_image = __vulkan_allocator.vulkan_res_node(.image){};
 
 fn createShaderModule(code: []const u8) vk.VkShaderModule {
     const createInfo: vk.VkShaderModuleCreateInfo = .{ .codeSize = code.len, .pCode = code.ptr };
@@ -407,7 +427,9 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
     if (commandBuffer.*.scene == null or commandBuffer.*.scene.?.len == 0) {
         return;
     }
-    for (commandBuffer.*.__command_buffers[fr], vk_swapchain_frame_buffers) |cmd, frame| {
+    var i: usize = 0;
+    while (i < commandBuffer.*.__command_buffers[fr].len) : (i += 1) {
+        const cmd = commandBuffer.*.__command_buffers[fr][i];
         const beginInfo: vk.VkCommandBufferBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = 0,
@@ -421,8 +443,8 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
 
         const renderPassInfo: vk.VkRenderPassBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = vkRenderPass2,
-            .framebuffer = frame,
+            .renderPass = vkRenderPassImage,
+            .framebuffer = vk_swapchain_frame_buffers[i],
             .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
             .clearValueCount = 0,
             .pClearValues = null,
@@ -442,11 +464,47 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
         vk.vkCmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
         vk.vkCmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
+        var next_render: bool = false;
         for (commandBuffer.scene.?) |value| {
-            value.*.__draw(cmd);
+            const pass = value.*.get_pass();
+            if (pass == vkRenderPassImage) {
+                value.*.__draw(cmd);
+            } else if (pass == vkRenderPassShape) {
+                next_render = true;
+            }
         }
 
         vk.vkCmdEndRenderPass(cmd);
+
+        if (next_render) {
+            drew_shape = true;
+            const renderPassInfoShape: vk.VkRenderPassBeginInfo = .{
+                .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                .renderPass = vkRenderPassShape,
+                .framebuffer = vk_swapchain_frame_buffers_shape[i],
+                .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
+                .clearValueCount = 2,
+                .pClearValues = &[_]vk.VkClearValue{ .{
+                    .depthStencil = .{},
+                }, .{
+                    .depthStencil = .{},
+                } },
+            };
+
+            vk.vkCmdBeginRenderPass(cmd, &renderPassInfoShape, vk.VK_SUBPASS_CONTENTS_INLINE);
+
+            vk.vkCmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
+            vk.vkCmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
+
+            for (commandBuffer.scene.?) |value| {
+                const pass = value.*.get_pass();
+                if (pass == vkRenderPassShape) {
+                    value.*.__draw(cmd);
+                }
+            }
+
+            vk.vkCmdEndRenderPass(cmd);
+        }
 
         result = vk.vkEndCommandBuffer(cmd);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkEndCommandBuffer : {d}", .{result});
@@ -478,6 +536,7 @@ fn cleanup_pipelines() void {
     vk.vkDestroyPipeline(vkDevice, shape_color_2d_pipeline_set.pipeline, null);
     vk.vkDestroyPipeline(vkDevice, tex_2d_pipeline_set.pipeline, null);
     vk.vkDestroyPipeline(vkDevice, animate_tex_2d_pipeline_set.pipeline, null);
+    vk.vkDestroyPipeline(vkDevice, copy_screen_pipeline_set.pipeline, null);
 }
 
 fn create_pipelines() void {
@@ -521,12 +580,12 @@ fn create_pipelines() void {
             .pInputAssemblyState = &inputAssembly,
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
-            .pMultisampleState = &multisampling,
+            .pMultisampleState = &multisampling4,
             .pDepthStencilState = &depthStencilState,
-            .pColorBlendState = &colorAlphaBlending,
+            .pColorBlendState = &colorAlphaBlendingExternal,
             .pDynamicState = &dynamicState,
             .layout = quad_shape_2d_pipeline_set.pipelineLayout,
-            .renderPass = vkRenderPass2,
+            .renderPass = vkRenderPassShape,
             .subpass = 0,
             .basePipelineHandle = null,
             .basePipelineIndex = -1,
@@ -584,12 +643,12 @@ fn create_pipelines() void {
             .pInputAssemblyState = &inputAssembly,
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
-            .pMultisampleState = &multisampling,
+            .pMultisampleState = &multisampling4,
             .pDepthStencilState = &depthStencilState,
             .pColorBlendState = &noBlending,
             .pDynamicState = &dynamicState,
             .layout = shape_color_2d_pipeline_set.pipelineLayout,
-            .renderPass = vkRenderPass2,
+            .renderPass = vkRenderPassShape,
             .subpass = 0,
             .basePipelineHandle = null,
             .basePipelineIndex = -1,
@@ -617,28 +676,6 @@ fn create_pipelines() void {
             .pVertexAttributeDescriptions = &attributeDescriptions,
         };
 
-        const stencilOp = vk.VkStencilOpState{
-            .compareMask = 0xff,
-            .writeMask = 0xff,
-            .compareOp = vk.VK_COMPARE_OP_ALWAYS,
-            .depthFailOp = vk.VK_STENCIL_OP_KEEP,
-            .passOp = vk.VK_STENCIL_OP_KEEP,
-            .failOp = vk.VK_STENCIL_OP_KEEP,
-            .reference = 0xff,
-        };
-        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
-            .stencilTestEnable = vk.VK_FALSE,
-            .depthTestEnable = vk.VK_FALSE,
-            .depthWriteEnable = vk.VK_FALSE,
-            .depthBoundsTestEnable = vk.VK_FALSE,
-            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
-            .flags = 0,
-            .maxDepthBounds = 0,
-            .minDepthBounds = 0,
-            .back = stencilOp,
-            .front = stencilOp,
-        };
-
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount = 2,
@@ -648,11 +685,11 @@ fn create_pipelines() void {
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
-            .pDepthStencilState = &depthStencilState,
+            .pDepthStencilState = null,
             .pColorBlendState = &colorAlphaBlending,
             .pDynamicState = &dynamicState,
             .layout = tex_2d_pipeline_set.pipelineLayout,
-            .renderPass = vkRenderPass2,
+            .renderPass = vkRenderPassImage,
             .subpass = 0,
             .basePipelineHandle = null,
             .basePipelineIndex = -1,
@@ -680,28 +717,6 @@ fn create_pipelines() void {
             .pVertexAttributeDescriptions = &attributeDescriptions,
         };
 
-        const stencilOp = vk.VkStencilOpState{
-            .compareMask = 0xff,
-            .writeMask = 0xff,
-            .compareOp = vk.VK_COMPARE_OP_ALWAYS,
-            .depthFailOp = vk.VK_STENCIL_OP_KEEP,
-            .passOp = vk.VK_STENCIL_OP_KEEP,
-            .failOp = vk.VK_STENCIL_OP_KEEP,
-            .reference = 0xff,
-        };
-        const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
-            .stencilTestEnable = vk.VK_FALSE,
-            .depthTestEnable = vk.VK_FALSE,
-            .depthWriteEnable = vk.VK_FALSE,
-            .depthBoundsTestEnable = vk.VK_FALSE,
-            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
-            .flags = 0,
-            .maxDepthBounds = 0,
-            .minDepthBounds = 0,
-            .back = stencilOp,
-            .front = stencilOp,
-        };
-
         const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount = 2,
@@ -711,11 +726,11 @@ fn create_pipelines() void {
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
-            .pDepthStencilState = &depthStencilState,
+            .pDepthStencilState = null,
             .pColorBlendState = &colorAlphaBlending,
             .pDynamicState = &dynamicState,
             .layout = animate_tex_2d_pipeline_set.pipelineLayout,
-            .renderPass = vkRenderPass2,
+            .renderPass = vkRenderPassImage,
             .subpass = 0,
             .basePipelineHandle = null,
             .basePipelineIndex = -1,
@@ -724,12 +739,45 @@ fn create_pipelines() void {
         const result = vk.vkCreateGraphicsPipelines(vkDevice, null, 1, &pipelineInfo, null, &animate_tex_2d_pipeline_set.pipeline);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines animate_tex_2d_pipeline_set.pipeline : {d}", .{result});
     }
+    {
+        const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 0,
+            .vertexAttributeDescriptionCount = 0,
+            .pVertexBindingDescriptions = null,
+            .pVertexAttributeDescriptions = null,
+        };
+
+        const pipelineInfo: vk.VkGraphicsPipelineCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = 2,
+            .pStages = &[_]vk.VkPipelineShaderStageCreateInfo{ quad_shape_shader_stages[0], screen_copy_shader_frag_stage },
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pDepthStencilState = null,
+            .pColorBlendState = &colorAlphaBlendingCopy,
+            .pDynamicState = &dynamicState,
+            .layout = copy_screen_pipeline_set.pipelineLayout,
+            .renderPass = vkRenderPassCopy,
+            .subpass = 0,
+            .basePipelineHandle = null,
+            .basePipelineIndex = -1,
+        };
+
+        const result = vk.vkCreateGraphicsPipelines(vkDevice, null, 1, &pipelineInfo, null, &copy_screen_pipeline_set.pipeline);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateGraphicsPipelines copy_screen_pipeline_set.pipeline : {d}", .{result});
+    }
 }
 //instance
 pub var VK_KHR_get_surface_capabilities2_support = false;
 pub var validation_layer_support = false;
 //device
 pub var VK_EXT_full_screen_exclusive_support = false;
+pub var VK_KHR_depth_stencil_resolve_support = false;
+pub var VK_KHR_create_renderpass2_support = false;
 
 pub fn vulkan_start() void {
     const appInfo: vk.VkApplicationInfo = .{
@@ -919,8 +967,14 @@ pub fn vulkan_start() void {
 
         const ext = [_][:0]const u8{
             "VK_EXT_full_screen_exclusive",
+            //"VK_KHR_depth_stencil_resolve",
+            //"VK_KHR_create_renderpass2",
         };
-        const checked: [ext.len]*bool = .{&VK_EXT_full_screen_exclusive_support};
+        const checked: [ext.len]*bool = .{
+            &VK_EXT_full_screen_exclusive_support,
+            //&VK_KHR_depth_stencil_resolve_support,
+            // &VK_KHR_create_renderpass2_support,
+        };
 
         while (i < deviceExtensionCount) : (i += 1) {
             inline for (ext, checked) |t, b| {
@@ -995,32 +1049,190 @@ pub fn vulkan_start() void {
 
     create_swapchain_and_imageviews();
 
+    var sampler_info: vk.VkSamplerCreateInfo = .{
+        .addressModeU = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipmapMode = vk.VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .magFilter = vk.VK_FILTER_LINEAR,
+        .minFilter = vk.VK_FILTER_LINEAR,
+        .mipLodBias = 0,
+        .compareOp = vk.VK_COMPARE_OP_ALWAYS,
+        .compareEnable = vk.VK_FALSE,
+        .unnormalizedCoordinates = vk.VK_FALSE,
+        .minLod = 0,
+        .maxLod = 0,
+        .anisotropyEnable = vk.VK_FALSE,
+        .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+        .borderColor = vk.VK_BORDER_COLOR_INT_OPAQUE_WHITE,
+    };
+    result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &linear_sampler);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler linear_sampler : {d}", .{result});
+
+    sampler_info.mipmapMode = vk.VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler_info.magFilter = vk.VK_FILTER_NEAREST;
+    sampler_info.minFilter = vk.VK_FILTER_NEAREST;
+    result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &nearest_sampler);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler nearest_sampler : {d}", .{result});
+
+    const colorAttachmentClear: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    };
+
+    const depthAttachmentSample: vk.VkAttachmentDescription = .{
+        .format = vk.VK_FORMAT_D24_UNORM_S8_UINT,
+        .samples = vk.VK_SAMPLE_COUNT_4_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
+    const colorAttachmentSampleClear: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_4_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    const colorAttachmentSample: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_4_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    const colorAttachmentImage: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    };
+
+    const colorAttachmentResolve: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    const colorAttachmentLoadResolve: vk.VkAttachmentDescription = .{
+        .format = format.format,
+        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = vk.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = vk.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = vk.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .finalLayout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
+    const colorAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 0, .layout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    const colorResolveAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 2, .layout = vk.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    const depthAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 1, .layout = vk.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+    const inputAttachmentRef: vk.VkAttachmentReference = .{ .attachment = 1, .layout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+    const subpass: vk.VkSubpassDescription = .{
+        .pipelineBindPoint = vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = @ptrCast(&colorAttachmentRef),
+        .pDepthStencilAttachment = null,
+    };
+
+    const subpass_resolve: vk.VkSubpassDescription = .{
+        .pipelineBindPoint = vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = @ptrCast(&colorAttachmentRef),
+        .pDepthStencilAttachment = @ptrCast(&depthAttachmentRef),
+        .pResolveAttachments = @ptrCast(&colorResolveAttachmentRef),
+    };
+
+    const subpass_copy: vk.VkSubpassDescription = .{
+        .pipelineBindPoint = vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &[_]vk.VkAttachmentReference{colorAttachmentRef},
+        .pDepthStencilAttachment = null,
+        .inputAttachmentCount = 1,
+        .pInputAttachments = @ptrCast(&inputAttachmentRef),
+    };
+
     const dependency: vk.VkSubpassDependency = .{
         .srcSubpass = vk.VK_SUBPASS_EXTERNAL,
         .dstSubpass = 0,
-        .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         .srcAccessMask = 0,
-        .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
     };
 
     var renderPassInfo: vk.VkRenderPassCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 2,
-        .pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachment, depthAttachment },
+        .attachmentCount = 1,
+        .pAttachments = &[_]vk.VkAttachmentDescription{colorAttachmentClear},
         .subpassCount = 1,
         .pSubpasses = &[_]vk.VkSubpassDescription{subpass},
-        .pDependencies = &dependency,
-        .dependencyCount = 1,
+        .pDependencies = null,
+        .dependencyCount = 0,
     };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkDepthRenderPass : {d}", .{result});
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPass : {d}", .{result});
 
-    renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachment2, depthAttachment2 };
+    renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{colorAttachmentImage};
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
 
-    result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass2);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkDepthRenderPass : {d}", .{result});
+    result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPassImage);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPassImage : {d}", .{result});
+
+    renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachmentImage, colorAttachmentLoadResolve };
+    renderPassInfo.attachmentCount = 2;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+    renderPassInfo.pSubpasses = &subpass_copy;
+
+    result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPassCopy);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPassImage : {d}", .{result});
+
+    renderPassInfo.dependencyCount = 0;
+    renderPassInfo.pDependencies = null;
+
+    renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachmentSampleClear, depthAttachmentSample, colorAttachmentResolve };
+    renderPassInfo.attachmentCount = 3;
+    renderPassInfo.pSubpasses = &subpass_resolve;
+
+    result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPassSampleClear);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPassSampleClear : {d}", .{result});
+
+    renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachmentSample, depthAttachmentSample, colorAttachmentResolve };
+
+    result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPassShape);
+    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPassShape : {d}", .{result});
 
     //create_shader_stages
     //shape_vert_shader = createShaderModule(shape_vert);
@@ -1033,11 +1245,13 @@ pub fn vulkan_start() void {
     tex_frag_shader = createShaderModule(tex_frag);
     animate_tex_vert_shader = createShaderModule(animate_tex_vert);
     animate_tex_frag_shader = createShaderModule(animate_tex_frag);
+    screen_copy_frag_shader = createShaderModule(screen_copy_frag);
 
     shape_curve_shader_stages = create_shader_state(shape_curve_vert_shader, shape_curve_frag_shader);
     quad_shape_shader_stages = create_shader_state(quad_shape_vert_shader, quad_shape_frag_shader);
     tex_shader_stages = create_shader_state(tex_vert_shader, tex_frag_shader);
     animate_tex_shader_stages = create_shader_state(animate_tex_vert_shader, animate_tex_frag_shader);
+    screen_copy_shader_frag_stage = create_frag_shader_state(screen_copy_frag_shader);
 
     //quad_shape_2d_pipeline
     {
@@ -1255,6 +1469,58 @@ pub fn vulkan_start() void {
         result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &animate_tex_2d_pipeline_set.pipelineLayout);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout animate_tex_2d_pipeline_set.pipelineLayout : {d}", .{result});
     }
+    //create_screen_copy
+    {
+        const uboLayoutBinding2 = [_]vk.VkDescriptorSetLayoutBinding{
+            vk.VkDescriptorSetLayoutBinding{
+                .binding = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk.VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+                .stageFlags = vk.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .pImmutableSamplers = null,
+            },
+        };
+        const set_layout_info2: vk.VkDescriptorSetLayoutCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = uboLayoutBinding2.len,
+            .pBindings = &uboLayoutBinding2,
+        };
+        result = vk.vkCreateDescriptorSetLayout(vkDevice, &set_layout_info2, null, &copy_screen_pipeline_set.descriptorSetLayout);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDescriptorSetLayout tex_2d_pipeline_set.descriptorSetLayout2 : {d}", .{result});
+
+        const pipelineLayoutInfo: vk.VkPipelineLayoutCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 1,
+            .pSetLayouts = &copy_screen_pipeline_set.descriptorSetLayout,
+            .pushConstantRangeCount = 0,
+            .pPushConstantRanges = null,
+        };
+
+        result = vk.vkCreatePipelineLayout(vkDevice, &pipelineLayoutInfo, null, &copy_screen_pipeline_set.pipelineLayout);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreatePipelineLayout animate_tex_2d_pipeline_set.pipelineLayout : {d}", .{result});
+
+        const pool_size = [1]vk.VkDescriptorPoolSize{.{
+            .descriptorCount = 1,
+            .type = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        }};
+        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = pool_size.len,
+            .pPoolSizes = &pool_size,
+            .maxSets = 1,
+        };
+        result = vk.vkCreateDescriptorPool(vkDevice, &pool_info, null, &copy_image_pool);
+        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
+
+        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = copy_image_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &copy_screen_pipeline_set.descriptorSetLayout,
+        };
+        result = vk.vkAllocateDescriptorSets(vkDevice, &alloc_info, &copy_image_set);
+        system.handle_error(result == vk.VK_SUCCESS, "vulkan start vkAllocateDescriptorSets : {d}", .{result});
+    }
     create_pipelines();
 
     create_framebuffer();
@@ -1280,6 +1546,9 @@ pub fn vulkan_start() void {
     result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, &vkCommandBuffer);
     system.handle_error(result == vk.VK_SUCCESS, "vulkan_start vkAllocateCommandBuffers vkCommandPool : {d}", .{result});
 
+    result = vk.vkAllocateCommandBuffers(vkDevice, &allocInfo, &vkCopyCommandBuffer);
+    system.handle_error(result == vk.VK_SUCCESS, "vulkan_start vkAllocateCommandBuffers vkCommandPool : {d}", .{result});
+
     __render_command.start();
 
     set_fullscreen_ex();
@@ -1291,33 +1560,6 @@ pub fn vulkan_start() void {
 
     no_color_tran = graphics.color_transform.init();
     no_color_tran.build(.read_gpu);
-
-    var sampler_info: vk.VkSamplerCreateInfo = .{
-        .addressModeU = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = vk.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .mipmapMode = vk.VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .magFilter = vk.VK_FILTER_LINEAR,
-        .minFilter = vk.VK_FILTER_LINEAR,
-        .mipLodBias = 0,
-        .compareOp = vk.VK_COMPARE_OP_ALWAYS,
-        .compareEnable = vk.VK_FALSE,
-        .unnormalizedCoordinates = vk.VK_FALSE,
-        .minLod = 0,
-        .maxLod = 0,
-        .anisotropyEnable = vk.VK_FALSE,
-        .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-        .borderColor = vk.VK_BORDER_COLOR_INT_OPAQUE_WHITE,
-    };
-    result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &linear_sampler);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler linear_sampler : {d}", .{result});
-
-    sampler_info.mipmapMode = vk.VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    sampler_info.magFilter = vk.VK_FILTER_NEAREST;
-    sampler_info.minFilter = vk.VK_FILTER_NEAREST;
-    result = vk.vkCreateSampler(vkDevice, &sampler_info, null, &nearest_sampler);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateSampler nearest_sampler : {d}", .{result});
-
     //
 }
 
@@ -1357,6 +1599,7 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyShaderModule(vkDevice, tex_frag_shader, null);
     vk.vkDestroyShaderModule(vkDevice, animate_tex_vert_shader, null);
     vk.vkDestroyShaderModule(vkDevice, animate_tex_frag_shader, null);
+    vk.vkDestroyShaderModule(vkDevice, screen_copy_frag_shader, null);
 
     vk.vkDestroyPipelineLayout(vkDevice, quad_shape_2d_pipeline_set.pipelineLayout, null);
     vk.vkDestroyDescriptorSetLayout(vkDevice, quad_shape_2d_pipeline_set.descriptorSetLayout, null);
@@ -1371,10 +1614,18 @@ pub fn vulkan_destroy() void {
     vk.vkDestroyPipelineLayout(vkDevice, animate_tex_2d_pipeline_set.pipelineLayout, null);
     vk.vkDestroyDescriptorSetLayout(vkDevice, animate_tex_2d_pipeline_set.descriptorSetLayout, null);
 
+    vk.vkDestroyPipelineLayout(vkDevice, copy_screen_pipeline_set.pipelineLayout, null);
+    vk.vkDestroyDescriptorSetLayout(vkDevice, copy_screen_pipeline_set.descriptorSetLayout, null);
+
     cleanup_pipelines();
 
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
-    vk.vkDestroyRenderPass(vkDevice, vkRenderPass2, null);
+    vk.vkDestroyRenderPass(vkDevice, vkRenderPassImage, null);
+    vk.vkDestroyRenderPass(vkDevice, vkRenderPassSampleClear, null);
+    vk.vkDestroyRenderPass(vkDevice, vkRenderPassShape, null);
+    vk.vkDestroyRenderPass(vkDevice, vkRenderPassCopy, null);
+
+    vk.vkDestroyDescriptorPool(vkDevice, copy_image_pool, null);
 
     vk.vkDestroySurfaceKHR(vkInstance, vkSurface, null);
 
@@ -1401,10 +1652,16 @@ fn cleanup_swapchain() void {
         var i: usize = 0;
         while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
             vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers[i], null);
+            vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers_shape[i], null);
+            vk.vkDestroyFramebuffer(vkDevice, vk_swapchain_frame_buffers_copy[i], null);
         }
-        depth_stencil_image.clean();
-        //if (depth_stencil_image.pvulkan_buffer != null and depth_stencil_image.pvulkan_buffer.?.*.is_empty()) depth_stencil_image.pvulkan_buffer.?.*.deinit();
+        depth_stencil_image_sample.clean();
+        color_image_sample.clean();
+        color_image.clean();
+        //if (depth_stencil_image_sample.pvulkan_buffer != null and depth_stencil_image_sample.pvulkan_buffer.?.*.is_empty()) depth_stencil_image_sample.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
+        __system.allocator.free(vk_swapchain_frame_buffers_shape);
+        __system.allocator.free(vk_swapchain_frame_buffers_copy);
         i = 0;
         while (i < vk_swapchain_image_views.len) : (i += 1) {
             vk.vkDestroyImageView(vkDevice, vk_swapchain_image_views[i], null);
@@ -1420,8 +1677,12 @@ fn cleanup_swapchain() void {
 fn create_framebuffer() void {
     vk_swapchain_frame_buffers = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch
         system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory");
+    vk_swapchain_frame_buffers_shape = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch
+        system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory");
+    vk_swapchain_frame_buffers_copy = __system.allocator.alloc(vk.VkFramebuffer, vk_swapchain_image_views.len) catch
+        system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(vk.VkFramebuffer) OutOfMemory");
 
-    const img_info: vk.VkImageCreateInfo = .{
+    var img_info: vk.VkImageCreateInfo = .{
         .arrayLayers = 1,
         .extent = .{ .width = vkExtent_rotation.width, .height = vkExtent_rotation.height, .depth = 1 },
         .flags = 0,
@@ -1431,30 +1692,69 @@ fn create_framebuffer() void {
         .mipLevels = 1,
         .pQueueFamilyIndices = null,
         .queueFamilyIndexCount = 0,
-        .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+        .samples = vk.VK_SAMPLE_COUNT_4_BIT,
         .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
         .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
         .usage = vk.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
     };
     graphics.check_vk_allocator();
-    vk_allocator.?.*.create_frame_buffer_image(&img_info, &depth_stencil_image);
+    vk_allocator.?.*.create_frame_buffer_image(&img_info, &depth_stencil_image_sample);
+    img_info.format = format.format;
+    img_info.usage = vk.VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    vk_allocator.?.*.create_frame_buffer_image(&img_info, &color_image_sample);
+    img_info.usage = vk.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | vk.VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    img_info.samples = vk.VK_SAMPLE_COUNT_1_BIT;
+    vk_allocator.?.*.create_frame_buffer_image(&img_info, &color_image);
 
     var i: usize = 0;
     while (i < vk_swapchain_image_views.len) : (i += 1) {
-        const attachments = [_]vk.VkImageView{ vk_swapchain_image_views[i], depth_stencil_image.__image_view };
+        const attachments = [_]vk.VkImageView{ color_image_sample.__image_view, depth_stencil_image_sample.__image_view, color_image.__image_view };
         var frameBufferInfo: vk.VkFramebufferCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = vkRenderPass,
-            .attachmentCount = 2,
+            .renderPass = vkRenderPassShape,
+            .attachmentCount = 3,
             .pAttachments = &attachments,
             .width = vkExtent_rotation.width,
             .height = vkExtent_rotation.height,
             .layers = 1,
         };
 
-        const result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
+        var result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers_shape[i]);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer vkCreateFramebuffer vk_swapchain_frame_buffers_shape : {d}", .{result});
+
+        frameBufferInfo.attachmentCount = 1;
+        frameBufferInfo.pAttachments = &vk_swapchain_image_views[i];
+        frameBufferInfo.renderPass = vkRenderPass;
+
+        result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers[i]);
+        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer vkCreateFramebuffer vk_swapchain_frame_buffers : {d}", .{result});
+
+        frameBufferInfo.attachmentCount = 2;
+        frameBufferInfo.pAttachments = &[_]vk.VkImageView{ vk_swapchain_image_views[i], color_image.__image_view };
+        frameBufferInfo.renderPass = vkRenderPassCopy;
+
+        result = vk.vkCreateFramebuffer(vkDevice, &frameBufferInfo, null, &vk_swapchain_frame_buffers_copy[i]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.create_framebuffer vkCreateFramebuffer vk_swapchain_frame_buffers : {d}", .{result});
     }
+
+    const imageInfo: vk.VkDescriptorImageInfo = .{
+        .imageLayout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .imageView = color_image.__image_view,
+        .sampler = null,
+    };
+    const descriptorWrite = [_]vk.VkWriteDescriptorSet{
+        .{
+            .dstSet = copy_image_set,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk.VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+            .pBufferInfo = null,
+            .pImageInfo = &imageInfo,
+            .pTexelBufferView = null,
+        },
+    };
+    vk.vkUpdateDescriptorSets(vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
 
     refesh_pre_matrix();
 }
@@ -1543,8 +1843,6 @@ fn create_swapchain_and_imageviews() void {
     @atomicStore(i32, &__system.init_set.window_height, @intCast(vkExtent.height), std.builtin.AtomicOrder.monotonic);
 
     format = chooseSwapSurfaceFormat(formats);
-    colorAttachment.format = format.format;
-    colorAttachment2.format = format.format;
     const presentMode = chooseSwapPresentMode(presentModes, __system.init_set.vSync);
 
     var imageCount = surfaceCap.minImageCount + 1;
@@ -1779,6 +2077,8 @@ pub fn recreate_swapchain() void {
     root.xfit_size();
 }
 
+var drew_shape = false;
+
 pub fn drawFrame() void {
     var imageIndex: u32 = 0;
     const state = struct {
@@ -1807,23 +2107,30 @@ pub fn drawFrame() void {
             return;
         }
 
-        const cmds = __system.allocator.alloc(vk.VkCommandBuffer, graphics.render_cmd.?.len + 1) catch system.handle_error_msg2("drawframe cmds alloc");
+        const cmds = __system.allocator.alloc(vk.VkCommandBuffer, graphics.render_cmd.?.len + 2) catch system.handle_error_msg2("drawframe cmds alloc");
         defer __system.allocator.free(cmds);
 
         cmds[0] = vkCommandBuffer;
+        cmds[cmds.len - 1] = vkCopyCommandBuffer;
 
-        for (graphics.render_cmd.?, cmds[1..cmds.len]) |cmd, *v| {
+        var refreshed = false;
+
+        for (graphics.render_cmd.?, cmds[1 .. cmds.len - 1]) |cmd, *v| {
             if (@atomicLoad(bool, &cmd.*.__refesh[state.frame], .monotonic)) {
                 @atomicStore(bool, &cmd.*.__refesh[state.frame], false, .monotonic);
+                if (!refreshed) {
+                    drew_shape = false;
+                }
                 recordCommandBuffer(cmd, @intCast(state.frame));
+                refreshed = true;
             }
             v.* = cmd.*.__command_buffers[state.frame][imageIndex];
         }
 
         const waitStages: u32 = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        const submitInfo: vk.VkSubmitInfo = .{
+        var submitInfo: vk.VkSubmitInfo = .{
             .waitSemaphoreCount = 1,
-            .commandBufferCount = @intCast(cmds.len),
+            .commandBufferCount = @intCast(cmds.len - 1),
             .signalSemaphoreCount = 1,
             .pWaitSemaphores = &vkImageAvailableSemaphore[state.frame],
             .pWaitDstStageMask = &waitStages,
@@ -1833,7 +2140,7 @@ pub fn drawFrame() void {
 
         const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
         const clearDepthStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
-        const renderPassInfo: vk.VkRenderPassBeginInfo = .{
+        var renderPassInfo: vk.VkRenderPassBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = vkRenderPass,
             .framebuffer = vk_swapchain_frame_buffers[imageIndex],
@@ -1850,9 +2157,53 @@ pub fn drawFrame() void {
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkBeginCommandBuffer : {d}", .{result});
         vk.vkCmdBeginRenderPass(vkCommandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
         vk.vkCmdEndRenderPass(vkCommandBuffer);
+        renderPassInfo.renderPass = vkRenderPassSampleClear;
+        renderPassInfo.framebuffer = vk_swapchain_frame_buffers_shape[imageIndex];
+        vk.vkCmdBeginRenderPass(vkCommandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
+        vk.vkCmdEndRenderPass(vkCommandBuffer);
         result = vk.vkEndCommandBuffer(vkCommandBuffer);
-
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkEndCommandBuffer : {d}", .{result});
+
+        if (drew_shape) {
+            submitInfo.commandBufferCount += 1;
+            renderPassInfo.renderPass = vkRenderPassCopy;
+            renderPassInfo.framebuffer = vk_swapchain_frame_buffers_copy[imageIndex];
+            renderPassInfo.clearValueCount = 0;
+
+            result = vk.vkBeginCommandBuffer(vkCopyCommandBuffer, &beginInfo);
+            vk.vkCmdBeginRenderPass(vkCopyCommandBuffer, &renderPassInfo, vk.VK_SUBPASS_CONTENTS_INLINE);
+
+            const viewport: vk.VkViewport = .{
+                .x = 0,
+                .y = 0,
+                .width = @floatFromInt(vkExtent_rotation.width),
+                .height = @floatFromInt(vkExtent_rotation.height),
+                .maxDepth = 1,
+                .minDepth = 0,
+            };
+            const scissor: vk.VkRect2D = .{ .offset = vk.VkOffset2D{ .x = 0, .y = 0 }, .extent = vkExtent_rotation };
+
+            vk.vkCmdSetViewport(vkCopyCommandBuffer, 0, 1, @ptrCast(&viewport));
+            vk.vkCmdSetScissor(vkCopyCommandBuffer, 0, 1, @ptrCast(&scissor));
+
+            vk.vkCmdBindPipeline(vkCopyCommandBuffer, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, copy_screen_pipeline_set.pipeline);
+
+            vk.vkCmdBindDescriptorSets(
+                vkCopyCommandBuffer,
+                vk.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                copy_screen_pipeline_set.pipelineLayout,
+                0,
+                1,
+                &copy_image_set,
+                0,
+                null,
+            );
+            vk.vkCmdDraw(vkCopyCommandBuffer, 6, 1, 0, 0);
+
+            vk.vkCmdEndRenderPass(vkCopyCommandBuffer);
+            result = vk.vkEndCommandBuffer(vkCopyCommandBuffer);
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkEndCommandBuffer : {d}", .{result});
+        }
 
         result = vk.vkResetFences(vkDevice, 1, &vkInFlightFence[state.frame]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});

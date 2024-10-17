@@ -90,6 +90,12 @@ pub const iobject = union(iobject_type) {
             inline else => |*case| case.*.__draw(cmd),
         }
     }
+    pub inline fn get_pass(self: *Self) vk.VkRenderPass {
+        switch (self.*) {
+            ._shape, ._button => return __vulkan.vkRenderPassShape,
+            else => return __vulkan.vkRenderPassImage,
+        }
+    }
 };
 
 pub fn vertices(comptime vertexT: type) type {

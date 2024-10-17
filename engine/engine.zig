@@ -8,9 +8,9 @@ pub const XfitPlatform = enum(u32) { windows, android, linux, mac, end };
 //x86_64-windows(linux)
 // Android 쪽은 한번 테스트하고 안해서(Windows쪽 완성되면 할 예정) 버그 있을 겁니다.
 const ANDROID_PATH = "C:/Android";
-const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.11718014", .{ANDROID_PATH});
-const ANDROID_VER = 34;
-const ANDROID_BUILD_TOOL_VER = "34.0.0";
+const ANDROID_NDK_PATH = std.fmt.comptimePrint("{s}/ndk/27.0.12077973", .{ANDROID_PATH});
+const ANDROID_VER = 35;
+const ANDROID_BUILD_TOOL_VER = "35.0.0";
 ///(기본값)상대 경로 또는 절대 경로로 설정하기
 
 //keystore 없으면 생성
