@@ -48,7 +48,7 @@ pub fn init_block_len() void {
     }
 }
 
-const MAX_IDX_COUNT = 8;
+const MAX_IDX_COUNT = 4;
 const Self = @This();
 
 pub const ERROR = error{device_memory_limit};
@@ -873,7 +873,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
         }
         fn __destroy_buffer(self: *vulkan_res_node_Self) void {
             if (_res_type == .buffer) {
-                if (self.*.pvulkan_buffer != null) _ = self.*.pvulkan_buffer.?.*.unbind_res(self.*.res, self.*.idx);
+                if (self.*.pvulkan_buffer != null) self.*.pvulkan_buffer.?.*.unbind_res(self.*.res, self.*.idx);
                 self.*.res = null;
             } else {
                 @compileError("_res_type need buffer");
@@ -882,7 +882,7 @@ pub fn vulkan_res_node(_res_type: res_type) type {
         fn __destroy_image(self: *vulkan_res_node_Self) void {
             if (_res_type == .texture) {
                 vk.vkDestroyImageView(__vulkan.vkDevice, self.*.__image_view, null);
-                if (self.*.pvulkan_buffer != null) _ = self.*.pvulkan_buffer.?.*.unbind_res(self.*.res, self.*.idx);
+                if (self.*.pvulkan_buffer != null) self.*.pvulkan_buffer.?.*.unbind_res(self.*.res, self.*.idx);
                 self.*.res = null;
             } else {
                 @compileError("_res_type need image");
@@ -1160,7 +1160,7 @@ const vulkan_res = struct {
         return res;
     }
     ///bind_buffer에서 반환된 _res를 사용.
-    fn unbind_res(self: *vulkan_res, _buf: anytype, _res: *res_range) bool {
+    fn unbind_res(self: *vulkan_res, _buf: anytype, _res: *res_range) void {
         if (self.*.single) {
             switch (@TypeOf(_buf)) {
                 vk.VkBuffer => vk.vkDestroyBuffer(__vulkan.vkDevice, _buf, null),
@@ -1168,7 +1168,7 @@ const vulkan_res = struct {
                 else => @compileError("invaild buf type"),
             }
             self.*.deinit();
-            return false;
+            return;
         }
         const res: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(_res));
         res.*.data.free = true;
@@ -1192,11 +1192,19 @@ const vulkan_res = struct {
             else => @compileError("invaild buf type"),
         }
         if (self.*.len == 1 or self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] > MAX_IDX_COUNT) {
-            if (!self.*.is_empty()) return true;
-            self.*.deinit();
-            return false;
+            for (self.*.this.*.buffer_ids.items) |v| {
+                if (self != v and self.*.info.memoryTypeIndex == v.*.info.memoryTypeIndex) {
+                    if (v.*.is_empty()) {
+                        v.*.this.*.memory_idx_counts[v.*.info.memoryTypeIndex] -= 1;
+                        v.*.deinit();
+                    }
+                }
+            }
+            if (self.*.is_empty()) {
+                self.*.this.*.memory_idx_counts[self.*.info.memoryTypeIndex] -= 1;
+                self.*.deinit();
+            }
         }
-        return true;
     }
 };
 
