@@ -33,11 +33,11 @@ pub fn get_screen_orientation() screen_orientation {
     return @atomicLoad(screen_orientation, &__system.__screen_orientation, std.builtin.AtomicOrder.monotonic);
 }
 
-pub fn window_width() i32 {
-    return @atomicLoad(i32, &__system.init_set.window_width, std.builtin.AtomicOrder.monotonic);
+pub fn window_width() u32 {
+    return @atomicLoad(u32, &__system.init_set.window_width, std.builtin.AtomicOrder.monotonic);
 }
-pub fn window_height() i32 {
-    return @atomicLoad(i32, &__system.init_set.window_height, std.builtin.AtomicOrder.monotonic);
+pub fn window_height() u32 {
+    return @atomicLoad(u32, &__system.init_set.window_height, std.builtin.AtomicOrder.monotonic);
 }
 pub fn window_x() i32 {
     if (system.platform == .windows) {

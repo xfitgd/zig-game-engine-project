@@ -152,15 +152,15 @@ pub fn windows_start() void {
 
     var window_x: i32 = __system.init_set.window_x;
     var window_y: i32 = __system.init_set.window_y;
-    var window_width: i32 = __system.init_set.window_width;
-    var window_height: i32 = __system.init_set.window_height;
+    var window_width: u32 = __system.init_set.window_width;
+    var window_height: u32 = __system.init_set.window_height;
 
     if (__system.init_set.screen_mode != system.screen_mode.WINDOW) {
         if (__system.init_set.screen_index == system.init_setting.PRIMARY_SCREEN_INDEX) {
             window_x = __system.primary_monitor.*.rect.left;
             window_y = __system.primary_monitor.*.rect.top;
-            window_width = __system.primary_monitor.*.rect.width();
-            window_height = __system.primary_monitor.*.rect.height();
+            window_width = @intCast(__system.primary_monitor.*.rect.width());
+            window_height = @intCast(__system.primary_monitor.*.rect.height());
             if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) {
                 change_fullscreen(__system.primary_monitor, __system.primary_monitor.*.primary_resolution.?);
             }
@@ -168,8 +168,8 @@ pub fn windows_start() void {
             if (__system.monitors.items.len <= __system.init_set.screen_index) __system.init_set.screen_index = @intCast(__system.monitors.items.len - 1);
             window_x = __system.monitors.items[__system.init_set.screen_index].rect.left;
             window_y = __system.monitors.items[__system.init_set.screen_index].rect.top;
-            window_width = __system.monitors.items[__system.init_set.screen_index].rect.width();
-            window_height = __system.monitors.items[__system.init_set.screen_index].rect.height();
+            window_width = @intCast(__system.monitors.items[__system.init_set.screen_index].rect.width());
+            window_height = @intCast(__system.monitors.items[__system.init_set.screen_index].rect.height());
             if (__system.init_set.screen_mode == system.screen_mode.FULLSCREEN) {
                 change_fullscreen(&__system.monitors.items[__system.init_set.screen_index], __system.monitors.items[__system.init_set.screen_index].primary_resolution.?);
             }
@@ -178,7 +178,7 @@ pub fn windows_start() void {
 
     _ = win32.CreateThread(null, 0, render_thread, null, 0, &render_thread_id);
 
-    hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, window_width, window_height, null, null, hInstance, null) orelse system.handle_error2("windows_start.CreateWindowExA {d}", .{win32.GetLastError()});
+    hWnd = win32.CreateWindowExA(ex_style, CLASS_NAME, @ptrCast(__system.init_set.window_title), window_style, window_x, window_y, @bitCast(window_width), @bitCast(window_height), null, null, hInstance, null) orelse system.handle_error2("windows_start.CreateWindowExA {d}", .{win32.GetLastError()});
 
     const rid = [_]win32.RAWINPUTDEVICE{ .{
         .usUsagePage = 1,
@@ -216,7 +216,7 @@ pub fn set_window_mode() void {
         if (window.can_minimize()) win32.WS_MINIMIZEBOX else 0) |
         if (window.can_maximize()) win32.WS_MAXIMIZEBOX else 0;
 
-    var rect: RECT = .{ .left = 0, .top = 0, .right = __system.prev_window.width, .bottom = __system.prev_window.height };
+    var rect: RECT = .{ .left = 0, .top = 0, .right = @intCast(__system.prev_window.width), .bottom = @intCast(__system.prev_window.height) };
     _ = win32.AdjustWindowRect(&rect, style, FALSE);
 
     __vulkan.fullscreen_mutex.lock();

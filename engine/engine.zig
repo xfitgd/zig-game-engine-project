@@ -60,7 +60,12 @@ pub fn init(
         "../lib/x86_64",
     };
     const targets = [_]std.Target.Query{
-        .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{.v8a}) },
+        .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{
+            .v8a,
+            .v9a,
+            .neon,
+            .sve,
+        }) },
         //.{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
         //.{ .os_tag = .linux, .cpu_arch = .x86, .abi = .android },
         .{ .os_tag = .linux, .cpu_arch = .x86_64, .abi = .android },
@@ -140,7 +145,42 @@ pub fn init(
                 .dest_dir = .{ .override = .{ .custom = out_arch_text[i] } },
             }).step);
         } else if (PLATFORM == XfitPlatform.windows) {
-            const target = b.standardTargetOptions(.{ .default_target = .{ .os_tag = .windows } });
+            var target = b.standardTargetOptions(.{ .default_target = .{
+                .os_tag = .windows,
+            } });
+            if (target.result.cpu.arch == .x86_64) {
+                target.result.cpu.features.addFeatureSet(std.Target.x86.featureSet(&.{
+                    .avx512f,
+                    .avx512cd,
+                    .avx512dq,
+                    .avx512bw,
+                    .avx512vl,
+                    .avx512vl,
+                    .avx512bf16,
+                    .avx512fp16,
+                    .avx512ifma,
+                    .avx512vbmi,
+                    .avx512vbmi2,
+                    .avx512vnni,
+                    .avx512vpopcntdq,
+                    .avx512vp2intersect,
+                    .avx,
+                    .avx10_1_256,
+                    .avx10_1_512,
+                    .avx2,
+                }));
+            } else if (target.result.cpu.arch == .aarch64) {
+                target = b.standardTargetOptions(.{ .default_target = .{
+                    .os_tag = .windows,
+                    .cpu_features_add = std.Target.aarch64.featureSet(&.{
+                        .v8a,
+                        .v9a,
+                        .neon,
+                        .sve,
+                    }),
+                } });
+            }
+
             result = b.addExecutable(.{
                 .target = target,
                 .name = "XfitTest",

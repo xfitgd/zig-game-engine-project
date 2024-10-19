@@ -9,6 +9,7 @@ pub var allocator: std.mem.Allocator = undefined;
 const system = @import("system.zig");
 const window = @import("window.zig");
 const __vulkan = @import("__vulkan.zig");
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
 const math = @import("math.zig");
 const input = @import("input.zig");
 const mem = @import("mem.zig");
@@ -19,6 +20,8 @@ const __raw_input = @import("__raw_input.zig");
 const root = @import("root");
 
 pub var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+
+pub var vk_allocator: *__vulkan_allocator = undefined;
 
 comptime {
     @export(&lua_writestring, .{ .name = "lua_writestring", .linkage = .strong });
@@ -32,8 +35,8 @@ fn lua_writestring(ptr: ?*const anyopaque, size: usize) callconv(.C) usize {
 pub var prev_window: struct {
     x: i32,
     y: i32,
-    width: i32,
-    height: i32,
+    width: u32,
+    height: u32,
     state: window.window_state,
 } = undefined;
 
@@ -98,6 +101,7 @@ pub var general_input_callback: ?input.general_input.CallbackFn = null;
 
 pub fn init(_allocator: std.mem.Allocator, init_setting: *const system.init_setting) void {
     allocator = _allocator;
+
     monitors = ArrayList(system.monitor_info).init(allocator);
     if (system.platform == .android) {
         const width = init_set.window_width;
@@ -143,9 +147,13 @@ pub fn loop() void {
     }
     root.xfit_update();
 
+    vk_allocator.execute_all_op();
+    vk_allocator.wait_all_op_finish();
+
     if (!ispause) {
         __vulkan.drawFrame();
     }
+
     //system.print_debug("rendering {d}", .{system.delta_time()});
 }
 

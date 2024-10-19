@@ -62,7 +62,6 @@ fn callback2(
     if (@TypeOf(end_func) != @TypeOf(null)) {
         _ = callback_(end_func, end_args);
     }
-    graphics.deinit_vk_allocator_thread();
 }
 
 ///no spawn thread each callback function bool callback function return false or cause error -> exit timer

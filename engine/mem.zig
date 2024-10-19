@@ -13,11 +13,11 @@ pub inline fn memcpy_nonarray(dest: anytype, src: anytype) void {
 //// }
 ///src 타입 배열(Slice)을 u8 배열(Slice)로 변환한다.
 pub inline fn u8arr(src: anytype) []u8 {
-    return @as([*]u8, @ptrCast(src.ptr))[0..@sizeOf(@TypeOf(src))];
+    return @as([*]u8, @ptrCast(src.ptr))[0..(@sizeOf(@TypeOf(src[0])) * src.len)];
 }
 ///src 타입 배열(Slice)을 u8 배열(Slice)로 변환한다.
 pub inline fn u8arrC(src: anytype) []const u8 {
-    return @as([*]const u8, @ptrCast(src.ptr))[0..@sizeOf(@TypeOf(src))];
+    return @as([*]const u8, @ptrCast(src.ptr))[0..(@sizeOf(@TypeOf(src[0])) * src.len)];
 }
 ///src 객체 포인터를 u8 배열(Slice)로 변환한다.
 pub inline fn obj_to_u8arr(src: anytype) []u8 {
@@ -29,11 +29,11 @@ pub inline fn obj_to_u8arrC(src: anytype) []const u8 {
 }
 ///src 타입 배열(Slice)을 dest_type 타입 배열(Slice)로 변환한다.
 pub inline fn cvtarr(comptime dest_type: type, src: anytype) []dest_type {
-    return @as([*]dest_type, src.ptr)[0..@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(dest_type))];
+    return @as([*]dest_type, src.ptr)[0..@divFloor((@sizeOf(@TypeOf(src[0])) * src.len), @sizeOf(dest_type))];
 }
 ///src 타입 배열(Slice)을 dest_type 타입 배열(Slice)로 변환한다.
 pub inline fn cvtarrC(comptime dest_type: type, src: anytype) []const dest_type {
-    return @as([*]const dest_type, src.ptr)[0..@divFloor(@sizeOf(@TypeOf(src)), @sizeOf(dest_type))];
+    return @as([*]const dest_type, src.ptr)[0..@divFloor((@sizeOf(@TypeOf(src[0])) * src.len), @sizeOf(dest_type))];
 }
 
 pub const check_alloc = struct {

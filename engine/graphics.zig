@@ -37,7 +37,7 @@ pub fn take_vertices(dest_type: type, src_ptrmempool: anytype) !dest_type {
 }
 pub const take_indices = take_vertices;
 
-pub const write_flag = enum { read_gpu, readwrite_cpu };
+pub const write_flag = __vulkan_allocator.res_usage;
 
 pub const shape_color_vertex_2d = extern struct {
     pos: point align(1),
@@ -56,6 +56,53 @@ pub const DEF_IDX_TYPE_: index_type = .U32;
 pub const DEF_IDX_TYPE = indices_(DEF_IDX_TYPE_).idxT;
 
 const components = @import("components.zig");
+
+const descriptor_pool_size = __vulkan_allocator.descriptor_pool_size;
+const descriptor_set = __vulkan_allocator.descriptor_set;
+const descriptor_pool_memory = __vulkan_allocator.descriptor_pool_memory;
+const res_union = __vulkan_allocator.res_union;
+
+pub const single_sampler_pool_sizes: [1]descriptor_pool_size = .{
+    .{
+        .typ = .sampler,
+        .cnt = 1,
+    },
+};
+pub const single_pool_binding: [1]c_uint = .{0};
+pub const single_uniform_pool_sizes: [1]descriptor_pool_size = .{
+    .{
+        .typ = .uniform,
+        .cnt = 1,
+    },
+};
+pub const transform_uniform_pool_sizes: [1]descriptor_pool_size = .{
+    .{
+        .typ = .uniform,
+        .cnt = 4,
+    },
+};
+pub const image_uniform_pool_sizes: [2]descriptor_pool_size = .{
+    .{
+        .typ = .uniform,
+        .cnt = 4,
+    },
+    .{
+        .typ = .uniform,
+        .cnt = 1,
+    },
+};
+pub const image_uniform_pool_binding: [2]c_uint = .{ 0, 4 };
+pub const animate_image_uniform_pool_sizes: [2]descriptor_pool_size = .{
+    .{
+        .typ = .uniform,
+        .cnt = 4,
+    },
+    .{
+        .typ = .uniform,
+        .cnt = 2,
+    },
+};
+pub const animate_image_uniform_pool_binding: [2]c_uint = .{ 0, 4 };
 
 const iobject_type = enum {
     _shape,
@@ -88,12 +135,6 @@ pub const iobject = union(iobject_type) {
     pub inline fn __draw(self: *Self, cmd: vk.VkCommandBuffer) void {
         switch (self.*) {
             inline else => |*case| case.*.__draw(cmd),
-        }
-    }
-    pub inline fn get_pass(self: *Self) vk.VkRenderPass {
-        switch (self.*) {
-            ._shape, ._button => return __vulkan.vkRenderPassShape,
-            else => return __vulkan.vkRenderPassImage,
         }
     }
 };
@@ -130,84 +171,17 @@ pub fn vertices(comptime vertexT: type) type {
                 system.print_error("WARN vertice array 0 or null\n", .{});
                 return error.is_not_polygon;
             }
-            create_buffer(vk.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, _flag, @sizeOf(vertexT) * self.*.array.?.len, &self.*.node, std.mem.sliceAsBytes(self.*.array.?));
-            self.*.node.__resource_len = @intCast(self.*.array.?.len);
+            self.*.node.create_buffer(.{
+                .len = @intCast(self.*.array.?.len * @sizeOf(vertexT)),
+                .typ = .vertex,
+                .use = _flag,
+            }, mem.u8arrC(self.*.array.?));
         }
-        ///write_flag가 readwrite_cpu만 호출
-        pub fn map_update(self: *Self) void {
-            self.*.node.map_update(self.*.array.?.ptr);
+        ///write_flag가 cpu일때만 호출
+        pub fn copy_update(self: *Self) void {
+            self.*.node.copy_update(self.*.array.?.ptr);
         }
     };
-}
-
-pub fn check_vk_allocator() void {
-    if (__vulkan.vk_allocator == null) {
-        __vulkan.vk_allocator_mutex.lock();
-        if (__vulkan.vk_allocator_use_free) {
-            for (__vulkan.vk_allocators.items) |v| {
-                if (v.*.is_free) {
-                    __vulkan.vk_allocator = &v.*.alloc;
-                    v.*.is_free = false;
-                    break;
-                }
-            }
-            __vulkan.vk_allocator_free_count -= 1;
-            if (__vulkan.vk_allocator_free_count == 0) {
-                __vulkan.vk_allocator_use_free = false;
-            }
-        } else {
-            const res = __vulkan.pvk_allocators.create() catch |e| system.handle_error3("graphics.check_vk_allocator.pvk_allocators.create()", e);
-            res.*.alloc = __vulkan_allocator.init();
-            res.*.is_free = false;
-            __vulkan.vk_allocators.append(res) catch |e| system.handle_error3("graphics.check_vk_allocator.vk_allocators.append()", e);
-            __vulkan.vk_allocator = &res.*.alloc;
-        }
-        __vulkan.vk_allocator_mutex.unlock();
-    }
-}
-
-///다른 스레드에서 graphics 개체.build 함수를 호출해서 메모리를 할당한적이 있을때 호출합니다. -> 안했으면 null 검사로 넘어감.
-pub fn deinit_vk_allocator_thread() void {
-    if (__vulkan.vk_allocator != null) {
-        __vulkan.vk_allocator_mutex.lock();
-        defer __vulkan.vk_allocator_mutex.unlock();
-        if (__vulkan.vk_allocator_is_destroyed) return;
-        if (__vulkan.vk_allocator == &__vulkan.vk_allocators.items[0].alloc) { //0번은 메인스레드라 지우면 안됩니다.
-            system.print_error("WARN cant deinit main thread vk_allocators.items[0]\n", .{});
-            return;
-        }
-
-        var i: usize = 0;
-        for (__vulkan.vk_allocators.items) |v| {
-            if (&v.*.alloc == __vulkan.vk_allocator) {
-                if (__vulkan.vk_allocators.items.len > __vulkan.vk_allocator_FREE_MAX) {
-                    v.*.alloc.deinit();
-                    _ = __vulkan.vk_allocators.orderedRemove(i);
-                    __vulkan.pvk_allocators.destroy(v);
-                } else {
-                    v.*.is_free = true;
-                    __vulkan.vk_allocator_free_count += 1;
-
-                    if (__vulkan.vk_allocator_free_count >= __vulkan.vk_allocator_FREE_MAX) __vulkan.vk_allocator_use_free = true;
-                }
-                break;
-            }
-            i += 1;
-        }
-        __vulkan.vk_allocator = null;
-    }
-}
-
-pub fn create_buffer(usage: vk.VkBufferUsageFlags, _flag: write_flag, size: u64, _out_vulkan_buffer_node: *vulkan_res_node(.buffer), _data: ?[]const u8) void {
-    const buf_info: vk.VkBufferCreateInfo = .{ .sType = vk.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = usage, .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE };
-
-    const prop: vk.VkMemoryPropertyFlags =
-        switch (_flag) {
-        .read_gpu => vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        .readwrite_cpu => vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    };
-    check_vk_allocator();
-    __vulkan.vk_allocator.?.*.create_buffer(&buf_info, prop, _out_vulkan_buffer_node, _data);
 }
 
 pub fn indices_(comptime _type: index_type) type {
@@ -245,12 +219,15 @@ pub fn indices_(comptime _type: index_type) type {
         }
         pub fn build(self: *Self, _flag: write_flag) void {
             self.*.__check_init.init();
-            create_buffer(vk.VK_BUFFER_USAGE_INDEX_BUFFER_BIT, _flag, @sizeOf(idxT) * self.*.array.?.len, &self.*.node, std.mem.sliceAsBytes(self.*.array.?));
-            self.*.node.__resource_len = @intCast(self.*.array.?.len);
+            self.*.node.create_buffer(.{
+                .len = @intCast(self.*.array.?.len * @sizeOf(idxT)),
+                .typ = .index,
+                .use = _flag,
+            }, mem.u8arrC(self.*.array.?));
         }
-        ///write_flag가 readwrite_cpu만 호출
-        pub fn map_update(self: *Self) void {
-            self.*.node.map_update(self.*.array.?.ptr);
+        ///write_flag가 cpu일때만 호출
+        pub fn copy_update(self: *Self) void {
+            self.*.node.copy_update(self.*.array.?.ptr);
         }
     };
 }
@@ -305,10 +282,15 @@ pub const projection = struct {
     }
     pub fn build(self: *Self, _flag: write_flag) void {
         self.*.__check_alloc.init(__system.allocator);
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, mem.obj_to_u8arrC(&self.*.proj));
+        self.*.__uniform.create_buffer(.{
+            .len = @sizeOf(matrix),
+            .typ = .uniform,
+            .use = _flag,
+        }, mem.obj_to_u8arrC(&self.*.proj));
     }
-    pub fn map_update(self: *Self) void {
-        self.*.__uniform.map_update(&self.*.proj);
+    ///write_flag가 cpu일때만 호출
+    pub fn copy_update(self: *Self) void {
+        self.*.__uniform.copy_update(&self.*.proj);
     }
 };
 pub const camera = struct {
@@ -321,18 +303,22 @@ pub const camera = struct {
     pub fn init(eyepos: vector, focuspos: vector, updir: vector) Self {
         var res = Self{ .view = matrix.lookAtLh(eyepos, focuspos, updir) };
         res.__check_alloc.init(__system.allocator);
-        build(&res, .readwrite_cpu);
         return res;
     }
     pub inline fn deinit(self: *Self) void {
         self.*.__check_alloc.deinit();
         self.*.__uniform.clean();
     }
-    fn build(self: *Self, _flag: write_flag) void {
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, mem.obj_to_u8arrC(&self.*.view));
+    pub fn build(self: *Self) void {
+        self.*.__uniform.create_buffer(.{
+            .len = @sizeOf(matrix),
+            .typ = .uniform,
+            .use = .cpu,
+        }, mem.obj_to_u8arrC(&self.*.view));
     }
-    pub fn map_update(self: *Self) void {
-        self.*.__uniform.map_update(&self.*.view);
+    ///write_flag가 cpu일때만 호출
+    pub fn copy_update(self: *Self) void {
+        self.*.__uniform.copy_update(&self.*.view);
     }
 };
 pub const color_transform = struct {
@@ -356,11 +342,16 @@ pub const color_transform = struct {
     }
     pub fn build(self: *Self, _flag: write_flag) void {
         self.*.__check_alloc.init(__system.allocator);
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _flag, @sizeOf(matrix), &self.*.__uniform, mem.obj_to_u8arrC(&self.*.color_mat));
+        self.*.__uniform.create_buffer(.{
+            .len = @sizeOf(matrix),
+            .typ = .uniform,
+            .use = _flag,
+        }, mem.obj_to_u8arrC(&self.*.color_mat));
     }
-    pub fn map_update(self: *Self) void {
+    ///write_flag가 cpu일때만 호출
+    pub fn copy_update(self: *Self) void {
         self.*.__check_alloc.check_inited();
-        self.*.__uniform.map_update(&self.*.color_mat);
+        self.*.__uniform.copy_update(&self.*.color_mat);
     }
 };
 
@@ -371,9 +362,10 @@ pub const transform = struct {
     parent_type: iobject_type,
 
     model: matrix = matrix.identity(),
-    ///이 값이 변경되면 update 필요
+    __model: matrix = undefined,
+    ///이 값 자체가 변경되면 iobject.update 필요
     camera: ?*camera = null,
-    ///이 값이 변경되면 update 필요
+    ///이 값 자체가 변경되면 iobject.update 필요
     projection: ?*projection = null,
     __model_uniform: vulkan_res_node(.buffer) = .{},
 
@@ -392,32 +384,40 @@ pub const transform = struct {
     }
     inline fn get_mat(self: *Self) matrix {
         switch (self.*.parent_type) {
-            inline ._image, ._anim_image => |e| return get_mat_set_wh(self, std.meta.TagPayload(iobject, e)),
+            inline ._image, ._anim_image => |e| {
+                return get_mat_set_wh(self, std.meta.TagPayload(iobject, e));
+            },
             else => return self.*.model,
         }
     }
     pub inline fn __build(self: *Self) void {
         self.*.__check_init.init();
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(matrix), &self.*.__model_uniform, mem.obj_to_u8arrC(&get_mat(self)));
+        self.*.__model = get_mat(self);
+        self.*.__model_uniform.create_buffer(.{
+            .len = @sizeOf(matrix),
+            .typ = .uniform,
+            .use = .cpu,
+        }, mem.obj_to_u8arrC(&self.*.__model));
     }
     ///write_flag가 readwrite_cpu일때만 호출
-    pub fn map_update(self: *Self) void {
+    pub fn copy_update(self: *Self) void {
         self.*.__check_init.check_inited();
-        self.*.__model_uniform.map_update(&get_mat(self));
+        self.*.__model = get_mat(self);
+        self.*.__model_uniform.copy_update(&self.*.__model);
     }
 };
 
 pub const texture = struct {
     const Self = @This();
-    __image: vulkan_res_node(.image) = .{},
+    __image: vulkan_res_node(.texture) = .{},
     width: u32 = 0,
     height: u32 = 0,
     pixels: ?[]u8 = null,
     vertices: *vertices(tex_vertex_2d),
     indices: ?*indices32,
     sampler: vk.VkSampler,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = undefined,
+    __set: descriptor_set,
+    __set_res: [1]res_union = .{undefined},
     __check_init: mem.check_init = .{},
 
     pub fn get_default_quad_image_vertices() *vertices(tex_vertex_2d) {
@@ -435,13 +435,17 @@ pub const texture = struct {
             .vertices = get_default_quad_image_vertices(),
             .indices = null,
             .sampler = get_default_linear_sampler(),
+            .__set = .{
+                .bindings = single_pool_binding[0..1],
+                .size = single_sampler_pool_sizes[0..1],
+                .layout = __vulkan.tex_2d_pipeline_set.descriptorSetLayout2,
+            },
         };
     }
 
     pub inline fn deinit(self: *Self) void {
         self.*.__check_init.deinit();
         self.*.__image.clean();
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
     }
     pub fn build(self: *Self) void {
         self.*.__check_init.init();
@@ -449,76 +453,30 @@ pub const texture = struct {
             system.print_error("WARN can't build texture\n", .{});
             return;
         }
-        const img_info: vk.VkImageCreateInfo = .{
-            .arrayLayers = 1,
-            .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
-            .flags = 0,
-            .format = vk.VK_FORMAT_R8G8B8A8_UNORM,
-            .imageType = vk.VK_IMAGE_TYPE_2D,
-            .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
-            .mipLevels = 1,
-            .pQueueFamilyIndices = null,
-            .queueFamilyIndexCount = 0,
-            .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-            .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
-            .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
-            .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
-        };
-        check_vk_allocator();
-        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
-
-        var result: vk.VkResult = undefined;
-
-        const pool_size = [1]vk.VkDescriptorPoolSize{.{
-            .descriptorCount = 1,
-            .type = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        }};
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
-
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.tex_2d_pipeline_set.descriptorSetLayout2,
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkAllocateDescriptorSets : {d}", .{result});
-
-        const imageInfo: vk.VkDescriptorImageInfo = .{
-            .imageLayout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .imageView = self.*.__image.__image_view,
-            .sampler = self.*.sampler,
-        };
-        const descriptorWrite = [_]vk.VkWriteDescriptorSet{
-            .{
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pBufferInfo = null,
-                .pImageInfo = &imageInfo,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
+        self.*.__image.create_texture(.{
+            .width = self.*.width,
+            .height = self.*.height,
+        }, self.*.sampler, self.*.pixels.?);
+        self.*.__set_res[0] = .{ .tex = &self.*.__image };
+        self.*.__set.res = self.*.__set_res[0..1];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
-    pub fn copy(self: *Self, _data: []const u8, rect: ?math.recti) void {
-        check_vk_allocator();
-        __vulkan.vk_allocator.?.*.copy_texture(self, _data, rect);
-    }
+    // pub fn copy(self: *Self, _data: []const u8, rect: ?math.recti) void {
+    //     __vulkan.vk_allocator.?.*.copy_texture(self, _data, rect);
+    // }
 };
+
+pub fn execute_all_op() void {
+    __system.vk_allocator.execute_all_op();
+}
+
+pub fn wait_all_op_finish() void {
+    __system.vk_allocator.wait_all_op_finish();
+}
 
 pub const texture_array = struct {
     const Self = @This();
-    __image: vulkan_res_node(.image) = .{},
+    __image: vulkan_res_node(.texture) = .{},
     width: u32 = 0,
     height: u32 = 0,
     frames: u32 = 0,
@@ -527,8 +485,8 @@ pub const texture_array = struct {
     vertices: *vertices(tex_vertex_2d),
     indices: ?*indices32,
     sampler: vk.VkSampler,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = undefined,
+    __set: descriptor_set,
+    __set_res: [1]res_union = .{undefined},
     __check_init: mem.check_init = .{},
 
     pub fn get_default_quad_image_vertices() *vertices(tex_vertex_2d) {
@@ -541,7 +499,7 @@ pub const texture_array = struct {
         return __vulkan.nearest_sampler;
     }
     pub fn get_frame_count_build(self: *Self) u32 {
-        return self.*.__image.__resource_len;
+        return self.*.__image.texture_option.len;
     }
 
     pub fn init() Self {
@@ -549,13 +507,17 @@ pub const texture_array = struct {
             .vertices = get_default_quad_image_vertices(),
             .indices = null,
             .sampler = get_default_linear_sampler(),
+            .__set = .{
+                .bindings = single_pool_binding[0..1],
+                .size = single_sampler_pool_sizes[0..1],
+                .layout = __vulkan.tex_2d_pipeline_set.descriptorSetLayout2,
+            },
         };
     }
 
     pub inline fn deinit(self: *Self) void {
         self.*.__check_init.deinit();
         self.*.__image.clean();
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
     }
     pub fn build(self: *Self) void {
         self.*.__check_init.init();
@@ -563,66 +525,14 @@ pub const texture_array = struct {
             system.print_error("WARN can't build texture array\n", .{});
             return;
         }
-        const img_info: vk.VkImageCreateInfo = .{
-            .arrayLayers = self.*.frames,
-            .extent = .{ .width = self.*.width, .height = self.*.height, .depth = 1 },
-            .flags = 0,
-            .format = vk.VK_FORMAT_R8G8B8A8_UNORM,
-            .imageType = vk.VK_IMAGE_TYPE_2D,
-            .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
-            .mipLevels = 1,
-            .pQueueFamilyIndices = null,
-            .queueFamilyIndexCount = 0,
-            .samples = vk.VK_SAMPLE_COUNT_1_BIT,
-            .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
-            .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
-            .usage = vk.VK_IMAGE_USAGE_SAMPLED_BIT,
-        };
-        check_vk_allocator();
-        __vulkan.vk_allocator.?.*.create_image(&img_info, &self.*.__image, std.mem.sliceAsBytes(self.*.pixels.?), 0);
-
-        var result: vk.VkResult = undefined;
-
-        const pool_size = [1]vk.VkDescriptorPoolSize{.{
-            .descriptorCount = 1,
-            .type = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        }};
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
-
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.tex_2d_pipeline_set.descriptorSetLayout2,
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkAllocateDescriptorSets : {d}", .{result});
-
-        const imageInfo: vk.VkDescriptorImageInfo = .{
-            .imageLayout = vk.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .imageView = self.*.__image.__image_view,
-            .sampler = self.*.sampler,
-        };
-        const descriptorWrite = [_]vk.VkWriteDescriptorSet{
-            .{
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pBufferInfo = null,
-                .pImageInfo = &imageInfo,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
+        self.*.__image.create_texture(.{
+            .width = self.*.width,
+            .height = self.*.height,
+            .len = self.*.frames,
+        }, self.*.sampler, self.*.pixels.?);
+        self.*.__set_res[0] = .{ .tex = &self.*.__image };
+        self.*.__set.res = self.*.__set_res[0..1];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
 };
 
@@ -634,205 +544,118 @@ pub const shape = struct {
         indices: indices32,
         color: vector = .{ 1, 1, 1, 1 },
         __uniform: vulkan_res_node(.buffer) = .{},
-        __descriptor_set: vk.VkDescriptorSet = undefined,
-        __descriptor_pool: vk.VkDescriptorPool = undefined,
+        __set: descriptor_set,
+        __set_res: [1]res_union = .{undefined},
 
         pub fn init() source {
             return .{
                 .vertices = vertices(shape_color_vertex_2d).init(),
                 .indices = indices32.init(),
+                .__set = .{
+                    .bindings = single_pool_binding[0..1],
+                    .size = single_uniform_pool_sizes[0..1],
+                    .layout = __vulkan.quad_shape_2d_pipeline_set.descriptorSetLayout,
+                },
             };
         }
         pub fn init_for_alloc(__allocator: std.mem.Allocator) source {
             return .{
                 .vertices = vertices(shape_color_vertex_2d).init_for_alloc(__allocator),
                 .indices = indices32.init_for_alloc(__allocator),
+                .__set = .{
+                    .bindings = single_pool_binding[0..1],
+                    .size = single_uniform_pool_sizes[0..1],
+                    .layout = __vulkan.quad_shape_2d_pipeline_set.descriptorSetLayout,
+                },
             };
         }
-        pub fn build(self: *source, _flag: write_flag, _colorflag: write_flag) void {
+        pub fn build(self: *source, _flag: write_flag, _color_flag: write_flag) void {
             if (self.*.vertices.array == null or self.*.vertices.array.?.len == 0) return;
             self.*.vertices.build(_flag) catch return;
             self.*.indices.build(_flag);
 
-            create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, _colorflag, @sizeOf(vector), &self.*.__uniform, std.mem.sliceAsBytes(@as([*]vector, @ptrCast(&self.*.color))[0..1]));
-
-            const pool_size: [1]vk.VkDescriptorPoolSize = .{.{
-                .descriptorCount = 1,
-                .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            }};
-            const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-                .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-                .poolSizeCount = pool_size.len,
-                .pPoolSizes = &pool_size,
-                .maxSets = 1,
-            };
-            var result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-            system.handle_error(result == vk.VK_SUCCESS, "shape.source.build.vkCreateDescriptorPool : {d}", .{result});
-
-            const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-                .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                .descriptorPool = self.*.__descriptor_pool,
-                .descriptorSetCount = 1,
-                .pSetLayouts = &[_]vk.VkDescriptorSetLayout{
-                    __vulkan.quad_shape_2d_pipeline_set.descriptorSetLayout,
-                },
-            };
-            result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-            system.handle_error(result == vk.VK_SUCCESS, "shape.source.build.vkAllocateDescriptorSets : {d}", .{result});
-
-            const buffer_info = [1]vk.VkDescriptorBufferInfo{vk.VkDescriptorBufferInfo{
-                .buffer = self.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(vector),
-            }};
-            const descriptorWrite = [_]vk.VkWriteDescriptorSet{
-                .{
-                    .dstSet = self.*.__descriptor_set,
-                    .dstBinding = 0,
-                    .dstArrayElement = 0,
-                    .descriptorCount = buffer_info.len,
-                    .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                    .pBufferInfo = &buffer_info,
-                    .pImageInfo = null,
-                    .pTexelBufferView = null,
-                },
-            };
-            vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
+            self.*.__uniform.create_buffer(.{
+                .len = @sizeOf(vector),
+                .typ = .uniform,
+                .use = _color_flag,
+            }, mem.obj_to_u8arrC(&self.*.color));
+            self.*.__set_res[0] = .{ .buf = &self.*.__uniform };
+            self.*.__set.res = self.*.__set_res[0..1];
+            __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
         }
         pub fn deinit(self: *source) void {
             self.*.vertices.deinit();
             self.*.indices.deinit();
-            vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
             self.*.__uniform.clean();
         }
         pub fn deinit_for_alloc(self: *source) void {
             self.*.vertices.deinit_for_alloc();
             self.*.indices.deinit_for_alloc();
-            vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
             self.*.__uniform.clean();
         }
-        pub fn map_color_update(self: *source) void {
-            var data: ?*vector = undefined;
-            self.*.__uniform.map(@ptrCast(&data));
-            mem.memcpy_nonarray(data.?, &self.*.color);
-            self.*.__uniform.unmap();
+        ///write_flag가 cpu일때만 호출
+        pub fn copy_color_update(self: *source) void {
+            self.*.__uniform.copy_update(&self.*.color);
         }
     };
 
     transform: transform = .{ .parent_type = ._shape },
     src: *source = undefined,
     extra_src: ?[]*source = null,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = null,
+    __set: descriptor_set,
+    __set_res: [4]res_union = .{undefined} ** 4,
 
-    pub fn can_build(self: Self) bool {
-        return self.transform.projection.?.*.__uniform.res != null and self.transform.camera.?.*.__uniform.res != null;
+    pub fn init() Self {
+        return .{
+            .__set = .{
+                .bindings = single_pool_binding[0..1],
+                .size = transform_uniform_pool_sizes[0..1],
+                .layout = __vulkan.shape_color_2d_pipeline_set.descriptorSetLayout,
+            },
+        };
     }
     pub fn update(self: *Self) void {
-        if (!(self.*.can_build() and self.transform.__model_uniform.res != null)) {
-            system.handle_error_msg2("shape update need transform build and need transform.camera, projection build(invaild)");
-        }
-
-        const buffer_info = [_]vk.VkDescriptorBufferInfo{
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.__model_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.camera.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.projection.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = __vulkan.__pre_mat_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-        };
-        const descriptorWrite = [_]vk.VkWriteDescriptorSet{
-            .{
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = buffer_info.len,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info,
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
+        self.*.__set_res[0] = .{ .buf = &self.*.transform.__model_uniform };
+        self.*.__set_res[1] = .{ .buf = &self.*.transform.camera.?.*.__uniform };
+        self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
+        self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
+        self.*.__set.res = self.*.__set_res[0..4];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("shape build need transform.camera, projection build(invaild)");
-        }
-        var result: vk.VkResult = undefined;
-
-        const pool_size: [1]vk.VkDescriptorPoolSize = .{.{
-            .descriptorCount = 4,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        }};
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "shape.build.vkCreateDescriptorPool : {d}", .{result});
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &[_]vk.VkDescriptorSetLayout{
-                __vulkan.shape_color_2d_pipeline_set.descriptorSetLayout,
-            },
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "shape.build.vkAllocateDescriptorSets : {d}", .{result});
-
         self.*.transform.__build();
-
         self.*.update();
     }
     pub fn deinit(self: *Self) void {
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
         self.*.transform.__deinit();
     }
     pub fn __draw(self: *Self, cmd: vk.VkCommandBuffer) void {
         vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipeline);
 
-        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__descriptor_set, 0, null);
+        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__set.__set, 0, null);
 
         const offsets: vk.VkDeviceSize = 0;
         vk.vkCmdBindVertexBuffers(cmd, 0, 1, &self.*.src.*.vertices.node.res, &offsets);
 
         vk.vkCmdBindIndexBuffer(cmd, self.*.src.*.indices.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-        vk.vkCmdDrawIndexed(cmd, self.*.src.*.indices.node.__resource_len, 1, 0, 0, 0);
+        vk.vkCmdDrawIndexed(cmd, self.*.src.*.indices.node.buffer_option.len / get_idx_type_size(self.*.src.*.indices.idx_type), 1, 0, 0, 0);
 
         vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipeline);
 
-        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.src.*.__descriptor_set, 0, null);
+        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.src.*.__set.__set, 0, null);
         vk.vkCmdDraw(cmd, 6, 1, 0, 0);
 
         if (self.*.extra_src != null and self.*.extra_src.?.len > 0) {
             for (self.*.extra_src.?) |src| {
                 vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipeline);
-                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__descriptor_set, 0, null);
+                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__set.__set, 0, null);
                 vk.vkCmdBindVertexBuffers(cmd, 0, 1, &src.*.vertices.node.res, &offsets);
 
                 vk.vkCmdBindIndexBuffer(cmd, src.*.indices.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-                vk.vkCmdDrawIndexed(cmd, src.*.indices.node.__resource_len, 1, 0, 0, 0);
+                vk.vkCmdDrawIndexed(cmd, src.*.indices.node.buffer_option.len / get_idx_type_size(src.*.indices.idx_type), 1, 0, 0, 0);
 
                 vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipeline);
-                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &src.*.__descriptor_set, 0, null);
+                vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &src.*.__set.__set, 0, null);
 
                 vk.vkCmdDraw(cmd, 6, 1, 0, 0);
             }
@@ -852,14 +675,21 @@ pub const center_pt_pos = enum {
     bottom_right,
 };
 
+pub fn get_idx_type_size(typ: index_type) c_uint {
+    return switch (typ) {
+        .U32 => 4,
+        .U16 => 2,
+    };
+}
+
 pub const image = struct {
     const Self = @This();
 
     transform: transform = .{ .parent_type = ._image },
     src: *texture = undefined,
     color_tran: *color_transform,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = null,
+    __set: descriptor_set,
+    __set_res: [5]res_union = .{undefined} ** 5,
 
     ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
     pub fn pixel_perfect_point(img: Self, _p: point, _canvas_w: f32, _canvas_h: f32, center: center_pt_pos) point {
@@ -890,103 +720,18 @@ pub const image = struct {
         return _p;
     }
     pub fn deinit(self: *Self) void {
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
         self.*.transform.__deinit();
     }
     pub fn update(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("image update need transform build and need transform.camera, projection build(invaild)");
-        }
-        if (self.*.src.*.__image.res == null) {
-            system.handle_error_msg2("image update need texture build");
-        }
-        const buffer_info = [5]vk.VkDescriptorBufferInfo{
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.__model_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.camera.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.projection.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = __vulkan.__pre_mat_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.color_tran.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-        };
-        const descriptorWrite2 = [2]vk.VkWriteDescriptorSet{
-            .{
-                .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 4,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info,
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-            .{
-                .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 4,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info[4],
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite2.len, &descriptorWrite2, 0, null);
-    }
-    pub fn can_build(self: Self) bool {
-        return self.transform.projection.?.*.__uniform.res != null and self.transform.camera.?.*.__uniform.res != null;
+        self.*.__set_res[0] = .{ .buf = &self.*.transform.__model_uniform };
+        self.*.__set_res[1] = .{ .buf = &self.*.transform.camera.?.*.__uniform };
+        self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
+        self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
+        self.*.__set_res[4] = .{ .buf = &self.*.color_tran.*.__uniform };
+        self.*.__set.res = self.*.__set_res[0..5];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("image build need transform.camera, projection build(invaild)");
-        }
-        var result: vk.VkResult = undefined;
-
-        const pool_size = [2]vk.VkDescriptorPoolSize{ .{
-            .descriptorCount = 4,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        }, .{
-            .descriptorCount = 1,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        } };
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
-
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.tex_2d_pipeline_set.descriptorSetLayout,
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkAllocateDescriptorSets : {d}", .{result});
-
         self.*.transform.__build();
 
         self.*.update();
@@ -1000,7 +745,7 @@ pub const image = struct {
             __vulkan.tex_2d_pipeline_set.pipelineLayout,
             0,
             2,
-            &[_]vk.VkDescriptorSet{ self.*.__descriptor_set, self.*.src.*.__descriptor_set },
+            &[_]vk.VkDescriptorSet{ self.*.__set.__set, self.*.src.*.__set.__set },
             0,
             null,
         );
@@ -1013,14 +758,20 @@ pub const image = struct {
                 .U16 => vk.VK_INDEX_TYPE_UINT16,
                 .U32 => vk.VK_INDEX_TYPE_UINT32,
             });
-            vk.vkCmdDrawIndexed(cmd, self.*.src.indices.?.*.node.__resource_len, 1, 0, 0, 0);
+
+            vk.vkCmdDrawIndexed(cmd, self.*.src.indices.?.*.node.buffer_option.len / get_idx_type_size(self.*.src.indices.?.*.idx_type), 1, 0, 0, 0);
         } else {
-            vk.vkCmdDraw(cmd, self.*.src.vertices.*.node.__resource_len, 1, 0, 0);
+            vk.vkCmdDraw(cmd, self.*.src.vertices.*.node.buffer_option.len / @sizeOf(tex_vertex_2d), 1, 0, 0);
         }
     }
     pub fn init() Self {
         const self = Self{
             .color_tran = color_transform.get_no_default(),
+            .__set = .{
+                .bindings = image_uniform_pool_binding[0..2],
+                .size = image_uniform_pool_sizes[0..2],
+                .layout = __vulkan.tex_2d_pipeline_set.descriptorSetLayout,
+            },
         };
         return self;
     }
@@ -1032,10 +783,11 @@ pub const animate_image = struct {
 
     src: *texture_array = undefined,
     color_tran: *color_transform,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = null,
     __frame_uniform: vulkan_res_node(.buffer) = .{},
+    __set: descriptor_set,
+    __set_res: [6]res_union = .{undefined} ** 6,
     frame: u32 = 0,
+    __frame_cpy: f32 = undefined,
 
     ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
     pub fn pixel_perfect_point(img: Self, _p: point, _canvas_w: f32, _canvas_h: f32, center: center_pt_pos) point {
@@ -1066,18 +818,17 @@ pub const animate_image = struct {
         return _p;
     }
     pub fn deinit(self: *Self) void {
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
         self.*.transform.__deinit();
         self.*.__frame_uniform.clean();
     }
     pub fn next_frame(self: *Self) void {
         if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
-        if (self.*.src.*.__image.__resource_len - 1 < self.*.frame) {
+        if (self.*.src.*.__image.texture_option.len - 1 < self.*.frame) {
             self.*.frame = 0;
             return;
         }
         self.*.frame = (self.*.frame + 1) % self.*.src.*.get_frame_count_build();
-        map_update_frame(self);
+        copy_update_frame(self);
     }
     pub fn prev_frame(self: *Self) void {
         if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
@@ -1086,7 +837,7 @@ pub const animate_image = struct {
             return;
         }
         self.*.frame = if (self.*.frame > 0) (self.*.frame - 1) else (self.*.src.*.get_frame_count_build() - 1);
-        map_update_frame(self);
+        copy_update_frame(self);
     }
     pub fn set_frame(self: *Self, _frame: u32) void {
         if (!self.*.__frame_uniform.is_build() or self.*.src.*.get_frame_count_build() == 0) return;
@@ -1094,117 +845,33 @@ pub const animate_image = struct {
             return;
         }
         self.*.frame = _frame;
-        map_update_frame(self);
+        copy_update_frame(self);
     }
 
-    pub fn map_update_frame(self: *Self) void {
-        if (!self.*.__frame_uniform.is_build() or self.*.src.*.__image.__resource_len == 0 or self.*.src.*.__image.__resource_len - 1 < self.*.frame) return;
-        const F: f32 = @floatFromInt(self.*.frame);
-        self.*.__frame_uniform.map_update(&F);
+    pub fn copy_update_frame(self: *Self) void {
+        if (!self.*.__frame_uniform.is_build() or self.*.src.*.__image.texture_option.len == 0 or self.*.src.*.__image.texture_option.len - 1 < self.*.frame) return;
+        self.*.__frame_cpy = @floatFromInt(self.*.frame);
+        self.*.__frame_uniform.copy_update(&self.*.__frame_cpy);
     }
     pub fn update(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("image update need transform build and need transform.camera, projection build(invaild)");
-        }
-        if (self.*.src.*.__image.res == null) {
-            system.handle_error_msg2("image update need texture build");
-        }
-        const buffer_info = [6]vk.VkDescriptorBufferInfo{
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.__model_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.camera.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.projection.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = __vulkan.__pre_mat_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.color_tran.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.__frame_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(f32),
-            },
-        };
-        const descriptorWrite2 = [2]vk.VkWriteDescriptorSet{
-            .{
-                .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 4,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info,
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-            .{
-                .sType = vk.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 4,
-                .dstArrayElement = 0,
-                .descriptorCount = 2,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info[4],
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite2.len, &descriptorWrite2, 0, null);
-    }
-    pub fn can_build(self: Self) bool {
-        return self.transform.projection.?.*.__uniform.res != null and self.transform.camera.?.*.__uniform.res != null;
+        self.*.__set_res[0] = .{ .buf = &self.*.transform.__model_uniform };
+        self.*.__set_res[1] = .{ .buf = &self.*.transform.camera.?.*.__uniform };
+        self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
+        self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
+        self.*.__set_res[4] = .{ .buf = &self.*.color_tran.*.__uniform };
+        self.*.__set_res[5] = .{ .buf = &self.*.__frame_uniform };
+        self.*.__set.res = self.*.__set_res[0..6];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("image build need transform.camera, projection build(invaild)");
-        }
-        var result: vk.VkResult = undefined;
-
-        const pool_size = [2]vk.VkDescriptorPoolSize{ .{
-            .descriptorCount = 4,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        }, .{
-            .descriptorCount = 2,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        } };
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkCreateDescriptorPool(tex_2d_pipeline_set) : {d}", .{result});
-
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &__vulkan.animate_tex_2d_pipeline_set.descriptorSetLayout,
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "image.build.vkAllocateDescriptorSets : {d}", .{result});
-
         self.*.transform.__build();
 
-        const F: f32 = @floatFromInt(self.*.frame);
-        create_buffer(vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, .readwrite_cpu, @sizeOf(f32), &self.*.__frame_uniform, mem.obj_to_u8arrC(&F));
+        self.*.__frame_cpy = @floatFromInt(self.*.frame);
+        self.*.__frame_uniform.create_buffer(.{
+            .len = @sizeOf(f32),
+            .typ = .uniform,
+            .use = .cpu,
+        }, mem.obj_to_u8arrC(&self.*.__frame_cpy));
 
         self.*.update();
     }
@@ -1217,7 +884,7 @@ pub const animate_image = struct {
             __vulkan.animate_tex_2d_pipeline_set.pipelineLayout,
             0,
             2,
-            &[_]vk.VkDescriptorSet{ self.*.__descriptor_set, self.*.src.*.__descriptor_set },
+            &[_]vk.VkDescriptorSet{ self.*.__set.__set, self.*.src.*.__set.__set },
             0,
             null,
         );
@@ -1230,14 +897,19 @@ pub const animate_image = struct {
                 .U16 => vk.VK_INDEX_TYPE_UINT16,
                 .U32 => vk.VK_INDEX_TYPE_UINT32,
             });
-            vk.vkCmdDrawIndexed(cmd, self.*.src.indices.?.*.node.__resource_len, 1, 0, 0, 0);
+            vk.vkCmdDrawIndexed(cmd, self.*.src.indices.?.*.node.buffer_option.len / get_idx_type_size(self.*.src.indices.?.*.idx_type), 1, 0, 0, 0);
         } else {
-            vk.vkCmdDraw(cmd, self.*.src.vertices.*.node.__resource_len, 1, 0, 0);
+            vk.vkCmdDraw(cmd, self.*.src.vertices.*.node.buffer_option.len / @sizeOf(tex_vertex_2d), 1, 0, 0);
         }
     }
     pub fn init() Self {
         const self = Self{
             .color_tran = color_transform.get_no_default(),
+            .__set = .{
+                .bindings = animate_image_uniform_pool_binding[0..2],
+                .size = animate_image_uniform_pool_sizes[0..2],
+                .layout = __vulkan.animate_tex_2d_pipeline_set.descriptorSetLayout,
+            },
         };
         return self;
     }

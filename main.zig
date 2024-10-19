@@ -113,21 +113,22 @@ pub fn xfit_init() void {
     indices_mem_pool = MemoryPoolExtra(graphics.dummy_indices, .{}).init(allocator);
 
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
-    g_proj.build(.readwrite_cpu);
+    g_proj.build(.cpu);
 
     const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
     const rect_button = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 4 OutOfMemory");
     const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
     const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
+    g_camera.build();
 
-    rect_button.* = .{ ._button = .{ .area = .{ .rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H) } } };
+    rect_button.* = .{ ._button = components.button.init(.{ .rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H) }) };
     components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator) catch unreachable;
     rect_button.*._button.transform.camera = &g_camera;
     rect_button.*._button.transform.projection = &g_proj;
     rect_button.*.build();
 
-    text_shape.* = .{ ._shape = .{} };
+    text_shape.* = .{ ._shape = graphics.shape.init() };
     shape_src = graphics.shape.source.init_for_alloc(allocator);
     shape_src.color = .{ 1, 1, 1, 0.5 };
 
@@ -180,9 +181,10 @@ pub fn xfit_init() void {
 
     font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.3 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
 
-    shape_src2.build(.read_gpu, .readwrite_cpu);
+    shape_src.build(.gpu, .cpu);
+    shape_src2.build(.gpu, .cpu);
     rect_button_text_src.src.color = .{ 0, 0, 0, 1 };
-    rect_button_text_src.src.build(.read_gpu, .readwrite_cpu);
+    rect_button_text_src.src.build(.gpu, .cpu);
 
     rect_button.*._button.src = rect_button_srcs[0..3];
 
@@ -192,7 +194,7 @@ pub fn xfit_init() void {
     text_shape.*._shape.extra_src = extra_src[0..1];
 
     text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200, 0, 0));
-    //text_shape.*.build();
+    text_shape.*.build();
 
     color_trans = graphics.color_transform.init();
     color_trans.color_mat.e = .{
@@ -201,7 +203,7 @@ pub fn xfit_init() void {
         .{ 0, 0, -1, 0 },
         .{ 1, 1, 1, 1 },
     };
-    color_trans.build(.read_gpu);
+    color_trans.build(.gpu);
 
     img.*._image.color_tran = &color_trans;
     img.*._image.transform.camera = &g_camera;
@@ -245,13 +247,11 @@ pub fn xfit_init() void {
         0,
         move_callback,
         .{},
-        move_start_callback,
+        null,
         null,
         .{&start_sem},
         .{},
     ) catch |e| system.handle_error3("timer_callback.start", e);
-
-    start_sem.wait();
 }
 
 fn mouse_move(pos: math.point) void {
@@ -299,13 +299,6 @@ fn key_down(_key: input.key) void {
     }
 }
 
-fn move_start_callback(start_sem: *std.Thread.Semaphore) bool {
-    shape_src.build(.read_gpu, .readwrite_cpu);
-    cmd.scene.?[1].*.build();
-
-    start_sem.*.post();
-    return true;
-}
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {
     if (!system.exiting()) {
@@ -315,13 +308,13 @@ fn move_callback() !bool {
     shape_src.color[3] += 0.005;
     if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
 
-    cmd.scene.?[1].*._shape.transform.map_update();
-    shape_src.map_color_update();
+    cmd.scene.?[1].*._shape.transform.copy_update();
+    shape_src.copy_color_update();
 
     dx += 1;
     if (dx >= 200) {
         dx = 0;
-        system.print("{d}\n", .{system.dt_i64()});
+        //system.print("{d}\n", .{system.dt_i64()});
     }
     return true;
 }
@@ -333,7 +326,7 @@ pub fn xfit_update() void {
 pub fn xfit_size() void {
     g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
 
-    g_proj.map_update();
+    g_proj.copy_update();
 
     g_rect_button.*.area.rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H);
 }
@@ -359,10 +352,6 @@ pub fn xfit_destroy() void {
     for (objects.items) |value| {
         value.*.deinit();
     }
-    objects.deinit();
-    vertices_mem_pool.deinit();
-    objects_mem_pool.deinit();
-    indices_mem_pool.deinit();
 
     font0.deinit();
     allocator.free(font0_data);
@@ -370,10 +359,17 @@ pub fn xfit_destroy() void {
 
     cmd.deinit();
     color_trans.deinit();
+
+    //graphics.execute_all_op();
+    //graphics.wait_all_op_finish();
 }
 
 ///after system clean
 pub fn xfit_clean() void {
+    objects.deinit();
+    vertices_mem_pool.deinit();
+    objects_mem_pool.deinit();
+    indices_mem_pool.deinit();
     if (system.dbg and gpa.deinit() != .ok) unreachable;
 }
 

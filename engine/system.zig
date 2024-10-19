@@ -154,8 +154,8 @@ pub const init_setting = struct {
     pub const DEF_POS_SIZE = __windows.CW_USEDEFAULT;
     pub const PRIMARY_SCREEN_INDEX = std.math.maxInt(u32);
     //*ignore field mobile
-    window_width: i32 = DEF_POS_SIZE,
-    window_height: i32 = DEF_POS_SIZE,
+    window_width: u32 = @bitCast(DEF_POS_SIZE),
+    window_height: u32 = @bitCast(DEF_POS_SIZE),
     window_x: i32 = DEF_POS_SIZE,
     window_y: i32 = DEF_POS_SIZE,
 

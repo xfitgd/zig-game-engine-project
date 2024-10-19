@@ -23,6 +23,13 @@ const matrix = math.matrix;
 const matrix_error = math.matrix_error;
 const center_pt_pos = graphics.center_pt_pos;
 
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
+
+const descriptor_pool_size = __vulkan_allocator.descriptor_pool_size;
+const descriptor_set = __vulkan_allocator.descriptor_set;
+const descriptor_pool_memory = __vulkan_allocator.descriptor_pool_memory;
+const res_union = __vulkan_allocator.res_union;
+
 pub const button_state = enum {
     UP,
     OVER,
@@ -52,31 +59,42 @@ pub const button = struct {
     src: []*source = undefined,
     area: iarea,
     state: button_state = .UP,
-    __descriptor_set: vk.VkDescriptorSet = undefined,
-    __descriptor_pool: vk.VkDescriptorPool = null,
+    __set: descriptor_set,
+    __set_res: [4]res_union = .{undefined} ** 4,
     on_over: ?*const fn (self: *Self, _mouse_pos: point) void = null,
     on_down: ?*const fn (self: *Self, _mouse_pos: point) void = null,
     on_up: ?*const fn (self: *Self, _mouse_pos: ?point) void = null,
     _touch_idx: ?u32 = null,
 
+    pub fn init(_area: iarea) Self {
+        return .{
+            .__set = .{
+                .bindings = graphics.single_pool_binding[0..1],
+                .size = graphics.transform_uniform_pool_sizes[0..1],
+                .layout = __vulkan.shape_color_2d_pipeline_set.descriptorSetLayout,
+            },
+            .area = _area,
+        };
+    }
+
     fn update_color(self: *Self) void {
         for (self.*.src) |v| {
             if (self.*.state == .UP) {
-                v.*.src.map_color_update();
+                v.*.src.copy_color_update();
             } else if (self.*.state == .OVER) {
                 if (v.*.over_color == null) {
-                    v.*.src.map_color_update();
+                    v.*.src.copy_color_update();
                 } else {
                     const colorT = v.*.src.color;
                     v.*.src.color = v.*.over_color.?;
-                    v.*.src.map_color_update();
+                    v.*.src.copy_color_update();
                     v.*.src.color = colorT;
                 }
             } else if (self.*.state == .DOWN) {
                 if (v.*.down_color != null) {
                     const colorT = v.*.src.color;
                     v.*.src.color = v.*.down_color.?;
-                    v.*.src.map_color_update();
+                    v.*.src.copy_color_update();
                     v.*.src.color = colorT;
                 }
             }
@@ -188,92 +206,26 @@ pub const button = struct {
 
         _out[0].*.src.vertices.array = raw_polygon.vertices;
         _out[0].*.src.indices.array = raw_polygon.indices;
-        _out[0].*.src.build(.read_gpu, .readwrite_cpu);
+        _out[0].*.src.build(.gpu, .cpu);
 
         _out[1].*.src.vertices.array = raw_polygon_outline.vertices;
         _out[1].*.src.indices.array = raw_polygon_outline.indices;
-        _out[1].*.src.build(.read_gpu, .readwrite_cpu);
+        _out[1].*.src.build(.gpu, .cpu);
     }
 
-    pub fn can_build(self: Self) bool {
-        return self.transform.projection.?.*.__uniform.res != null and self.transform.camera.?.*.__uniform.res != null;
-    }
     pub fn update(self: *Self) void {
-        if (!(self.*.can_build() and self.transform.__model_uniform.res != null)) {
-            system.handle_error_msg2("shape update need transform build and need transform.camera, projection build(invaild)");
-        }
-
-        const buffer_info = [_]vk.VkDescriptorBufferInfo{
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.__model_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.camera.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = self.*.transform.projection.?.*.__uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-            vk.VkDescriptorBufferInfo{
-                .buffer = __vulkan.__pre_mat_uniform.res,
-                .offset = 0,
-                .range = @sizeOf(matrix),
-            },
-        };
-        const descriptorWrite = [_]vk.VkWriteDescriptorSet{
-            .{
-                .dstSet = self.*.__descriptor_set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = buffer_info.len,
-                .descriptorType = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &buffer_info,
-                .pImageInfo = null,
-                .pTexelBufferView = null,
-            },
-        };
-        vk.vkUpdateDescriptorSets(__vulkan.vkDevice, descriptorWrite.len, &descriptorWrite, 0, null);
+        self.*.__set_res[0] = .{ .buf = &self.*.transform.__model_uniform };
+        self.*.__set_res[1] = .{ .buf = &self.*.transform.camera.?.*.__uniform };
+        self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
+        self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
+        self.*.__set.res = self.*.__set_res[0..4];
+        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
-        if (!self.*.can_build()) {
-            system.handle_error_msg2("shape build need transform.camera, projection build(invaild)");
-        }
-        var result: vk.VkResult = undefined;
-
-        const pool_size: [1]vk.VkDescriptorPoolSize = .{.{
-            .descriptorCount = 4,
-            .type = vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        }};
-        const pool_info: vk.VkDescriptorPoolCreateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .poolSizeCount = pool_size.len,
-            .pPoolSizes = &pool_size,
-            .maxSets = 1,
-        };
-        result = vk.vkCreateDescriptorPool(__vulkan.vkDevice, &pool_info, null, &self.*.__descriptor_pool);
-        system.handle_error(result == vk.VK_SUCCESS, "shape.build.vkCreateDescriptorPool : {d}", .{result});
-        const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
-            .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = self.*.__descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &[_]vk.VkDescriptorSetLayout{
-                __vulkan.shape_color_2d_pipeline_set.descriptorSetLayout,
-            },
-        };
-        result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &self.*.__descriptor_set);
-        system.handle_error(result == vk.VK_SUCCESS, "shape.build.vkAllocateDescriptorSets : {d}", .{result});
-
         self.*.transform.__build();
-
         self.*.update();
     }
     pub fn deinit(self: *Self) void {
-        vk.vkDestroyDescriptorPool(__vulkan.vkDevice, self.*.__descriptor_pool, null);
         self.*.transform.__deinit();
     }
     pub fn __draw(self: *Self, cmd: vk.VkCommandBuffer) void {
@@ -281,17 +233,17 @@ pub const button = struct {
             const src = &_src.*.src;
             vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipeline);
 
-            vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__descriptor_set, 0, null);
+            vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.shape_color_2d_pipeline_set.pipelineLayout, 0, 1, &self.*.__set.__set, 0, null);
 
             const offsets: vk.VkDeviceSize = 0;
             vk.vkCmdBindVertexBuffers(cmd, 0, 1, &src.*.vertices.node.res, &offsets);
 
             vk.vkCmdBindIndexBuffer(cmd, src.*.indices.node.res, 0, vk.VK_INDEX_TYPE_UINT32);
-            vk.vkCmdDrawIndexed(cmd, src.*.indices.node.__resource_len, 1, 0, 0, 0);
+            vk.vkCmdDrawIndexed(cmd, src.*.indices.node.buffer_option.len / graphics.get_idx_type_size(src.*.indices.idx_type), 1, 0, 0, 0);
 
             vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipeline);
 
-            vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &src.*.__descriptor_set, 0, null);
+            vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_GRAPHICS, __vulkan.quad_shape_2d_pipeline_set.pipelineLayout, 0, 1, &src.*.__set.__set, 0, null);
             vk.vkCmdDraw(cmd, 6, 1, 0, 0);
         }
     }
