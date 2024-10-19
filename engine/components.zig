@@ -39,6 +39,7 @@ pub const button_state = enum {
 pub const button = struct {
     pub const source = struct {
         src: shape.source,
+        up_color: ?vector = null,
         over_color: ?vector = null,
         down_color: ?vector = null,
 
@@ -79,23 +80,22 @@ pub const button = struct {
 
     fn update_color(self: *Self) void {
         for (self.*.src) |v| {
+            if (v.*.up_color == null) continue;
             if (self.*.state == .UP) {
+                v.*.src.color = v.*.up_color.?;
                 v.*.src.copy_color_update();
             } else if (self.*.state == .OVER) {
                 if (v.*.over_color == null) {
+                    v.*.src.color = v.*.up_color.?;
                     v.*.src.copy_color_update();
                 } else {
-                    const colorT = v.*.src.color;
                     v.*.src.color = v.*.over_color.?;
                     v.*.src.copy_color_update();
-                    v.*.src.color = colorT;
                 }
             } else if (self.*.state == .DOWN) {
                 if (v.*.down_color != null) {
-                    const colorT = v.*.src.color;
                     v.*.src.color = v.*.down_color.?;
                     v.*.src.copy_color_update();
-                    v.*.src.color = colorT;
                 }
             }
         }
@@ -180,6 +180,8 @@ pub const button = struct {
         _out[1].*.down_color = .{ 0.5, 0.5, 1, 1 };
         _out[1].*.over_color = .{ 0.5, 0.5, 1, 1 };
         _out[1].*.src.color = .{ 0.5, 0.5, 0.5, 1 };
+        _out[0].*.up_color = _out[0].*.src.color;
+        _out[1].*.up_color = _out[1].*.src.color;
 
         var rect_line: [4]geometry.line = .{
             geometry.line.line_init(.{ -scale[0], scale[1] }, .{ scale[0], scale[1] }),

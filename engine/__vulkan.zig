@@ -400,13 +400,10 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
         const cmd = commandBuffer.*.__command_buffers[fr][i];
         const beginInfo: vk.VkCommandBufferBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = 0,
+            .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             .pInheritanceInfo = null,
         };
-        var result = vk.vkResetCommandBuffer(cmd, 0);
-        system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkResetCommandBuffer : {d}", .{result});
-
-        result = vk.vkBeginCommandBuffer(cmd, &beginInfo);
+        var result = vk.vkBeginCommandBuffer(cmd, &beginInfo);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.recordCommandBuffer.vkBeginCommandBuffer : {d}", .{result});
 
         const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
@@ -753,7 +750,7 @@ pub fn vulkan_start() void {
             }
         }
 
-        if (validation_layer_support and system.platform == .windows and system.dbg) {
+        if (validation_layer_support and system.dbg) {
             extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME) catch |e| system.handle_error3("vulkan_start.extension_names.append(vk.VK_EXT_DEBUG_UTILS_EXTENSION_NAME)", e);
         } else {
             validation_layer_support = false;
@@ -767,6 +764,13 @@ pub fn vulkan_start() void {
             @compileError("not support platform");
         }
 
+        // const enables = [_]vk.VkValidationFeatureEnableEXT{vk.VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT};
+        // const features = if (validation_layer_support) vk.VkValidationFeaturesEXT{
+        //     .enabledValidationFeatureCount = 1,
+        //     .pEnabledValidationFeatures = &enables,
+        // } else null;
+        const features = null;
+
         var createInfo: vk.VkInstanceCreateInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
             .pApplicationInfo = &appInfo,
@@ -774,6 +778,7 @@ pub fn vulkan_start() void {
             .ppEnabledLayerNames = if (layers_names.items.len > 0) layers_names.items.ptr else null,
             .enabledExtensionCount = @intCast(extension_names.items.len),
             .ppEnabledExtensionNames = extension_names.items.ptr,
+            .pNext = if (features == null) null else @ptrCast(&features),
         };
 
         result = vk.vkCreateInstance(&createInfo, null, &vkInstance);
@@ -1387,6 +1392,7 @@ fn cleanup_swapchain() void {
 
         __system.vk_allocator.execute_all_op();
         __system.vk_allocator.wait_all_op_finish();
+
         //if (depth_stencil_image_sample.pvulkan_buffer != null and depth_stencil_image_sample.pvulkan_buffer.?.*.is_empty()) depth_stencil_image_sample.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
         i = 0;

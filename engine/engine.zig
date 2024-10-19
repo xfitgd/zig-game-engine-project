@@ -119,7 +119,7 @@ pub fn init(
 
             result.linkSystemLibrary("android");
             result.linkSystemLibrary("vulkan");
-            // result.linkSystemLibrary("VkLayer_khronos_validation");
+            //result.linkSystemLibrary("VkLayer_khronos_validation");
             result.linkSystemLibrary("c");
             result.linkSystemLibrary("log");
 

@@ -126,6 +126,9 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
 
 fn destroy_android() void {
     __vulkan.wait_device_idle();
+    __system.vk_allocator.execute_all_op();
+    __system.vk_allocator.wait_all_op_finish();
+
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
 
@@ -823,14 +826,17 @@ fn anrdoid_app_entry() void {
             source.?.*.process.?(source);
         }
 
+        if (app.inited) {
+            __system.loop();
+        }
         if (system.a_fn(app.destroryRequested)) {
             destroy_android();
             break;
         }
-        if (app.inited) {
-            __system.loop();
-        }
     }
+
+    root.xfit_clean();
+    __system.real_destroy();
 
     free_saved_state();
     app.mutex.lock();
@@ -843,6 +849,8 @@ fn anrdoid_app_entry() void {
     app.cond.broadcast();
     app.mutex.unlock();
     // Can't touch android_app(app) object after this.
+
+    std.c.exit(0);
 }
 
 /// Actual application entry point
@@ -889,7 +897,4 @@ export fn ANativeActivity_onCreate(_activity: [*c]android.ANativeActivity, _save
         app.cond.wait(&app.mutex);
     }
     app.mutex.unlock();
-
-    root.xfit_clean();
-    __system.real_destroy();
 }

@@ -91,7 +91,7 @@ pub fn init() *Self {
 
     const poolInfo: vk.VkCommandPoolCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = vk.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .flags = vk.VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
         .queueFamilyIndex = __vulkan.graphicsFamilyIndex,
     };
     var result = vk.vkCreateCommandPool(__vulkan.vkDevice, &poolInfo, null, &res.*.cmd_pool);
@@ -113,8 +113,8 @@ pub fn init() *Self {
 pub fn deinit(self: *Self) void {
     self.*.mutex.lock();
     self.*.exited = true;
-    self.*.mutex.unlock();
     self.*.cond.signal();
+    self.*.mutex.unlock();
     self.g_thread.join();
 
     for (self.*.buffer_ids.items) |value| {
@@ -143,7 +143,7 @@ pub fn deinit(self: *Self) void {
     __system.allocator.destroy(self);
 }
 
-pub var POOL_BLOCK: c_uint = 8;
+pub var POOL_BLOCK: c_uint = 256;
 
 pub const res_type = enum { buffer, texture };
 pub const res_range = opaque {};
@@ -387,7 +387,7 @@ inline fn is_depth_format(fmt: texture_format) bool {
 }
 
 fn begin_single_time_commands(buf: vk.VkCommandBuffer) void {
-    const begin: vk.VkCommandBufferBeginInfo = .{ .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
+    const begin: vk.VkCommandBufferBeginInfo = .{ .flags = 0 };
     const result = vk.vkBeginCommandBuffer(buf, &begin);
     system.handle_error(result == vk.VK_SUCCESS, "begin_single_time_commands.vkBeginCommandBuffer : {d}", .{result});
 }
@@ -436,6 +436,7 @@ fn execute_create_texture(self: *Self, buf: *vulkan_res_node(.texture), _data: ?
         }
     }
     if (buf.*.texture_option.tex_use.__input_attachment) usage_ |= vk.VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    if (buf.*.texture_option.tex_use.__transient_attachment) usage_ |= vk.VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 
     if (buf.*.texture_option.format == .default) {
         buf.*.texture_option.format = .R8G8B8A8_UNORM;
@@ -552,7 +553,7 @@ fn __create_descriptor_pool(size: []const descriptor_pool_size, out: *descriptor
     const pool_size = __system.allocator.alloc(vk.VkDescriptorPoolSize, size.len) catch system.handle_error_msg2("execute_update_descriptor_sets vk.VkDescriptorPoolSize alloc");
     defer __system.allocator.free(pool_size);
     for (size, pool_size) |e, *p| {
-        p.*.descriptorCount = e.cnt;
+        p.*.descriptorCount = e.cnt * POOL_BLOCK;
         p.*.type = @intFromEnum(e.typ);
     }
     const pool_info: vk.VkDescriptorPoolCreateInfo = .{
@@ -591,10 +592,8 @@ fn execute_update_descriptor_sets(self: *Self, sets: []descriptor_set) void {
                 .descriptorSetCount = 1,
                 .pSetLayouts = &v.*.layout,
             };
-            system.print_debug("create {}", .{pool});
             result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &v.*.__set);
             system.handle_error(result == vk.VK_SUCCESS, "execute_update_descriptor_sets.vkAllocateDescriptorSets : {d}", .{result});
-            system.print_debug("updated", .{});
         }
 
         var buf_cnt: usize = 0;
@@ -736,6 +735,7 @@ fn thread_func(self: *Self) void {
             nres = null;
             self.*.save_to_map_queue(&nres);
         }
+        _ = vk.vkResetCommandPool(__vulkan.vkDevice, self.*.cmd_pool, 0);
 
         begin_single_time_commands(self.*.cmd);
         for (self.*.op_save_queue.items) |*v| {
@@ -775,6 +775,7 @@ fn thread_func(self: *Self) void {
 
         self.*.mutex.lock();
         self.*.execute = false;
+        if (self.*.exited) break;
         self.*.mutex.unlock();
         self.*.finish_cond.broadcast();
 
@@ -978,12 +979,20 @@ const vulkan_res = struct {
         var start: usize = std.math.maxInt(usize);
         var end: usize = std.math.minInt(usize);
         if (!self.*.mutex.tryLock()) return;
-        for (nodes) |v| {
+        const ranges = __system.allocator.alignedAlloc(vk.VkMappedMemoryRange, @alignOf(vk.VkMappedMemoryRange), nodes.len) catch unreachable;
+        defer __system.allocator.free(ranges);
+        for (nodes, ranges) |v, *r| {
             const copy = v.?.map_copy;
             const nd: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(copy.ires.get_idx()));
             start = @min(start, nd.*.data.idx);
             end = @max(end, nd.*.data.idx + nd.*.data.size);
+            r.memory = self.*.mem;
+            r.size = nd.*.data.size * self.*.cell_size;
+            r.offset = nd.*.data.idx * self.*.cell_size;
+            r.pNext = null;
+            r.sType = vk.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
         }
+
         const size = end - start;
         if (self.*.map_start > start or self.*.map_size + self.*.map_start < end or self.*.map_size < end - start) {
             if (self.*.map_size > 0) {
@@ -994,6 +1003,8 @@ const vulkan_res = struct {
             self.*.map_data = @alignCast(@ptrCast(out_data.?));
             self.*.map_size = size;
             self.*.map_start = start;
+        } else {
+            _ = vk.vkInvalidateMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
         }
         for (nodes) |v| {
             const copy = v.?.map_copy;
@@ -1002,6 +1013,7 @@ const vulkan_res = struct {
             //const en = (nd.*.data.idx + nd.*.data.size - start) * self.*.cell_size;
             @memcpy(self.*.map_data[st..(st + copy.address.len)], copy.address[0..copy.address.len]);
         }
+        _ = vk.vkFlushMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
         self.*.mutex.unlock();
     }
     pub fn is_empty(self: *vulkan_res) bool {

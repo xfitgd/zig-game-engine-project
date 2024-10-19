@@ -1,5 +1,3 @@
-pub const UNICODE = true;
-
 const std = @import("std");
 const root = @import("root");
 const builtin = @import("builtin");

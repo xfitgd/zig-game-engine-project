@@ -114,6 +114,9 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
         __system.loop();
     }
 
+    __system.vk_allocator.execute_all_op();
+    __system.vk_allocator.wait_all_op_finish();
+
     __vulkan.wait_device_idle();
     root.xfit_destroy();
     __vulkan.vulkan_destroy();
