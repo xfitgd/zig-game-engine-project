@@ -62,6 +62,7 @@ op_save_queue: ArrayList(?operation_node),
 op_map_queue: ArrayList(?operation_node),
 staging_buf_queue: MemoryPoolExtra(vulkan_res_node(.buffer), .{}),
 mutex: std.Thread.Mutex = .{},
+finish_mutex: std.Thread.Mutex = .{},
 cond: std.Thread.Condition = .{},
 finish_cond: std.Thread.Condition = .{},
 execute: bool = false,
@@ -142,7 +143,7 @@ pub fn deinit(self: *Self) void {
     __system.allocator.destroy(self);
 }
 
-pub var POOL_BLOCK: c_uint = 1024;
+pub var POOL_BLOCK: c_uint = 8;
 
 pub const res_type = enum { buffer, texture };
 pub const res_range = opaque {};
@@ -571,7 +572,7 @@ fn execute_update_descriptor_sets(self: *Self, sets: []descriptor_set) void {
             const pool = self.*.descriptor_pools.getPtr(v.*.size.ptr) orelse blk: {
                 const res = self.*.descriptor_pools.getOrPut(v.*.size.ptr) catch unreachable;
                 res.value_ptr.* = ArrayList(descriptor_pool_memory).init(__system.allocator);
-                res.value_ptr.*.append(.{ .pool = undefined, .cnt = 1 }) catch unreachable;
+                res.value_ptr.*.append(.{ .pool = undefined, .cnt = 0 }) catch unreachable;
                 const last = &res.value_ptr.*.items[0];
                 __create_descriptor_pool(v.*.size, last);
 
@@ -579,18 +580,21 @@ fn execute_update_descriptor_sets(self: *Self, sets: []descriptor_set) void {
             };
             var last = &pool.*.items[pool.*.items.len - 1];
             if (last.*.cnt >= POOL_BLOCK) {
-                pool.*.append(.{ .pool = undefined, .cnt = 1 }) catch unreachable;
+                pool.*.append(.{ .pool = undefined, .cnt = 0 }) catch unreachable;
                 last = &pool.*.items[pool.*.items.len - 1];
                 __create_descriptor_pool(v.*.size, last);
             }
+            last.*.cnt += 1;
             const alloc_info: vk.VkDescriptorSetAllocateInfo = .{
                 .sType = vk.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                 .descriptorPool = last.*.pool,
                 .descriptorSetCount = 1,
                 .pSetLayouts = &v.*.layout,
             };
+            system.print_debug("create {}", .{pool});
             result = vk.vkAllocateDescriptorSets(__vulkan.vkDevice, &alloc_info, &v.*.__set);
             system.handle_error(result == vk.VK_SUCCESS, "execute_update_descriptor_sets.vkAllocateDescriptorSets : {d}", .{result});
+            system.print_debug("updated", .{});
         }
 
         var buf_cnt: usize = 0;
@@ -695,6 +699,7 @@ fn thread_func(self: *Self) void {
             self.*.op_save_queue.appendSlice(self.*.op_queue.items) catch unreachable;
             self.*.op_queue.resize(0) catch unreachable;
         } else {
+            self.*.execute = false;
             self.*.mutex.unlock();
             continue;
         }
@@ -779,21 +784,24 @@ fn thread_func(self: *Self) void {
 }
 
 pub fn execute_all_op(self: *Self) void {
-    var signal = false;
     self.*.mutex.lock();
     if (self.*.op_queue.items.len > 0) {
-        signal = true;
         self.*.execute = true;
+        self.*.cond.signal();
     }
     self.*.mutex.unlock();
-    if (signal) self.*.cond.signal();
 }
 
 pub fn wait_all_op_finish(self: *Self) void {
     self.*.mutex.lock();
-    defer self.*.mutex.unlock();
-    if (!self.*.execute) return;
-    self.*.finish_cond.wait(&self.*.mutex);
+    if (!self.*.execute) {
+        self.*.mutex.unlock();
+        return;
+    }
+    self.*.mutex.unlock();
+    self.*.finish_mutex.lock();
+    self.*.finish_cond.wait(&self.*.finish_mutex);
+    self.*.finish_mutex.unlock();
 }
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
