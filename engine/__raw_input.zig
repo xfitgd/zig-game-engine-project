@@ -112,6 +112,7 @@ pub fn init(_MAX_DEVICES: u32, _guid: *const raw_input.GUID, _change_fn: raw_inp
             __system.allocator.free(detail);
             return raw_input.ERROR.SYSTEM_ERROR;
         }
+
         const len = std.mem.len(@as([*c]const u8, @ptrCast(@alignCast(&detailA.*.DevicePath[0]))));
         _ = self.*.connect(@as([*]const u8, @ptrCast(&detailA.*.DevicePath[0]))[0..len]);
         __system.allocator.free(detail);

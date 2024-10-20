@@ -93,7 +93,7 @@ fn error_func(text: []u8, stack_trace: []u8) void {
 var g_rect_button: *components.button = undefined;
 var move_callback_thread: std.Thread = undefined;
 
-pub fn xfit_init() void {
+pub fn xfit_init() !void {
     // const luaT = lua.c.luaL_newstate();
     // defer lua.c.lua_close(luaT);
     // lua.c.luaL_openlibs(luaT);
@@ -112,18 +112,18 @@ pub fn xfit_init() void {
     objects_mem_pool = MemoryPoolExtra(graphics.iobject, .{}).init(allocator);
     indices_mem_pool = MemoryPoolExtra(graphics.dummy_indices, .{}).init(allocator);
 
-    g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error2("projection.init {s}", .{@errorName(e)});
+    try g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H);
     g_proj.build(.cpu);
 
-    const text_shape = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 1 OutOfMemory");
-    const rect_button = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 4 OutOfMemory");
-    const img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 2 OutOfMemory");
-    const anim_img = objects_mem_pool.create() catch system.handle_error_msg2("objects_mem_pool 3 OutOfMemory");
+    const text_shape = try objects_mem_pool.create();
+    const rect_button = try objects_mem_pool.create();
+    const img = try objects_mem_pool.create();
+    const anim_img = try objects_mem_pool.create();
     g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
     g_camera.build();
 
     rect_button.* = .{ ._button = components.button.init(.{ .rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H) }) };
-    components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator) catch unreachable;
+    try components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator);
     rect_button.*._button.transform.camera = &g_camera;
     rect_button.*._button.transform.projection = &g_proj;
     rect_button.*.build();
@@ -148,7 +148,7 @@ pub fn xfit_init() void {
     image_src = graphics.texture.init();
     image_src.width = img_decoder.width();
     image_src.height = img_decoder.height();
-    image_src.pixels = allocator.alloc(u8, img_decoder.width() * img_decoder.height() * 4) catch |e| system.handle_error3("_texture.pixels alloc", e);
+    image_src.pixels = try allocator.alloc(u8, img_decoder.width() * img_decoder.height() * 4);
 
     img_decoder.decode(.RGBA, data, image_src.pixels.?) catch |e| system.handle_error3("test.webp decode", e);
 
@@ -161,7 +161,7 @@ pub fn xfit_init() void {
     anim_image_src.width = img_decoder.width();
     anim_image_src.height = img_decoder.height();
     anim_image_src.frames = img_decoder.frame_count();
-    anim_image_src.pixels = allocator.alloc(u8, img_decoder.size(.RGBA)) catch |e| system.handle_error3("anim_image_src.pixels alloc", e);
+    anim_image_src.pixels = try allocator.alloc(u8, img_decoder.size(.RGBA));
 
     img_decoder.decode(.RGBA, data, anim_image_src.pixels.?) catch |e| system.handle_error3("wasp.webp decode", e);
 
@@ -174,12 +174,12 @@ pub fn xfit_init() void {
     font0_data = file_.read_file("Spoqa Han Sans Regular.woff", allocator) catch |e| system.handle_error3("read_file font0_data", e);
     font0 = font.init(font0_data, 0) catch |e| system.handle_error3("font0.init", e);
 
-    font0.render_string("Hello World!\n안녕하세요. break;", .{}, &shape_src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    try font0.render_string("Hello World!\n안녕하세요. break;", .{}, &shape_src, allocator);
     // var t1 = std.time.Timer.start() catch unreachable;
     // system.print("{d}", .{t1.lap()});
-    font0.render_string("CONTINUE계속", .{}, &shape_src2, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    try font0.render_string("CONTINUE계속", .{}, &shape_src2, allocator);
 
-    font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.3 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator) catch |e| system.handle_error3("font0.render_string", e);
+    try font0.render_string("버튼", .{ .pivot = .{ 0.5, 0.3 }, .scale = .{ 4.5, 4.5 } }, &rect_button_text_src.src, allocator);
 
     shape_src.build(.gpu, .cpu);
     shape_src2.build(.gpu, .cpu);
@@ -216,10 +216,10 @@ pub fn xfit_init() void {
     anim_img.*._anim_image.transform.model = matrix.translation(300, -200, 0);
     anim_img.*.build();
 
-    objects.append(img) catch system.handle_error_msg2("objects.append(img)");
-    objects.append(text_shape) catch system.handle_error_msg2("objects.append(text_shape)");
-    objects.append(anim_img) catch system.handle_error_msg2("objects.append(anim_img)");
-    objects.append(rect_button) catch system.handle_error_msg2("objects.append(rect_button)");
+    try objects.append(img);
+    try objects.append(text_shape);
+    try objects.append(anim_img);
+    try objects.append(rect_button);
 
     g_rect_button = &rect_button.*._button;
 
@@ -232,8 +232,6 @@ pub fn xfit_init() void {
     anim.obj.obj = objects.items[2];
     anim.play();
 
-    var start_sem: std.Thread.Semaphore = .{};
-
     input.set_key_down_func(key_down);
     input.set_mouse_move_func(mouse_move);
     input.set_mouse_out_func(mouse_out);
@@ -242,16 +240,12 @@ pub fn xfit_init() void {
     input.set_touch_down_func(touch_down);
     input.set_touch_up_func(touch_up);
 
-    move_callback_thread = timer_callback.start2(
+    move_callback_thread = try timer_callback.start(
         system.sec_to_nano_sec2(0, 10, 0, 0),
         0,
         move_callback,
         .{},
-        null,
-        null,
-        .{&start_sem},
-        .{},
-    ) catch |e| system.handle_error3("timer_callback.start", e);
+    );
 }
 
 fn mouse_move(pos: math.point) void {
@@ -319,12 +313,12 @@ fn move_callback() !bool {
     return true;
 }
 var dx: f32 = 0;
-pub fn xfit_update() void {
+pub fn xfit_update() !void {
     anim.update(system.dt());
 }
 
-pub fn xfit_size() void {
-    g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H) catch |e| system.handle_error3("g_proj.init_matrix", e);
+pub fn xfit_size() !void {
+    try g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H);
 
     g_proj.copy_update();
 
@@ -332,7 +326,7 @@ pub fn xfit_size() void {
 }
 
 ///before system clean
-pub fn xfit_destroy() void {
+pub fn xfit_destroy() !void {
     move_callback_thread.join();
 
     shape_src.deinit_for_alloc();
@@ -365,7 +359,7 @@ pub fn xfit_destroy() void {
 }
 
 ///after system clean
-pub fn xfit_clean() void {
+pub fn xfit_clean() !void {
     objects.deinit();
     vertices_mem_pool.deinit();
     objects_mem_pool.deinit();
@@ -373,12 +367,12 @@ pub fn xfit_clean() void {
     if (system.dbg and gpa.deinit() != .ok) unreachable;
 }
 
-pub fn xfit_activate(is_activate: bool, is_pause: bool) void {
+pub fn xfit_activate(is_activate: bool, is_pause: bool) !void {
     _ = is_activate;
     _ = is_pause;
 }
 
-pub fn xfit_closing() bool {
+pub fn xfit_closing() !bool {
     return true;
 }
 

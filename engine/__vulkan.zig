@@ -1721,7 +1721,9 @@ pub fn recreate_swapchain() void {
     create_sync_object();
 
     __render_command.refresh_all();
-    root.xfit_size();
+    root.xfit_size() catch |e| {
+        system.handle_error3("xfit_clean", e);
+    };
 }
 
 var drew_shape = false;

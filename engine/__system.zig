@@ -143,7 +143,9 @@ pub fn loop() void {
             delta_time = maxf;
         }
     }
-    root.xfit_update();
+    root.xfit_update() catch |e| {
+        system.handle_error3("xfit_clean", e);
+    };
 
     __vulkan_allocator.execute_all_op();
     __vulkan_allocator.wait_all_op_finish();

@@ -49,6 +49,59 @@ pub const XBOX_WIN_GUID = raw_input.GUID{
     .Data4 = [8]u8{ 0xb5, 0xf7, 0x8b, 0x84, 0xd5, 0x42, 0x60, 0xcb },
 };
 
+//https://github.com/felis/USB_Host_Shield_2.0/blob/master/XBOXONE.h
+// PID and VID of the different versions of the controller - see: https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c
+
+// Official controllers
+// #define XBOX_VID1                               0x045E // Microsoft Corporation
+// #define XBOX_ONE_PID1                           0x02D1 // Microsoft X-Box One pad
+// #define XBOX_ONE_PID2                           0x02DD // Microsoft X-Box One pad (Firmware 2015)
+// #define XBOX_ONE_PID3                           0x02E3 // Microsoft X-Box One Elite pad
+// #define XBOX_ONE_PID4                           0x02EA // Microsoft X-Box One S pad
+// #define XBOX_ONE_PID13                          0x0B0A // Microsoft X-Box One Adaptive Controller
+// #define XBOX_ONE_PID14                          0x0B12 // Microsoft X-Box Core Controller
+
+// Unofficial controllers
+// #define XBOX_VID2                               0x0738 // Mad Catz
+// #define XBOX_VID3                               0x0E6F // Afterglow
+// #define XBOX_VID4                               0x0F0D // HORIPAD ONE
+// #define XBOX_VID5                               0x1532 // Razer
+// #define XBOX_VID6                               0x24C6 // PowerA
+
+// #define XBOX_ONE_PID5                           0x4A01 // Mad Catz FightStick TE 2 - might have different mapping for triggers?
+// #define XBOX_ONE_PID6                           0x0139 // Afterglow Prismatic Wired Controller
+// #define XBOX_ONE_PID7                           0x0146 // Rock Candy Wired Controller for Xbox One
+// #define XBOX_ONE_PID8                           0x0067 // HORIPAD ONE
+// #define XBOX_ONE_PID9                           0x0A03 // Razer Wildcat
+// #define XBOX_ONE_PID10                          0x541A // PowerA Xbox One Mini Wired Controller
+// #define XBOX_ONE_PID11                          0x542A // Xbox ONE spectra
+// #define XBOX_ONE_PID12                          0x543A // PowerA Xbox One wired controller
+
+///VID,PID
+pub const XBOX_VPIDs = [_]struct { u32, u32 }{
+    //Microsoft Corporation
+    .{ 0x045E, 0x02D1 },
+    .{ 0x045E, 0x02DD },
+    .{ 0x045E, 0x02E3 },
+    .{ 0x045E, 0x02EA },
+    .{ 0x045E, 0x0B0A },
+    .{ 0x045E, 0x0B12 },
+    .{ 0x045E, 0x0B13 },
+    // Mad Catz
+    .{ 0x0738, 0x4A01 },
+    // Afterglow
+    .{ 0x0E6F, 0x0139 },
+    .{ 0x0E6F, 0x543A },
+    // HORIPAD ONE
+    .{ 0x0F0D, 0x0067 },
+    // Razer
+    .{ 0x1532, 0x0A03 },
+    // PowerA
+    .{ 0x24C6, 0x541A },
+    .{ 0x24C6, 0x543A },
+    .{ 0x24C6, 0x542A },
+};
+
 pub const XBOX_MAX_CONTROLLERS = 16;
 const XBOX_DPAD_UP = 0x0001;
 const XBOX_DPAD_DOWN = 0x0002;
@@ -158,6 +211,13 @@ pub const XBOX_VIBRATION = struct {
     off_time: u8 = 0,
     repeat: u8 = 1,
 };
+
+pub fn check_vpid(vid: u32, pid: u32) bool {
+    inline for (XBOX_VPIDs) |v| {
+        if (vid == v[0] and pid == v[1]) return true;
+    }
+    return false;
+}
 
 pub fn set_vibration(
     device_idx: u32,

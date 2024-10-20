@@ -25,16 +25,16 @@ var bg_source: *sound.sound_source = undefined;
 var bg_snd: *sound = undefined;
 var sfx_source: *sound.sound_source = undefined;
 
-pub fn sfx_callback() void {
+pub fn sfx_callback() !void {
     _ = sfx_source.play_sound_memory(0.5, false) catch |e| system.handle_error3("sfx.play_sound_memory", e);
 }
 
-pub fn pl_callback() void {
+pub fn pl_callback() !void {
     bg_snd.*.pause();
     //bg_snd.*.resume_();
 }
 
-pub fn xfit_init() void {
+pub fn xfit_init() !void {
     sound.start();
 
     const snd = sound.play_sound("BG.opus", 0.2, true) catch |e| system.handle_error3("bg.play_sound", e) orelse system.handle_error_msg2("bg.play_sound null");
@@ -46,35 +46,32 @@ pub fn xfit_init() void {
     defer allocator.free(data);
     sfx_source = sound.decode_sound_memory(data) catch |e| system.handle_error3("sfx.decode_sound_memory", e);
 
-    _ = timer_callback.start(1000000000, 0, sfx_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
-    _ = timer_callback.start(10000000000, 1, pl_callback, .{}) catch |e| system.handle_error3("timer_callback.start", e);
+    _ = try timer_callback.start(1000000000, 0, sfx_callback, .{});
+    _ = try timer_callback.start(10000000000, 1, pl_callback, .{});
 }
 
-///윈도우 크기 바뀔때 xfit_update 바로 전 호출
-pub fn xfit_size_update() void {}
+pub fn xfit_update() !void {}
 
-pub fn xfit_update() void {}
-
-pub fn xfit_size() void {}
+pub fn xfit_size() !void {}
 
 ///before system clean
-pub fn xfit_destroy() void {
+pub fn xfit_destroy() !void {
     sound.destroy();
     bg_source.*.deinit();
     sfx_source.*.deinit();
 }
 
 ///after system clean
-pub fn xfit_clean() void {
+pub fn xfit_clean() !void {
     if (system.dbg and gpa.deinit() != .ok) unreachable;
 }
 
-pub fn xfit_activate(is_activate: bool, is_pause: bool) void {
+pub fn xfit_activate(is_activate: bool, is_pause: bool) !void {
     _ = is_activate;
     _ = is_pause;
 }
 
-pub fn xfit_closing() bool {
+pub fn xfit_closing() !bool {
     return true;
 }
 

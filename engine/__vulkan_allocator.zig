@@ -321,6 +321,7 @@ fn execute_create_buffer(buf: *vulkan_res_node(.buffer), _data: ?[]const u8) voi
             system.handle_error2("create_buffer _data not enough size. {d} {d} {}", .{ buf.*.buffer_option.len, _data.?.len, buf.*.builded });
         }
         last = staging_buf_queue.create() catch unreachable;
+        last.* = .{};
         last.*.__create_buffer(.{
             .len = buf.*.buffer_option.len,
             .use = .cpu,
@@ -470,6 +471,7 @@ fn execute_create_texture(buf: *vulkan_res_node(.texture), _data: ?[]const u8) v
         }
 
         last = staging_buf_queue.create() catch unreachable;
+        last.* = .{};
         last.*.__create_buffer(.{
             .len = img_info.extent.width * img_info.extent.width * img_info.extent.depth * img_info.arrayLayers * bit,
             .use = .cpu,

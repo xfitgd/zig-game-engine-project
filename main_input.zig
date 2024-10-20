@@ -99,16 +99,16 @@ fn change_xbox(_device_idx: u32, add_or_remove: bool) void {
     }
 }
 
-pub fn xfit_init() void {
-    xbox_pad_input.start(change_xbox) catch unreachable;
+pub fn xfit_init() !void {
+    try xbox_pad_input.start(change_xbox);
     general_input.start();
     general_input.set_callback(general_input_callback);
     xbox_pad_input.set_callback(xinput_callback);
 
-    _ = timer_callback.start(system.sec_to_nano_sec2(1, 0, 0, 0), 0, vib_callback, .{}) catch |e| system.handle_error3("timer_callback.start 2", e);
+    _ = try timer_callback.start(system.sec_to_nano_sec2(1, 0, 0, 0), 0, vib_callback, .{});
 }
 
-fn vib_callback() void {
+fn vib_callback() !void {
     _ = xbox_pad_input.set_vibration(
         0,
         .{
@@ -119,27 +119,27 @@ fn vib_callback() void {
     ) catch {};
 }
 
-pub fn xfit_update() void {}
+pub fn xfit_update() !void {}
 
-pub fn xfit_size() void {}
+pub fn xfit_size() !void {}
 
 ///before system clean
-pub fn xfit_destroy() void {
+pub fn xfit_destroy() !void {
     xbox_pad_input.destroy();
     general_input.destroy();
 }
 
 ///after system clean
-pub fn xfit_clean() void {
+pub fn xfit_clean() !void {
     if (system.dbg and gpa.deinit() != .ok) unreachable;
 }
 
-pub fn xfit_activate(is_activate: bool, is_pause: bool) void {
+pub fn xfit_activate(is_activate: bool, is_pause: bool) !void {
     _ = is_activate;
     _ = is_pause;
 }
 
-pub fn xfit_closing() bool {
+pub fn xfit_closing() !bool {
     return true;
 }
 

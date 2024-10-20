@@ -11,6 +11,7 @@ const __vulkan = @import("__vulkan.zig");
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 const render_command = @import("render_command.zig");
 const general_input = @import("general_input.zig");
+const xbox_pad_input = @import("xbox_pad_input.zig");
 const __raw_input = @import("__raw_input.zig");
 const graphics = @import("graphics.zig");
 const math = @import("math.zig");
@@ -109,7 +110,9 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
     _ = param;
     __vulkan.vulkan_start();
 
-    root.xfit_init();
+    root.xfit_init() catch |e| {
+        system.handle_error3("xfit_init", e);
+    };
 
     while (!__system.exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
@@ -119,7 +122,9 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
     __vulkan_allocator.wait_all_op_finish();
 
     __vulkan.wait_device_idle();
-    root.xfit_destroy();
+    root.xfit_destroy() catch |e| {
+        system.handle_error3("xfit_destroy", e);
+    };
     __vulkan.vulkan_destroy();
 
     render_thread_sem.post();
@@ -493,8 +498,13 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
                 const input_: *win32.RAWINPUT = @ptrCast(inputT.ptr);
 
                 if (0 < win32.GetRawInputData(@ptrFromInt(@as(usize, @intCast(lParam))), win32.RID_INPUT, @ptrCast(input_), &size, @sizeOf(win32.RAWINPUTHEADER))) {
-                    if (0 != win32.GetRawInputDeviceInfoA(input_.*.header.hDevice, win32.RIDI_PREPARSEDDATA, null, &size)) break :end;
+                    size = @sizeOf(win32.RID_DEVICE_INFO);
+                    var info: win32.RID_DEVICE_INFO = std.mem.zeroes(win32.RID_DEVICE_INFO);
+                    info.cbSize = size;
+                    if (0 >= win32.GetRawInputDeviceInfoA(input_.*.header.hDevice, win32.RIDI_DEVICEINFO, &info, &size)) break :end;
+                    if (info.dwType != 2 or xbox_pad_input.check_vpid(info.D.hid.dwVendorId, info.D.hid.dwProductId)) break :end;
 
+                    _ = win32.GetRawInputDeviceInfoA(input_.*.header.hDevice, win32.RIDI_PREPARSEDDATA, null, &size);
                     const processHeap = win32.GetProcessHeap();
                     const pPreparsedData = win32.HeapAlloc(processHeap, 0, size) orelse break :end;
                     defer _ = win32.HeapFree(processHeap, 0, pPreparsedData);
@@ -651,7 +661,9 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             __system.pause.store(pause, std.builtin.AtomicOrder.monotonic);
             __system.activated.store(activated, std.builtin.AtomicOrder.monotonic);
 
-            root.xfit_activate(activated, pause);
+            root.xfit_activate(activated, pause) catch |e| {
+                system.handle_error3("xfit_activate", e);
+            };
         },
         win32.WM_MOVE => {
             const x: SHORT = @bitCast(win32.LOWORD(lParam));
@@ -684,7 +696,9 @@ fn WindowProc(hwnd: HWND, uMsg: u32, wParam: win32.WPARAM, lParam: win32.LPARAM)
             if (system.a_fn(__system.mouse_scroll_func) != null) system.a_fn(__system.mouse_scroll_func).?(dt);
         },
         win32.WM_CLOSE => {
-            if (!root.xfit_closing()) return 0;
+            if (root.xfit_closing() catch |e| {
+                system.handle_error3("xfit_closing", e);
+            } == false) return 0;
         },
         win32.WM_ERASEBKGND => return 1,
         win32.WM_DESTROY => {

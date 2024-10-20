@@ -14,12 +14,12 @@ fn callback_(comptime function: anytype, args: anytype) bool {
         if (res.error_union.payload == bool) {
             return @call(.auto, function, args) catch |err| {
                 system.print_error("ERR : {s}\n", .{@errorName(err)});
-                return false;
+                unreachable;
             };
         } else {
             _ = @call(.auto, function, args) catch |err| {
                 system.print_error("ERR : {s}\n", .{@errorName(err)});
-                return false;
+                unreachable;
             };
         }
     } else if (res == .bool) {
@@ -37,7 +37,6 @@ fn callback(wait_nanosec: u64, repeat: u64, comptime function: anytype, args: an
     } else {
         while (re > 0 and loop(wait_nanosec, function, args)) : (re -= 1) {}
     }
-    graphics.deinit_vk_allocator_thread();
 }
 
 fn callback2(

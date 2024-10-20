@@ -130,7 +130,9 @@ fn destroy_android() void {
     __vulkan_allocator.execute_all_op();
     __vulkan_allocator.wait_all_op_finish();
 
-    root.xfit_destroy();
+    root.xfit_destroy() catch |e| {
+        system.handle_error3("xfit_destroy", e);
+    };
     __vulkan.vulkan_destroy();
 
     __system.destroy();
@@ -477,7 +479,9 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             app.paused = false;
             __system.pause.store(false, std.builtin.AtomicOrder.monotonic);
             __system.activated.store(false, std.builtin.AtomicOrder.monotonic);
-            root.xfit_activate(false, false);
+            root.xfit_activate(false, false) catch |e| {
+                system.handle_error3("xfit_activate", e);
+            };
         },
         AppEvent.APP_CMD_LOST_FOCUS => {
             if (app.accelerometer_sensor != null) {
@@ -485,7 +489,9 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             }
             __system.pause.store(true, std.builtin.AtomicOrder.monotonic);
             __system.activated.store(true, std.builtin.AtomicOrder.monotonic);
-            root.xfit_activate(true, true);
+            root.xfit_activate(true, true) catch |e| {
+                system.handle_error3("xfit_activate", e);
+            };
         },
         AppEvent.APP_CMD_WINDOW_RESIZED => {
             orientationChanged = true;
@@ -836,7 +842,9 @@ fn anrdoid_app_entry() void {
         }
     }
 
-    root.xfit_clean();
+    root.xfit_clean() catch |e| {
+        system.handle_error3("xfit_clean", e);
+    };
     __system.real_destroy();
 
     free_saved_state();

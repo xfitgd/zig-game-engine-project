@@ -4528,3 +4528,34 @@ pub const HIDP_STATUS_DATA_INDEX_OUT_OF_RANGE = (HIDP_ERROR_CODES(0xC, 0xE));
 pub const HIDP_STATUS_BUTTON_NOT_PRESSED = (HIDP_ERROR_CODES(0xC, 0xF));
 pub const HIDP_STATUS_REPORT_DOES_NOT_EXIST = (HIDP_ERROR_CODES(0xC, 0x10));
 pub const HIDP_STATUS_NOT_IMPLEMENTED = (HIDP_ERROR_CODES(0xC, 0x20));
+
+pub const RID_DEVICE_INFO_KEYBOARD = extern struct {
+    dwType: DWORD,
+    dwSubType: DWORD,
+    dwKeyboardMode: DWORD,
+    dwNumberOfFunctionKeys: DWORD,
+    dwNumberOfIndicators: DWORD,
+    dwNumberOfKeysTotal: DWORD,
+};
+pub const RID_DEVICE_INFO_MOUSE = extern struct {
+    dwId: DWORD,
+    dwNumberOfButtons: DWORD,
+    dwSampleRate: DWORD,
+    fHasHorizontalWheel: BOOL,
+};
+pub const RID_DEVICE_INFO_HID = extern struct {
+    dwVendorId: DWORD,
+    dwProductId: DWORD,
+    dwVersionNumber: DWORD,
+    usUsagePage: USHORT,
+    usUsage: USHORT,
+};
+pub const RID_DEVICE_INFO = extern struct {
+    cbSize: DWORD,
+    dwType: DWORD,
+    D: extern union {
+        mouse: RID_DEVICE_INFO_MOUSE,
+        keyboard: RID_DEVICE_INFO_KEYBOARD,
+        hid: RID_DEVICE_INFO_HID,
+    },
+};

@@ -17,31 +17,31 @@ var allocator: std.mem.Allocator = undefined;
 const math = @import("engine/math.zig");
 const mem = @import("engine/mem.zig");
 
-pub fn xfit_init() void {
+pub fn xfit_init() !void {
     system.print("hello world!\n", .{});
     system.write("exit.\n");
 
     system.console_pause();
 }
 
-pub fn xfit_update() void {}
+pub fn xfit_update() !void {}
 
-pub fn xfit_size() void {}
+pub fn xfit_size() !void {}
 
 ///before system clean
-pub fn xfit_destroy() void {}
+pub fn xfit_destroy() !void {}
 
 ///after system clean
-pub fn xfit_clean() void {
+pub fn xfit_clean() !void {
     if (system.dbg and gpa.deinit() != .ok) unreachable;
 }
 
-pub fn xfit_activate(is_activate: bool, is_pause: bool) void {
+pub fn xfit_activate(is_activate: bool, is_pause: bool) !void {
     _ = is_activate;
     _ = is_pause;
 }
 
-pub fn xfit_closing() bool {
+pub fn xfit_closing() !bool {
     return true;
 }
 

@@ -15,9 +15,13 @@ pub fn xfit_main(_allocator: std.mem.Allocator, init_setting: *const system.init
         __windows.system_windows_start();
 
         if (system.subsystem == system.SubSystem.Console) {
-            root.xfit_init();
+            root.xfit_init() catch |e| {
+                system.handle_error3("xfit_init", e);
+            };
 
-            root.xfit_destroy();
+            root.xfit_destroy() catch |e| {
+                system.handle_error3("xfit_destroy", e);
+            };
         } else {
             __windows.windows_start();
             //vulkan_start, root.xfit_init()는 별도의 작업 스레드에서 호출(거기서 렌더링)
@@ -27,13 +31,17 @@ pub fn xfit_main(_allocator: std.mem.Allocator, init_setting: *const system.init
 
         __system.destroy();
 
-        root.xfit_clean();
+        root.xfit_clean() catch |e| {
+            system.handle_error3("xfit_clean", e);
+        };
 
         __system.real_destroy();
     } else if (system.platform == .android) {
         __vulkan.vulkan_start();
 
-        root.xfit_init();
+        root.xfit_init() catch |e| {
+            system.handle_error3("xfit_init", e);
+        };
     } else {
         @compileError("not support platform");
     }
