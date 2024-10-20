@@ -459,19 +459,19 @@ pub const texture = struct {
         }, self.*.sampler, self.*.pixels.?);
         self.*.__set_res[0] = .{ .tex = &self.*.__image };
         self.*.__set.res = self.*.__set_res[0..1];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     // pub fn copy(self: *Self, _data: []const u8, rect: ?math.recti) void {
-    //     __vulkan.vk_allocator.?.*.copy_texture(self, _data, rect);
+    //     __vulkan_allocator.copy_texture(self, _data, rect);
     // }
 };
 
 pub fn execute_all_op() void {
-    __system.vk_allocator.execute_all_op();
+    __vulkan_allocator.execute_all_op();
 }
 
 pub fn wait_all_op_finish() void {
-    __system.vk_allocator.wait_all_op_finish();
+    __vulkan_allocator.wait_all_op_finish();
 }
 
 pub const texture_array = struct {
@@ -532,7 +532,7 @@ pub const texture_array = struct {
         }, self.*.sampler, self.*.pixels.?);
         self.*.__set_res[0] = .{ .tex = &self.*.__image };
         self.*.__set.res = self.*.__set_res[0..1];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
 };
 
@@ -581,7 +581,7 @@ pub const shape = struct {
             }, mem.obj_to_u8arrC(&self.*.color));
             self.*.__set_res[0] = .{ .buf = &self.*.__uniform };
             self.*.__set.res = self.*.__set_res[0..1];
-            __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+            __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
         }
         pub fn deinit(self: *source) void {
             self.*.vertices.deinit();
@@ -620,7 +620,7 @@ pub const shape = struct {
         self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
         self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
         self.*.__set.res = self.*.__set_res[0..4];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
         self.*.transform.__build();
@@ -729,7 +729,7 @@ pub const image = struct {
         self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
         self.*.__set_res[4] = .{ .buf = &self.*.color_tran.*.__uniform };
         self.*.__set.res = self.*.__set_res[0..5];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
         self.*.transform.__build();
@@ -787,7 +787,6 @@ pub const animate_image = struct {
     __set: descriptor_set,
     __set_res: [6]res_union = .{undefined} ** 6,
     frame: u32 = 0,
-    __frame_cpy: f32 = undefined,
 
     ///회전 했을때 고려안함, img scale은 기본(이미지 크기) 비율일때 기준
     pub fn pixel_perfect_point(img: Self, _p: point, _canvas_w: f32, _canvas_h: f32, center: center_pt_pos) point {
@@ -850,8 +849,8 @@ pub const animate_image = struct {
 
     pub fn copy_update_frame(self: *Self) void {
         if (!self.*.__frame_uniform.is_build() or self.*.src.*.__image.texture_option.len == 0 or self.*.src.*.__image.texture_option.len - 1 < self.*.frame) return;
-        self.*.__frame_cpy = @floatFromInt(self.*.frame);
-        self.*.__frame_uniform.copy_update(&self.*.__frame_cpy);
+        const __frame_cpy: f32 = @floatFromInt(self.*.frame);
+        self.*.__frame_uniform.copy_update(&__frame_cpy);
     }
     pub fn update(self: *Self) void {
         self.*.__set_res[0] = .{ .buf = &self.*.transform.__model_uniform };
@@ -861,17 +860,17 @@ pub const animate_image = struct {
         self.*.__set_res[4] = .{ .buf = &self.*.color_tran.*.__uniform };
         self.*.__set_res[5] = .{ .buf = &self.*.__frame_uniform };
         self.*.__set.res = self.*.__set_res[0..6];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
         self.*.transform.__build();
 
-        self.*.__frame_cpy = @floatFromInt(self.*.frame);
-        self.*.__frame_uniform.create_buffer(.{
+        const __frame_cpy: f32 = @floatFromInt(self.*.frame);
+        self.*.__frame_uniform.create_buffer_copy(.{
             .len = @sizeOf(f32),
             .typ = .uniform,
             .use = .cpu,
-        }, mem.obj_to_u8arrC(&self.*.__frame_cpy));
+        }, mem.obj_to_u8arrC(&__frame_cpy));
 
         self.*.update();
     }

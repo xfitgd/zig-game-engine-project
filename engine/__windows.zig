@@ -8,6 +8,7 @@ const input = @import("input.zig");
 const window = @import("window.zig");
 const __system = @import("__system.zig");
 const __vulkan = @import("__vulkan.zig");
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
 const render_command = @import("render_command.zig");
 const general_input = @import("general_input.zig");
 const __raw_input = @import("__raw_input.zig");
@@ -114,8 +115,8 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
         __system.loop();
     }
 
-    __system.vk_allocator.execute_all_op();
-    __system.vk_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
 
     __vulkan.wait_device_idle();
     root.xfit_destroy();

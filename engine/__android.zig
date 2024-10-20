@@ -6,6 +6,7 @@ const math = @import("math.zig");
 const point = math.point;
 const input = @import("input.zig");
 const __vulkan = @import("__vulkan.zig");
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
 const system = @import("system.zig");
 const general_input = @import("general_input.zig");
@@ -126,8 +127,8 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
 
 fn destroy_android() void {
     __vulkan.wait_device_idle();
-    __system.vk_allocator.execute_all_op();
-    __system.vk_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
 
     root.xfit_destroy();
     __vulkan.vulkan_destroy();

@@ -221,7 +221,7 @@ pub const button = struct {
         self.*.__set_res[2] = .{ .buf = &self.*.transform.projection.?.*.__uniform };
         self.*.__set_res[3] = .{ .buf = &__vulkan.__pre_mat_uniform };
         self.*.__set.res = self.*.__set_res[0..4];
-        __system.vk_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
+        __vulkan_allocator.update_descriptor_sets((&self.*.__set)[0..1]);
     }
     pub fn build(self: *Self) void {
         self.*.transform.__build();

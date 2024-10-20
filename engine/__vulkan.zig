@@ -926,7 +926,7 @@ pub fn vulkan_start() void {
 
     __vulkan_allocator.init_block_len();
 
-    __system.vk_allocator = __vulkan_allocator.init();
+    __vulkan_allocator.init();
 
     create_swapchain_and_imageviews();
 
@@ -1319,7 +1319,7 @@ pub fn vulkan_destroy() void {
 
     cleanup_swapchain();
 
-    __system.vk_allocator.deinit();
+    __vulkan_allocator.deinit();
 
     vk.vkDestroySampler(vkDevice, linear_sampler, null);
     vk.vkDestroySampler(vkDevice, nearest_sampler, null);
@@ -1390,8 +1390,8 @@ fn cleanup_swapchain() void {
         depth_stencil_image_sample.clean();
         color_image_sample.clean();
 
-        __system.vk_allocator.execute_all_op();
-        __system.vk_allocator.wait_all_op_finish();
+        __vulkan_allocator.execute_all_op();
+        __vulkan_allocator.wait_all_op_finish();
 
         //if (depth_stencil_image_sample.pvulkan_buffer != null and depth_stencil_image_sample.pvulkan_buffer.?.*.is_empty()) depth_stencil_image_sample.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
@@ -1440,7 +1440,6 @@ fn create_framebuffer() void {
         vk_swapchain_frame_buffers[i] = .{
             .__renderPass = vkRenderPass,
             .texs = __system.allocator.alloc(*__vulkan_allocator.vulkan_res_node(.texture), 3) catch system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer.texs)"),
-            .this = __system.vk_allocator,
         };
         const texs = [_]*__vulkan_allocator.vulkan_res_node(.texture){
             &color_image_sample,
@@ -1712,8 +1711,8 @@ pub fn recreate_swapchain() void {
     }
     create_framebuffer();
 
-    __system.vk_allocator.execute_all_op();
-    __system.vk_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
 
     set_fullscreen_ex();
 

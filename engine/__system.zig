@@ -21,8 +21,6 @@ const root = @import("root");
 
 pub var exiting: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
 
-pub var vk_allocator: *__vulkan_allocator = undefined;
-
 comptime {
     @export(&lua_writestring, .{ .name = "lua_writestring", .linkage = .strong });
 }
@@ -147,8 +145,8 @@ pub fn loop() void {
     }
     root.xfit_update();
 
-    vk_allocator.execute_all_op();
-    vk_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
 
     if (!ispause) {
         __vulkan.drawFrame();
