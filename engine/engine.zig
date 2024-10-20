@@ -39,7 +39,7 @@ pub fn init(
     callback: fn (*std.Build.Step.Compile, std.Build.ResolvedTarget) void,
     is_console: bool, //ignores for target mobile
 ) void {
-    var pro = std.process.Child.init(&[_][]const u8{ engine_path ++ "/shader_compile", engine_path }, b.allocator);
+    var pro = std.process.Child.init(&[_][]const u8{ engine_path ++ "/shader_compile.bat", engine_path }, b.allocator);
     _ = pro.spawnAndWait() catch unreachable;
 
     const build_options = b.addOptions();
@@ -185,9 +185,9 @@ pub fn init(
 
     var cmd: *std.Build.Step.Run = undefined;
     if (PLATFORM == XfitPlatform.android) {
-        cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}), ANDROID_BUILD_TOOL_VER });
+        cmd = b.addSystemCommand(&.{ engine_path ++ "/compile.bat", engine_path, b.install_path, "android", ANDROID_PATH, std.fmt.comptimePrint("{d}", .{ANDROID_VER}), ANDROID_BUILD_TOOL_VER });
     } else {
-        cmd = b.addSystemCommand(&.{ engine_path ++ "/compile", engine_path, b.install_path });
+        cmd = b.addSystemCommand(&.{engine_path ++ "/compile.bat"});
     }
     cmd.step.dependOn(install_step);
 

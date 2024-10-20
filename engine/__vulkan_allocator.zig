@@ -1181,18 +1181,20 @@ const vulkan_res = struct {
         self.*.map_size = 0;
         vk.vkUnmapMemory(__vulkan.vkDevice, self.*.mem);
     }
-    fn bind_any(self: *vulkan_res, _buf: anytype, _cell_count: usize) ERROR!*res_range {
+    fn bind_any(self: *vulkan_res, _buf: anytype, _cell_count: usize) ERROR!?*res_range {
         if (_cell_count == 0) unreachable;
         if (self.*.single) {
             __bind_any(self, self.*.mem, _buf, 0);
-            return undefined;
+            return null;
         }
         //system.print("start:{d}, size:{d}, free:{}\n", .{ self.*.cur.*.data.idx, self.*.cur.*.data.size, self.*.cur.*.data.free });
         var cur = self.*.cur;
         while (true) {
             if (cur.*.data.free and _cell_count <= cur.*.data.size) break;
             cur = cur.*.next orelse self.*.list.first.?;
-            if (cur == self.*.cur) return ERROR.device_memory_limit;
+            if (cur == self.*.cur) {
+                return ERROR.device_memory_limit;
+            }
         }
         //system.print("end:{d}, size:{d}, count:{d}\n", .{ cur.*.data.idx, cur.*.data.size, _cell_count });
         __bind_any(self, self.*.mem, _buf, cur.*.data.idx);
@@ -1310,7 +1312,7 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
             break :blk find_memory_type(mem_require.memoryTypeBits, prop) orelse unreachable;
         };
         if (value.*.info.memoryTypeIndex != tt) continue;
-        _out_idx.* = value.*.bind_any(_res, cnt) catch continue;
+        _out_idx.* = value.*.bind_any(_res, cnt) catch continue orelse unreachable;
         //system.print_debug("(1) {d} {d} {d} {d}", .{ max_size, value.*.cell_size, value.*.len, mem_require.alignment });
         res = value;
         break;
@@ -1347,7 +1349,7 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
                 if (value.*.cell_size != mem_require.alignment) continue;
                 const tt = find_memory_type(mem_require.memoryTypeBits, prop) orelse unreachable;
                 if (value.*.info.memoryTypeIndex != tt) continue;
-                _out_idx.* = value.*.bind_any(_res, cnt) catch continue;
+                _out_idx.* = value.*.bind_any(_res, cnt) catch continue orelse unreachable;
                 res = value;
                 break;
             }
@@ -1368,7 +1370,7 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
             res.?.* = R.?;
         }
 
-        _out_idx.* = res.?.*.bind_any(_res, cnt) catch unreachable; //발생할수 없는 오류
+        _out_idx.* = res.?.*.bind_any(_res, cnt) catch unreachable orelse unreachable; //발생할수 없는 오류
         buffer_ids.append(res.?) catch |err| {
             system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffer_ids.append\n", .{@errorName(err)});
             unreachable;
@@ -1391,16 +1393,14 @@ fn create_allocator_and_bind_single(_res: anytype) *vulkan_res {
 
     const max_size = mem_require.size;
     res = buffers.create() catch |err| {
-        system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.self.*.buffers.create\n", .{@errorName(err)});
-        unreachable;
+        system.handle_error3("__vulkan_allocator.create_allocator_and_bind.self.*.buffers.create", err);
     };
 
     res.?.* = vulkan_res.init_single(max_size, mem_require.memoryTypeBits);
 
     _ = res.?.*.bind_any(_res, 1) catch unreachable; //발생할수 없는 오류
     buffer_ids.append(res.?) catch |err| {
-        system.print_error("ERR {s} __vulkan_allocator.create_allocator_and_bind.buffer_ids.append\n", .{@errorName(err)});
-        unreachable;
+        system.handle_error3("__vulkan_allocator.create_allocator_and_bind.buffer_ids.append", err);
     };
     return res.?;
 }
