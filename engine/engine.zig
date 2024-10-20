@@ -3,6 +3,14 @@ const builtin = @import("builtin");
 
 pub const XfitPlatform = enum(u32) { windows, android, linux, mac, end };
 
+// set(CMAKE_C_COMPILER zig cc -target aarch64-linux-android)
+// set(CMAKE_CXX_COMPILER zig c++ -target aarch64-linux-android)
+// # include_directories(SYSTEM "C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include" -isystem "C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/x86_64-linux-android")
+// # add_link_options(-L"C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/x86_64-linux-android/libc.a")
+
+// include_directories(SYSTEM "C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include" -isystem "C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/aarch64-linux-android")
+// add_link_options(-L"C:/Android/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/aarch64-linux-android/libc.a")
+
 //* User Setting
 //크로스 플랫폼 빌드시 zig build -Dtarget=aarch64-windows(linux)
 //x86_64-windows(linux)
@@ -122,13 +130,6 @@ pub fn init(
             //result.linkSystemLibrary("VkLayer_khronos_validation");
             result.linkSystemLibrary("c");
             result.linkSystemLibrary("log");
-
-            result.addCSourceFile(.{
-                .file = b.path(engine_path ++ "/lib/android/libc.c"),
-                .flags = &.{
-                    "-O3", "-D__clang__", "-U_MSC_VER",
-                },
-            });
 
             for (lib_names) |name| {
                 result.addObjectFile(get_lazypath(b, std.fmt.allocPrint(b.allocator, "{s}/lib/android/{s}/{s}", .{ engine_path, get_arch_text(targets[i].cpu_arch.?), name }) catch unreachable));
