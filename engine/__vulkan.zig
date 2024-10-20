@@ -400,7 +400,7 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
         const cmd = commandBuffer.*.__command_buffers[fr][i];
         const beginInfo: vk.VkCommandBufferBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .flags = 0,
             .pInheritanceInfo = null,
         };
         var result = vk.vkBeginCommandBuffer(cmd, &beginInfo);

@@ -22,6 +22,21 @@ pub fn ceil_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
     }
 }
 
+pub fn floor_up(_num: anytype, _multiple: anytype) @TypeOf(_num) {
+    if (_multiple == 0)
+        return _num;
+
+    const remainder: @TypeOf(_num) = @abs(_num) % _multiple;
+    if (remainder == 0)
+        return _num;
+
+    if (_num < 0) {
+        return -(@abs(_num) - remainder);
+    } else {
+        return _num - remainder;
+    }
+}
+
 pub inline fn test_number_type(comptime T: type) void {
     switch (@typeInfo(T)) {
         .int, .float, .comptime_int, .comptime_float => {},

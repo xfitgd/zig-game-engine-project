@@ -15,7 +15,9 @@ const graphics = @import("graphics.zig");
 
 //16384*16384 = 256MB
 pub var BLOCK_LEN: usize = 16384 * 16384;
+pub var SPECIAL_BLOCK_LEN: usize = 16384 * 16384 / 8;
 pub var FORMAT: texture_format = undefined;
+pub var nonCoherentAtomSize: usize = 0;
 
 pub fn init_block_len() void {
     var i: u32 = 0;
@@ -46,6 +48,9 @@ pub fn init_block_len() void {
             BLOCK_LEN /= 2;
         }
     }
+    var p: vk.VkPhysicalDeviceProperties = undefined;
+    vk.vkGetPhysicalDeviceProperties(__vulkan.vk_physical_device, &p);
+    nonCoherentAtomSize = p.limits.nonCoherentAtomSize;
 }
 
 const MAX_IDX_COUNT = 4;
@@ -287,6 +292,7 @@ fn execute_create_buffer(self: *Self, buf: *vulkan_res_node(.buffer), _data: ?[]
     var result: c_int = undefined;
     if (buf.*.buffer_option.typ == .staging) {
         buf.*.buffer_option.use = .cpu;
+        buf.*.buffer_option.single = false;
     }
 
     const prop: c_uint = switch (buf.*.buffer_option.use) {
@@ -316,7 +322,7 @@ fn execute_create_buffer(self: *Self, buf: *vulkan_res_node(.buffer), _data: ?[]
             .len = buf.*.buffer_option.len,
             .use = .cpu,
             .typ = .staging,
-            .single = buf.*.buffer_option.single,
+            .single = false,
         }, _data);
     } else if (buf.*.buffer_option.typ == .staging) {
         if (_data == null) system.handle_error_msg2("staging buffer data can't null");
@@ -387,7 +393,7 @@ inline fn is_depth_format(fmt: texture_format) bool {
 }
 
 fn begin_single_time_commands(buf: vk.VkCommandBuffer) void {
-    const begin: vk.VkCommandBufferBeginInfo = .{ .flags = 0 };
+    const begin: vk.VkCommandBufferBeginInfo = .{ .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
     const result = vk.vkBeginCommandBuffer(buf, &begin);
     system.handle_error(result == vk.VK_SUCCESS, "begin_single_time_commands.vkBeginCommandBuffer : {d}", .{result});
 }
@@ -466,7 +472,7 @@ fn execute_create_texture(self: *Self, buf: *vulkan_res_node(.texture), _data: ?
             .len = img_info.extent.width * img_info.extent.width * img_info.extent.depth * img_info.arrayLayers * bit,
             .use = .cpu,
             .typ = .staging,
-            .single = buf.*.texture_option.single,
+            .single = false,
         }, _data);
     }
     result = vk.vkCreateImage(__vulkan.vkDevice, &img_info, null, &buf.*.res);
@@ -805,14 +811,14 @@ pub fn wait_all_op_finish(self: *Self) void {
     self.*.finish_mutex.unlock();
 }
 
-fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) u32 {
+fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) ?u32 {
     var i: u32 = 0;
     while (i < __vulkan.mem_prop.memoryTypeCount) : (i += 1) {
         if ((_type_filter & (@as(u32, 1) << @intCast(i)) != 0) and (__vulkan.mem_prop.memoryTypes[i].propertyFlags & _prop == _prop)) {
             return i;
         }
     }
-    system.handle_error_msg2("find_memory_type.memory_type_not_found");
+    return null;
 }
 
 fn append_op(self: *Self, node: operation_node) void {
@@ -963,10 +969,10 @@ const vulkan_res = struct {
     mem: vk.VkDeviceMemory,
     info: vk.VkMemoryAllocateInfo,
     this: *Self,
-    single: bool = false,
+    single: bool = false, //single이 true면 무조건 디바이스 메모리에
+    cached: bool = false,
     pool: MemoryPoolExtra(DoublyLinkedList(node).Node, .{}) = undefined,
     list: DoublyLinkedList(node) = undefined,
-    mutex: std.Thread.Mutex = .{},
 
     ///! 따로 vulkan_res.deinit2를 호출하지 않는다.
     fn deinit2(self: *vulkan_res) void {
@@ -978,22 +984,34 @@ const vulkan_res = struct {
     fn map_copy_execute(self: *vulkan_res, nodes: []?operation_node) void {
         var start: usize = std.math.maxInt(usize);
         var end: usize = std.math.minInt(usize);
-        if (!self.*.mutex.tryLock()) return;
-        const ranges = __system.allocator.alignedAlloc(vk.VkMappedMemoryRange, @alignOf(vk.VkMappedMemoryRange), nodes.len) catch unreachable;
-        defer __system.allocator.free(ranges);
-        for (nodes, ranges) |v, *r| {
-            const copy = v.?.map_copy;
-            const nd: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(copy.ires.get_idx()));
-            start = @min(start, nd.*.data.idx);
-            end = @max(end, nd.*.data.idx + nd.*.data.size);
-            r.memory = self.*.mem;
-            r.size = nd.*.data.size * self.*.cell_size;
-            r.offset = nd.*.data.idx * self.*.cell_size;
-            r.pNext = null;
-            r.sType = vk.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        var ranges: []vk.VkMappedMemoryRange = undefined;
+        if (self.*.cached) {
+            ranges = __system.allocator.alignedAlloc(vk.VkMappedMemoryRange, @alignOf(vk.VkMappedMemoryRange), nodes.len) catch unreachable;
+
+            for (nodes, ranges) |v, *r| {
+                const copy = v.?.map_copy;
+                const nd: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(copy.ires.get_idx()));
+                start = @min(start, nd.*.data.idx);
+                end = @max(end, nd.*.data.idx + nd.*.data.size);
+                r.memory = self.*.mem;
+                r.size = nd.*.data.size * self.*.cell_size;
+                r.offset = nd.*.data.idx * self.*.cell_size;
+                r.offset = math.floor_up(r.offset, nonCoherentAtomSize);
+                r.size = math.ceil_up(r.size, nonCoherentAtomSize);
+                r.pNext = null;
+                r.sType = vk.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            }
+        } else {
+            for (nodes) |v| {
+                const copy = v.?.map_copy;
+                const nd: *DoublyLinkedList(node).Node = @alignCast(@ptrCast(copy.ires.get_idx()));
+                start = @min(start, nd.*.data.idx);
+                end = @max(end, nd.*.data.idx + nd.*.data.size);
+            }
         }
 
         const size = end - start;
+        if (size == 242064) @breakpoint();
         if (self.*.map_start > start or self.*.map_size + self.*.map_start < end or self.*.map_size < end - start) {
             if (self.*.map_size > 0) {
                 self.*.unmap();
@@ -1004,7 +1022,9 @@ const vulkan_res = struct {
             self.*.map_size = size;
             self.*.map_start = start;
         } else {
-            _ = vk.vkInvalidateMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
+            if (self.*.cached) {
+                _ = vk.vkInvalidateMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
+            }
         }
         for (nodes) |v| {
             const copy = v.?.map_copy;
@@ -1013,16 +1033,15 @@ const vulkan_res = struct {
             //const en = (nd.*.data.idx + nd.*.data.size - start) * self.*.cell_size;
             @memcpy(self.*.map_data[st..(st + copy.address.len)], copy.address[0..copy.address.len]);
         }
-        _ = vk.vkFlushMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
-        self.*.mutex.unlock();
+        if (self.*.cached) {
+            _ = vk.vkFlushMappedMemoryRanges(__vulkan.vkDevice, @intCast(ranges.len), ranges.ptr);
+            __system.allocator.free(ranges);
+        }
     }
     pub fn is_empty(self: *vulkan_res) bool {
         return self.*.list.len == 1 and self.*.list.first.?.*.data.free;
     }
     pub fn deinit(self: *vulkan_res) void {
-        var mtx = self.*.mutex;
-        mtx.lock();
-        defer mtx.unlock();
         var i: usize = 0;
         while (i < self.*.this.*.buffer_ids.items.len) : (i += 1) {
             if (self.*.this.*.buffer_ids.items[i] == self) {
@@ -1034,13 +1053,13 @@ const vulkan_res = struct {
         self.*.deinit2();
         self.*.this.*.buffers.destroy(self);
     }
-    fn allocate_memory(_info: *const vk.VkMemoryAllocateInfo, _mem: *vk.VkDeviceMemory) void {
+    fn allocate_memory(_info: *const vk.VkMemoryAllocateInfo, _mem: *vk.VkDeviceMemory) bool {
         const result = vk.vkAllocateMemory(__vulkan.vkDevice, _info, null, _mem);
 
-        system.handle_error(result == vk.VK_SUCCESS, "vulkan_res.allocate_memory.vkAllocateMemory code : {d}", .{result});
+        return result == vk.VK_SUCCESS;
     }
     /// ! 따로 vulkan_res.init를 호출하지 않는다.
-    fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags, _this: *Self) vulkan_res {
+    fn init(_cell_size: usize, _len: usize, type_filter: u32, _prop: vk.VkMemoryPropertyFlags, _this: *Self) ?vulkan_res {
         var res = vulkan_res{
             .cell_size = _cell_size,
             .len = _len,
@@ -1048,13 +1067,16 @@ const vulkan_res = struct {
             .info = .{
                 .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .allocationSize = _len * _cell_size,
-                .memoryTypeIndex = find_memory_type(type_filter, _prop),
+                .memoryTypeIndex = find_memory_type(type_filter, _prop) orelse return null,
             },
             .this = _this,
             .list = .{},
             .pool = MemoryPoolExtra(DoublyLinkedList(node).Node, .{}).init(__system.allocator),
+            .cached = (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT == 0) and (_prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0),
         };
-        allocate_memory(&res.info, &res.mem);
+        if (!allocate_memory(&res.info, &res.mem)) {
+            return null;
+        }
 
         res.list.append(res.pool.create() catch system.handle_error_msg2("vulkan_res.init.res.pool.create"));
         res.list.first.?.*.data.free = true;
@@ -1072,12 +1094,12 @@ const vulkan_res = struct {
             .info = .{
                 .sType = vk.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .allocationSize = _cell_size,
-                .memoryTypeIndex = find_memory_type(type_filter, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+                .memoryTypeIndex = find_memory_type(type_filter, vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) orelse unreachable,
             },
             .this = _this,
             .single = true,
         };
-        allocate_memory(&res.info, &res.mem);
+        if (!allocate_memory(&res.info, &res.mem)) unreachable;
 
         return res;
     }
@@ -1222,10 +1244,18 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _prop: vk.VkMemoryPrope
     if (max_size < mem_require.size) {
         max_size = mem_require.size;
     }
+    var prop = _prop;
+    if (@TypeOf(_res) == vk.VkBuffer and max_size <= 256 and prop & vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
+        prop = vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    }
     const cnt = std.math.divCeil(usize, max_size, mem_require.alignment) catch 1;
     for (self.buffer_ids.items) |value| {
         if (value.*.cell_size != mem_require.alignment) continue;
-        if (value.*.info.memoryTypeIndex != find_memory_type(mem_require.memoryTypeBits, _prop)) continue;
+        const tt = find_memory_type(mem_require.memoryTypeBits, prop) orelse blk: {
+            prop = _prop;
+            break :blk find_memory_type(mem_require.memoryTypeBits, prop) orelse unreachable;
+        };
+        if (value.*.info.memoryTypeIndex != tt) continue;
         _out_idx.* = value.*.bind_any(_res, cnt) catch continue;
         //system.print_debug("(1) {d} {d} {d} {d}", .{ max_size, value.*.cell_size, value.*.len, mem_require.alignment });
         res = value;
@@ -1242,13 +1272,48 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _prop: vk.VkMemoryPrope
         //     std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
         //     _mem_require.*.alignment,
         // });
-        res.?.* = vulkan_res.init(
+        var BLK = if (prop == vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) SPECIAL_BLOCK_LEN else BLOCK_LEN;
+        if (prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0) {
+            max_size = math.ceil_up(max_size, nonCoherentAtomSize);
+            BLK = math.ceil_up(BLK, nonCoherentAtomSize);
+        }
+
+        const R = vulkan_res.init(
             mem_require.alignment,
-            std.math.divCeil(usize, @max(BLOCK_LEN, max_size), mem_require.alignment) catch 1,
+            std.math.divCeil(usize, @max(BLK, max_size), mem_require.alignment) catch 1,
             mem_require.memoryTypeBits,
-            _prop,
+            prop,
             self,
         );
+        if (R == null) {
+            self.*.buffers.destroy(res.?);
+            res = null;
+            prop = vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+            for (self.buffer_ids.items) |value| {
+                if (value.*.cell_size != mem_require.alignment) continue;
+                const tt = find_memory_type(mem_require.memoryTypeBits, prop) orelse unreachable;
+                if (value.*.info.memoryTypeIndex != tt) continue;
+                _out_idx.* = value.*.bind_any(_res, cnt) catch continue;
+                res = value;
+                break;
+            }
+            if (res == null) {
+                BLK = BLOCK_LEN;
+                if (prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0) {
+                    max_size = math.ceil_up(max_size, nonCoherentAtomSize);
+                    BLK = math.ceil_up(BLK, nonCoherentAtomSize);
+                }
+                res.?.* = vulkan_res.init(
+                    mem_require.alignment,
+                    std.math.divCeil(usize, @max(BLOCK_LEN, max_size), mem_require.alignment) catch 1,
+                    mem_require.memoryTypeBits,
+                    prop,
+                    self,
+                ) orelse unreachable;
+            }
+        } else {
+            res.?.* = R.?;
+        }
 
         _out_idx.* = res.?.*.bind_any(_res, cnt) catch unreachable; //발생할수 없는 오류
         self.*.buffer_ids.append(res.?) catch |err| {
