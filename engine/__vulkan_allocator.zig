@@ -1272,7 +1272,8 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _prop: vk.VkMemoryPrope
         //     std.math.divCeil(usize, BLOCK_LEN, std.math.divCeil(usize, cell, NODE_SIZE) catch 1) catch 1,
         //     _mem_require.*.alignment,
         // });
-        var BLK = if (prop == vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) SPECIAL_BLOCK_LEN else BLOCK_LEN;
+        const flag = (vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        var BLK = if (prop & flag == flag) SPECIAL_BLOCK_LEN else BLOCK_LEN;
         if (prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0) {
             max_size = math.ceil_up(max_size, nonCoherentAtomSize);
             BLK = math.ceil_up(BLK, nonCoherentAtomSize);
