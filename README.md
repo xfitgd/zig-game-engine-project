@@ -1,4 +1,4 @@
-# xfit : Zig 게임 엔진 프로젝트
+# Xfit : Zig 게임 엔진 프로젝트
 
 ## using libraries
 
