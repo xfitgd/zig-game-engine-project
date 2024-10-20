@@ -287,7 +287,7 @@ inline fn create_shader_state(vert_module: vk.VkShaderModule, frag_module: vk.Vk
 
 pub var vkInstance: vk.VkInstance = undefined;
 pub var vkDevice: vk.VkDevice = null;
-var vkSurface: vk.VkSurfaceKHR = null;
+pub var vkSurface: vk.VkSurfaceKHR = null;
 pub var vkRenderPass: vk.VkRenderPass = undefined;
 pub var vkRenderPassSampleClear: vk.VkRenderPass = undefined;
 pub var vkSwapchain: vk.VkSwapchainKHR = null;
@@ -308,6 +308,7 @@ var vkPresentQueue: vk.VkQueue = undefined;
 pub var vkExtent: vk.VkExtent2D = undefined;
 var vkExtent_rotation: vk.VkExtent2D = undefined;
 pub var vk_swapchain_frame_buffers: []__vulkan_allocator.frame_buffer = undefined;
+pub var vk_swapchain_frame_buffer_clears: []__vulkan_allocator.frame_buffer = undefined;
 var vk_swapchain_images: []__vulkan_allocator.vulkan_res_node(.texture) = undefined;
 
 pub var vk_physical_device: vk.VkPhysicalDevice = undefined;
@@ -391,13 +392,17 @@ fn cleanup_sync_object() void {
     }
 }
 
-fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
+fn recordCommandBuffer(commandBuffer: **render_command, fr: u32) void {
     if (commandBuffer.*.scene == null or commandBuffer.*.scene.?.len == 0) {
         return;
     }
     var i: usize = 0;
-    while (i < commandBuffer.*.__command_buffers[fr].len) : (i += 1) {
-        const cmd = commandBuffer.*.__command_buffers[fr][i];
+    if (commandBuffer.*.*.__command_buffers[fr].len < get_swapchain_image_length()) {
+        commandBuffer.*.*.deinit();
+        commandBuffer.* = render_command.init();
+    }
+    while (i < commandBuffer.*.*.__command_buffers[fr].len) : (i += 1) {
+        const cmd = commandBuffer.*.*.__command_buffers[fr][i];
         const beginInfo: vk.VkCommandBufferBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = 0,
@@ -431,7 +436,7 @@ fn recordCommandBuffer(commandBuffer: *render_command, fr: u32) void {
         vk.vkCmdSetViewport(cmd, 0, 1, @ptrCast(&viewport));
         vk.vkCmdSetScissor(cmd, 0, 1, @ptrCast(&scissor));
 
-        for (commandBuffer.scene.?) |value| {
+        for (commandBuffer.*.*.scene.?) |value| {
             value.*.__draw(cmd);
         }
 
@@ -912,6 +917,7 @@ pub fn vulkan_start() void {
         result = vk.vkCreateDevice(vk_physical_device, &deviceCreateInfo, null, &vkDevice);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateDevice : {d}", .{result});
     }
+    if (system.platform == .android) VK_EXT_full_screen_exclusive_support = false;
 
     if (graphicsFamilyIndex == presentFamilyIndex) {
         vk.vkGetDeviceQueue(vkDevice, graphicsFamilyIndex, 0, &vkGraphicsQueue);
@@ -1023,14 +1029,23 @@ pub fn vulkan_start() void {
         .pResolveAttachments = @ptrCast(&colorResolveAttachmentRef),
     };
 
+    const dependency: vk.VkSubpassDependency = .{
+        .srcSubpass = vk.VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        .srcAccessMask = 0,
+        .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+    };
+
     var renderPassInfo: vk.VkRenderPassCreateInfo = .{
         .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 3,
         .pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachmentSample, depthAttachmentSample, colorAttachmentResolve },
         .subpassCount = 1,
         .pSubpasses = &[_]vk.VkSubpassDescription{subpass_resolve},
-        .pDependencies = null,
-        .dependencyCount = 0,
+        .pDependencies = &dependency,
+        .dependencyCount = 1,
     };
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPass);
@@ -1325,8 +1340,6 @@ pub fn vulkan_destroy() void {
     vk.vkDestroySampler(vkDevice, nearest_sampler, null);
     //
 
-    cleanup_sync_object();
-
     vk.vkDestroyCommandPool(vkDevice, vkCommandPool, null);
 
     vk.vkDestroyShaderModule(vkDevice, quad_shape_vert_shader, null);
@@ -1355,6 +1368,7 @@ pub fn vulkan_destroy() void {
     //vk.vkDestroyDescriptorSetLayout(vkDevice, copy_screen_pipeline_set.descriptorSetLayout, null);
 
     cleanup_pipelines();
+    cleanup_sync_object();
 
     vk.vkDestroyRenderPass(vkDevice, vkRenderPass, null);
     vk.vkDestroyRenderPass(vkDevice, vkRenderPassSampleClear, null);
@@ -1381,10 +1395,15 @@ fn recreateSurface() void {
 
 fn cleanup_swapchain() void {
     if (vkSwapchain != null) {
+        __vulkan_allocator.execute_all_op();
+        __vulkan_allocator.wait_all_op_finish();
+
         var i: usize = 0;
         while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
             __system.allocator.free(vk_swapchain_frame_buffers[i].texs);
+            __system.allocator.free(vk_swapchain_frame_buffer_clears[i].texs);
             vk_swapchain_frame_buffers[i].destroy_no_async();
+            vk_swapchain_frame_buffer_clears[i].destroy_no_async();
         }
 
         depth_stencil_image_sample.clean();
@@ -1395,6 +1414,7 @@ fn cleanup_swapchain() void {
 
         //if (depth_stencil_image_sample.pvulkan_buffer != null and depth_stencil_image_sample.pvulkan_buffer.?.*.is_empty()) depth_stencil_image_sample.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
+        __system.allocator.free(vk_swapchain_frame_buffer_clears);
         i = 0;
         while (i < vk_swapchain_images.len) : (i += 1) {
             vk.vkDestroyImageView(vkDevice, vk_swapchain_images[i].__image_view, null);
@@ -1409,6 +1429,8 @@ fn cleanup_swapchain() void {
 
 fn create_framebuffer() void {
     vk_swapchain_frame_buffers = __system.allocator.alloc(__vulkan_allocator.frame_buffer, vk_swapchain_images.len) catch
+        system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer)");
+    vk_swapchain_frame_buffer_clears = __system.allocator.alloc(__vulkan_allocator.frame_buffer, vk_swapchain_images.len) catch
         system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer)");
 
     depth_stencil_image_sample.create_texture(.{
@@ -1448,33 +1470,53 @@ fn create_framebuffer() void {
         };
         @memcpy(vk_swapchain_frame_buffers[i].texs, texs[0..3]);
         vk_swapchain_frame_buffers[i].create();
+        vk_swapchain_frame_buffer_clears[i] = .{
+            .__renderPass = vkRenderPassSampleClear,
+            .texs = __system.allocator.alloc(*__vulkan_allocator.vulkan_res_node(.texture), 3) catch system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer.texs)"),
+        };
+        @memcpy(vk_swapchain_frame_buffer_clears[i].texs, texs[0..3]);
+        vk_swapchain_frame_buffer_clears[i].create();
     }
 
-    refesh_pre_matrix();
+    refresh_pre_matrix();
 }
 
 var rotate_mat: matrix = undefined;
 
-pub fn refesh_pre_matrix() void {
-    const orientation = window.get_screen_orientation();
-    rotate_mat = switch (orientation) {
-        .unknown => matrix.identity(),
-        .landscape90 => matrix.rotation2D(std.math.degreesToRadians(90.0)),
-        .landscape270 => matrix.rotation2D(std.math.degreesToRadians(270.0)),
-        .vertical180 => matrix.rotation2D(std.math.degreesToRadians(180.0)),
-        .vertical360 => matrix.identity(),
-    };
-    if (__pre_mat_uniform.res == null) {
-        __pre_mat_uniform.create_buffer(
-            .{
-                .len = @sizeOf(matrix),
-                .typ = .uniform,
-                .use = .cpu,
-            },
-            std.mem.sliceAsBytes(@as([*]const matrix, @ptrCast(&rotate_mat))[0..1]),
-        );
+pub fn refresh_pre_matrix() void {
+    if (system.platform == .android) {
+        const orientation = window.get_screen_orientation();
+        rotate_mat = switch (orientation) {
+            .unknown => matrix.identity(),
+            .landscape90 => matrix.rotation2D(std.math.degreesToRadians(90.0)),
+            .landscape270 => matrix.rotation2D(std.math.degreesToRadians(270.0)),
+            .vertical180 => matrix.rotation2D(std.math.degreesToRadians(180.0)),
+            .vertical360 => matrix.identity(),
+        };
+        if (__pre_mat_uniform.res == null) {
+            __pre_mat_uniform.create_buffer(
+                .{
+                    .len = @sizeOf(matrix),
+                    .typ = .uniform,
+                    .use = .cpu,
+                },
+                std.mem.sliceAsBytes(@as([*]const matrix, @ptrCast(&rotate_mat))[0..1]),
+            );
+        } else {
+            __pre_mat_uniform.copy_update(&rotate_mat);
+        }
     } else {
-        __pre_mat_uniform.copy_update(&rotate_mat);
+        if (__pre_mat_uniform.res == null) {
+            rotate_mat = matrix.identity();
+            __pre_mat_uniform.create_buffer(
+                .{
+                    .len = @sizeOf(matrix),
+                    .typ = .uniform,
+                    .use = .cpu,
+                },
+                std.mem.sliceAsBytes(@as([*]const matrix, @ptrCast(&rotate_mat))[0..1]),
+            );
+        }
     }
 }
 
@@ -1693,6 +1735,10 @@ pub fn recreate_swapchain() void {
         _ = vk.vkReleaseFullScreenExclusiveModeEXT(vkInstance, vkDevice, vkSwapchain);
         windowed = true;
     }
+
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
+
     wait_device_idle();
 
     if (system.platform == .android) {
@@ -1702,47 +1748,43 @@ pub fn recreate_swapchain() void {
     }
 
     cleanup_swapchain();
-    cleanup_sync_object();
     create_swapchain_and_imageviews();
     if (vkExtent.width <= 0 or vkExtent.height <= 0) {
-        create_sync_object();
         fullscreen_mutex.unlock();
+
+        __vulkan_allocator.execute_all_op();
+        __vulkan_allocator.wait_all_op_finish();
         return;
     }
     create_framebuffer();
-
-    __vulkan_allocator.execute_all_op();
-    __vulkan_allocator.wait_all_op_finish();
 
     set_fullscreen_ex();
 
     fullscreen_mutex.unlock();
 
-    create_sync_object();
-
     __render_command.refresh_all();
     root.xfit_size() catch |e| {
-        system.handle_error3("xfit_clean", e);
+        system.handle_error3("xfit_size", e);
     };
-}
 
-var drew_shape = false;
+    __vulkan_allocator.execute_all_op();
+    __vulkan_allocator.wait_all_op_finish();
+}
 
 pub fn drawFrame() void {
     var imageIndex: u32 = 0;
     const state = struct {
         var frame: usize = 0;
     };
-    if (system.platform == .android) {
-        if (__android.orientationChanged) {
-            recreate_swapchain();
-            __android.orientationChanged = false;
-        }
-    }
 
     if (vkExtent.width <= 0 or vkExtent.height <= 0) {
         recreate_swapchain();
         return;
+    } else if (system.platform == .android) {
+        if (__android.orientationChanged) {
+            recreate_swapchain();
+            __android.orientationChanged = false;
+        }
     }
 
     if (graphics.render_cmd != null) {
@@ -1761,16 +1803,13 @@ pub fn drawFrame() void {
 
         cmds[0] = vkCommandBuffer;
 
-        var refreshed = false;
+        __vulkan_allocator.execute_all_op();
+        __vulkan_allocator.wait_all_op_finish();
 
-        for (graphics.render_cmd.?, cmds[1..cmds.len]) |cmd, *v| {
-            if (@atomicLoad(bool, &cmd.*.__refesh[state.frame], .monotonic)) {
-                @atomicStore(bool, &cmd.*.__refesh[state.frame], false, .monotonic);
-                if (!refreshed) {
-                    drew_shape = false;
-                }
+        for (graphics.render_cmd.?, cmds[1..cmds.len]) |*cmd, *v| {
+            if (@atomicLoad(bool, &cmd.*.*.__refesh[state.frame], .monotonic)) {
+                @atomicStore(bool, &cmd.*.*.__refesh[state.frame], false, .monotonic);
                 recordCommandBuffer(cmd, @intCast(state.frame));
-                refreshed = true;
             }
             v.* = cmd.*.__command_buffers[state.frame][imageIndex];
         }
@@ -1791,7 +1830,7 @@ pub fn drawFrame() void {
         var renderPassInfo: vk.VkRenderPassBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = vkRenderPassSampleClear,
-            .framebuffer = vk_swapchain_frame_buffers[imageIndex].res,
+            .framebuffer = vk_swapchain_frame_buffer_clears[imageIndex].res,
             .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = vkExtent_rotation },
             .clearValueCount = 2,
             .pClearValues = &[_]vk.VkClearValue{ clearColor, clearDepthStencil },

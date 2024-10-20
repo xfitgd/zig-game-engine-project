@@ -744,31 +744,46 @@ fn thread_func() void {
             save_to_map_queue(&nres);
         }
         dataMutex.unlock();
-        _ = vk.vkResetCommandPool(__vulkan.vkDevice, cmd_pool, 0);
 
-        begin_single_time_commands(cmd);
+        var have_cmd: bool = false;
         for (op_save_queue.items) |*v| {
             if (v.* != null) {
                 switch (v.*.?) {
-                    .copy_buffer => execute_copy_buffer(v.*.?.copy_buffer.src, v.*.?.copy_buffer.target),
-                    .copy_buffer_to_image => execute_copy_buffer_to_image(v.*.?.copy_buffer_to_image.src, v.*.?.copy_buffer_to_image.target),
-                    .create_frame_buffer => execute_create_frame_buffer(v.*.?.create_frame_buffer.buf),
-                    .__update_descriptor_sets => execute_update_descriptor_sets(v.*.?.__update_descriptor_sets.sets),
+                    .copy_buffer, .copy_buffer_to_image, .create_frame_buffer, .__update_descriptor_sets => {
+                        have_cmd = true;
+                        break;
+                    },
                     else => continue,
                 }
-                v.* = null;
             }
         }
-        if (set_list.items.len > 0) {
-            vk.vkUpdateDescriptorSets(__vulkan.vkDevice, @intCast(set_list.items.len), set_list.items.ptr, 0, null);
-            for (set_list_res.items) |v| {
-                __system.allocator.free(v[0]);
-                __system.allocator.free(v[1]);
+        if (have_cmd) {
+            _ = vk.vkResetCommandPool(__vulkan.vkDevice, cmd_pool, 0);
+
+            begin_single_time_commands(cmd);
+            for (op_save_queue.items) |*v| {
+                if (v.* != null) {
+                    switch (v.*.?) {
+                        .copy_buffer => execute_copy_buffer(v.*.?.copy_buffer.src, v.*.?.copy_buffer.target),
+                        .copy_buffer_to_image => execute_copy_buffer_to_image(v.*.?.copy_buffer_to_image.src, v.*.?.copy_buffer_to_image.target),
+                        .create_frame_buffer => execute_create_frame_buffer(v.*.?.create_frame_buffer.buf),
+                        .__update_descriptor_sets => execute_update_descriptor_sets(v.*.?.__update_descriptor_sets.sets),
+                        else => continue,
+                    }
+                    v.* = null;
+                }
             }
-            set_list.resize(0) catch unreachable;
-            set_list_res.resize(0) catch unreachable;
+            if (set_list.items.len > 0) {
+                vk.vkUpdateDescriptorSets(__vulkan.vkDevice, @intCast(set_list.items.len), set_list.items.ptr, 0, null);
+                for (set_list_res.items) |v| {
+                    __system.allocator.free(v[0]);
+                    __system.allocator.free(v[1]);
+                }
+                set_list.resize(0) catch unreachable;
+                set_list_res.resize(0) catch unreachable;
+            }
+            end_single_time_commands(cmd);
         }
-        end_single_time_commands(cmd);
 
         for (op_save_queue.items) |*v| {
             if (v.* != null) {

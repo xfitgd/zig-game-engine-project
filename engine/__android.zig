@@ -6,6 +6,7 @@ const math = @import("math.zig");
 const point = math.point;
 const input = @import("input.zig");
 const __vulkan = @import("__vulkan.zig");
+const vk = __vulkan.vk;
 const __vulkan_allocator = @import("__vulkan_allocator.zig");
 
 const system = @import("system.zig");
@@ -466,7 +467,7 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
                     root.main();
                     app.inited = true;
                 } else {
-                    __vulkan.recreate_swapchain();
+                    orientationChanged = true;
                 }
             }
         },
@@ -487,6 +488,7 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             if (app.accelerometer_sensor != null) {
                 _ = android.ASensorEventQueue_disableSensor(app.sensor_event_queue, app.accelerometer_sensor);
             }
+            app.paused = true;
             __system.pause.store(true, std.builtin.AtomicOrder.monotonic);
             __system.activated.store(true, std.builtin.AtomicOrder.monotonic);
             root.xfit_activate(true, true) catch |e| {
@@ -494,7 +496,11 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
             };
         },
         AppEvent.APP_CMD_WINDOW_RESIZED => {
-            orientationChanged = true;
+            var prop: vk.VkSurfaceCapabilitiesKHR = undefined;
+            _ = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(__vulkan.vk_physical_device, __vulkan.vkSurface, &prop);
+            if (prop.currentExtent.width != __vulkan.vkExtent.width or prop.currentExtent.height != __vulkan.vkExtent.height) {
+                orientationChanged = true;
+            }
         },
         else => {},
     }
