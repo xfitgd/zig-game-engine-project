@@ -77,9 +77,8 @@ op_save_queue: ArrayList(?operation_node),
 op_map_queue: ArrayList(?operation_node),
 staging_buf_queue: MemoryPoolExtra(vulkan_res_node(.buffer), .{}),
 mutex: std.Thread.Mutex = .{},
-finish_mutex: std.Thread.Mutex = .{},
 cond: std.Thread.Condition = .{},
-finish_cond: std.Thread.Condition = .{},
+finish_sem: std.Thread.Semaphore = .{},
 execute: bool = false,
 exited: bool = false,
 cmd: vk.VkCommandBuffer = undefined,
@@ -792,8 +791,9 @@ fn thread_func(self: *Self) void {
         self.*.mutex.lock();
         self.*.execute = false;
         if (self.*.exited) break;
+
         self.*.mutex.unlock();
-        self.*.finish_cond.broadcast();
+        self.*.finish_sem.post();
 
         _ = self.*.staging_buf_queue.reset(.free_all);
         self.*.op_save_queue.resize(0) catch unreachable;
@@ -816,9 +816,7 @@ pub fn wait_all_op_finish(self: *Self) void {
         return;
     }
     self.*.mutex.unlock();
-    self.*.finish_mutex.lock();
-    self.*.finish_cond.wait(&self.*.finish_mutex);
-    self.*.finish_mutex.unlock();
+    self.*.finish_sem.wait();
 }
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) ?u32 {
