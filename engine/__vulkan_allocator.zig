@@ -18,6 +18,8 @@ pub var BLOCK_LEN: usize = 16384 * 16384;
 pub var SPECIAL_BLOCK_LEN: usize = 16384 * 16384 / 8;
 pub var FORMAT: texture_format = undefined;
 pub var nonCoherentAtomSize: usize = 0;
+pub var supported_cache_local: bool = false;
+pub var supported_noncache_local: bool = false;
 
 pub fn init_block_len() void {
     var i: u32 = 0;
@@ -51,6 +53,14 @@ pub fn init_block_len() void {
     var p: vk.VkPhysicalDeviceProperties = undefined;
     vk.vkGetPhysicalDeviceProperties(__vulkan.vk_physical_device, &p);
     nonCoherentAtomSize = p.limits.nonCoherentAtomSize;
+    i = 0;
+    while (i < __vulkan.mem_prop.memoryTypeCount) : (i += 1) {
+        if (__vulkan.mem_prop.memoryTypes[i].propertyFlags == vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            supported_cache_local = true;
+        } else if (__vulkan.mem_prop.memoryTypes[i].propertyFlags == vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            supported_noncache_local = true;
+        }
+    }
 }
 
 const MAX_IDX_COUNT = 4;
@@ -1072,7 +1082,7 @@ const vulkan_res = struct {
             .this = _this,
             .list = .{},
             .pool = MemoryPoolExtra(DoublyLinkedList(node).Node, .{}).init(__system.allocator),
-            .cached = (_prop & vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT == 0) and (_prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0),
+            .cached = (_prop & vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) and (_prop & vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT != 0),
         };
         if (!allocate_memory(&res.info, &res.mem)) {
             return null;
@@ -1246,7 +1256,11 @@ fn create_allocator_and_bind(self: *Self, _res: anytype, _prop: vk.VkMemoryPrope
     }
     var prop = _prop;
     if (@TypeOf(_res) == vk.VkBuffer and max_size <= 256 and prop & vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
-        prop = vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+        if (supported_cache_local) {
+            prop = vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+        } else if (supported_noncache_local) {
+            prop = vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+        }
     }
     const cnt = std.math.divCeil(usize, max_size, mem_require.alignment) catch 1;
     for (self.buffer_ids.items) |value| {
