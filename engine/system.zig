@@ -39,7 +39,7 @@ pub inline fn activated() bool {
 }
 
 pub inline fn exiting() bool {
-    return __system.exiting.load(std.builtin.AtomicOrder.monotonic);
+    return __system.exiting.load(std.builtin.AtomicOrder.acquire);
 }
 
 pub inline fn a_fn(func: anytype) @TypeOf(func) {

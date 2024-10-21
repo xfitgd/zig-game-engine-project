@@ -466,12 +466,11 @@ pub const texture = struct {
     // }
 };
 
+pub fn execute_and_wait_all_op() void {
+    __vulkan_allocator.execute_and_wait_all_op();
+}
 pub fn execute_all_op() void {
     __vulkan_allocator.execute_all_op();
-}
-
-pub fn wait_all_op_finish() void {
-    __vulkan_allocator.wait_all_op_finish();
 }
 
 pub const texture_array = struct {

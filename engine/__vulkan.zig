@@ -1395,8 +1395,7 @@ fn recreateSurface() void {
 
 fn cleanup_swapchain() void {
     if (vkSwapchain != null) {
-        __vulkan_allocator.execute_all_op();
-        __vulkan_allocator.wait_all_op_finish();
+        __vulkan_allocator.execute_and_wait_all_op();
 
         var i: usize = 0;
         while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
@@ -1409,8 +1408,7 @@ fn cleanup_swapchain() void {
         depth_stencil_image_sample.clean();
         color_image_sample.clean();
 
-        __vulkan_allocator.execute_all_op();
-        __vulkan_allocator.wait_all_op_finish();
+        __vulkan_allocator.execute_and_wait_all_op();
 
         //if (depth_stencil_image_sample.pvulkan_buffer != null and depth_stencil_image_sample.pvulkan_buffer.?.*.is_empty()) depth_stencil_image_sample.pvulkan_buffer.?.*.deinit();
         __system.allocator.free(vk_swapchain_frame_buffers);
@@ -1736,9 +1734,7 @@ pub fn recreate_swapchain() void {
         windowed = true;
     }
 
-    __vulkan_allocator.execute_all_op();
-    __vulkan_allocator.wait_all_op_finish();
-
+    __vulkan_allocator.execute_and_wait_all_op();
     wait_device_idle();
 
     if (system.platform == .android) {
@@ -1752,8 +1748,7 @@ pub fn recreate_swapchain() void {
     if (vkExtent.width <= 0 or vkExtent.height <= 0) {
         fullscreen_mutex.unlock();
 
-        __vulkan_allocator.execute_all_op();
-        __vulkan_allocator.wait_all_op_finish();
+        __vulkan_allocator.execute_and_wait_all_op();
         return;
     }
     create_framebuffer();
@@ -1767,8 +1762,7 @@ pub fn recreate_swapchain() void {
         system.handle_error3("xfit_size", e);
     };
 
-    __vulkan_allocator.execute_all_op();
-    __vulkan_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_and_wait_all_op();
 }
 
 pub fn drawFrame() void {
@@ -1803,8 +1797,7 @@ pub fn drawFrame() void {
 
         cmds[0] = vkCommandBuffer;
 
-        __vulkan_allocator.execute_all_op();
-        __vulkan_allocator.wait_all_op_finish();
+        __vulkan_allocator.execute_and_wait_all_op();
 
         for (graphics.render_cmd.?, cmds[1..cmds.len]) |*cmd, *v| {
             if (@atomicLoad(bool, &cmd.*.*.__refesh[state.frame], .monotonic)) {

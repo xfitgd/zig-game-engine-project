@@ -128,8 +128,7 @@ pub fn vulkan_android_start(vkInstance: __vulkan.vk.VkInstance, vkSurface: *__vu
 
 fn destroy_android() void {
     __vulkan.wait_device_idle();
-    __vulkan_allocator.execute_all_op();
-    __vulkan_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_and_wait_all_op();
 
     root.xfit_destroy() catch |e| {
         system.handle_error3("xfit_destroy", e);

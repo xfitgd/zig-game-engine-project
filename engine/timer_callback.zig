@@ -33,9 +33,9 @@ fn callback_(comptime function: anytype, args: anytype) bool {
 fn callback(wait_nanosec: u64, repeat: u64, comptime function: anytype, args: anytype) void {
     var re = repeat;
     if (re == 0) {
-        while (loop(wait_nanosec, function, args)) {}
+        while (loop(wait_nanosec, function, args) and !system.exiting()) {}
     } else {
-        while (re > 0 and loop(wait_nanosec, function, args)) : (re -= 1) {}
+        while (re > 0 and loop(wait_nanosec, function, args) and !system.exiting()) : (re -= 1) {}
     }
 }
 
@@ -54,9 +54,9 @@ fn callback2(
         if (!callback_(start_func, start_args)) return;
     }
     if (re == 0) {
-        while (loop(wait_nanosec, function, args)) {}
+        while (loop(wait_nanosec, function, args) and !system.exiting()) {}
     } else {
-        while (re > 0 and loop(wait_nanosec, function, args)) : (re -= 1) {}
+        while (re > 0 and loop(wait_nanosec, function, args) and !system.exiting()) : (re -= 1) {}
     }
     if (@TypeOf(end_func) != @TypeOf(null)) {
         _ = callback_(end_func, end_args);

@@ -246,6 +246,13 @@ pub fn xfit_init() !void {
         move_callback,
         .{},
     );
+
+    // _ = try timer_callback.start(
+    //     system.sec_to_nano_sec2(0, 1, 0, 0),
+    //     0,
+    //     multi_execute_and_wait,
+    //     .{},
+    // );
 }
 
 fn mouse_move(pos: math.point) void {
@@ -291,6 +298,12 @@ fn key_down(_key: input.key) void {
             },
         }
     }
+}
+
+//multi execute and wait test
+fn multi_execute_and_wait() !void {
+    graphics.execute_all_op();
+    graphics.execute_and_wait_all_op();
 }
 
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
@@ -353,9 +366,6 @@ pub fn xfit_destroy() !void {
 
     cmd.deinit();
     color_trans.deinit();
-
-    //graphics.execute_all_op();
-    //graphics.wait_all_op_finish();
 }
 
 ///after system clean

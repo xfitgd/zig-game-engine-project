@@ -76,8 +76,8 @@ var op_map_queue: ArrayList(?operation_node) = undefined;
 var staging_buf_queue: MemoryPoolExtra(vulkan_res_node(.buffer), .{}) = undefined;
 var mutex: std.Thread.Mutex = .{};
 var cond: std.Thread.Condition = .{};
-var finish_sem: std.Thread.Semaphore = .{};
-var execute: bool = false;
+var finish_cond: std.Thread.Condition = .{};
+var finish_mutex: std.Thread.Mutex = .{};
 var exited: bool = false;
 var cmd: vk.VkCommandBuffer = undefined;
 var cmd_pool: vk.VkCommandPool = undefined;
@@ -123,6 +123,7 @@ pub fn init() void {
 pub fn deinit() void {
     mutex.lock();
     exited = true;
+    cond_cnt = true;
     cond.signal();
     mutex.unlock();
     g_thread.join();
@@ -696,8 +697,10 @@ fn thread_func() void {
     while (true) {
         mutex.lock();
 
-        cond.wait(&mutex);
-        if (exited) {
+        while (cond_cnt == false) cond.wait(&mutex);
+        cond_cnt = false;
+        if (exited and op_queue.items.len == 0) {
+            finish_cond.broadcast();
             mutex.unlock();
             break;
         }
@@ -705,11 +708,6 @@ fn thread_func() void {
             op_save_queue.appendSlice(op_queue.items) catch unreachable;
             op_queue.resize(0) catch unreachable;
         } else {
-            execute = false;
-            mutex.unlock();
-            continue;
-        }
-        if (!execute) {
             mutex.unlock();
             continue;
         }
@@ -798,34 +796,44 @@ fn thread_func() void {
         }
 
         mutex.lock();
-        execute = false;
-        if (exited) break;
-
+        if (exited) {
+            finish_cond.broadcast();
+            mutex.unlock();
+            break;
+        }
+        finish_cond.broadcast();
         mutex.unlock();
-        finish_sem.post();
 
         _ = staging_buf_queue.reset(.free_all);
         op_save_queue.resize(0) catch unreachable;
     }
 }
 
+var cond_cnt: bool = false;
+//var finishcond_cnt: bool = false;
+
+pub fn execute_and_wait_all_op() void {
+    mutex.lock();
+    if (op_queue.items.len > 0) {
+        cond.signal();
+        cond_cnt = true;
+        finish_cond.wait(&mutex);
+    }
+    mutex.unlock();
+}
 pub fn execute_all_op() void {
     mutex.lock();
     if (op_queue.items.len > 0) {
-        execute = true;
         cond.signal();
+        cond_cnt = true;
     }
     mutex.unlock();
 }
 
-pub fn wait_all_op_finish() void {
+pub fn broadcast_op_finish() void {
     mutex.lock();
-    if (!execute) {
-        mutex.unlock();
-        return;
-    }
+    finish_cond.broadcast();
     mutex.unlock();
-    finish_sem.wait();
 }
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) ?u32 {

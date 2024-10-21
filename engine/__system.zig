@@ -147,8 +147,7 @@ pub fn loop() void {
         system.handle_error3("xfit_clean", e);
     };
 
-    __vulkan_allocator.execute_all_op();
-    __vulkan_allocator.wait_all_op_finish();
+    __vulkan_allocator.execute_and_wait_all_op();
 
     if (!ispause) {
         __vulkan.drawFrame();
