@@ -32,6 +32,22 @@ pub const indices = indices_(DEF_IDX_TYPE_);
 pub const dummy_vertices = [@sizeOf(vertices(u8))]u8;
 pub const dummy_indices = [@sizeOf(indices)]u8;
 
+pub inline fn execute_and_wait_all_op() void {
+    __vulkan_allocator.execute_and_wait_all_op();
+}
+pub inline fn execute_all_op() void {
+    __vulkan_allocator.execute_all_op();
+}
+pub inline fn lock_data() void {
+    __vulkan_allocator.lock_data();
+}
+pub inline fn trylock_data() bool {
+    return __vulkan_allocator.trylock_data();
+}
+pub inline fn unlock_data() void {
+    __vulkan_allocator.unlock_data();
+}
+
 pub fn take_vertices(dest_type: type, src_ptrmempool: anytype) !dest_type {
     return @as(dest_type, @alignCast(@ptrCast(try src_ptrmempool.*.create())));
 }
@@ -465,13 +481,6 @@ pub const texture = struct {
     //     __vulkan_allocator.copy_texture(self, _data, rect);
     // }
 };
-
-pub fn execute_and_wait_all_op() void {
-    __vulkan_allocator.execute_and_wait_all_op();
-}
-pub fn execute_all_op() void {
-    __vulkan_allocator.execute_all_op();
-}
 
 pub const texture_array = struct {
     const Self = @This();

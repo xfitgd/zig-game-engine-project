@@ -822,11 +822,21 @@ pub fn execute_all_op() void {
     mutex.unlock();
 }
 
-pub fn broadcast_op_finish() void {
-    mutex.lock();
-    finish_cond.broadcast();
-    mutex.unlock();
+pub fn lock_data() void {
+    dataMutex.lock();
 }
+pub fn trylock_data() bool {
+    return dataMutex.tryLock();
+}
+pub fn unlock_data() void {
+    dataMutex.unlock();
+}
+
+// fn broadcast_op_finish() void {
+//     mutex.lock();
+//     finish_cond.broadcast();
+//     mutex.unlock();
+// }
 
 fn find_memory_type(_type_filter: u32, _prop: vk.VkMemoryPropertyFlags) ?u32 {
     var i: u32 = 0;
