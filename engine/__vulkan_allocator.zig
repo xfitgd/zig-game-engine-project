@@ -54,7 +54,7 @@ pub fn init_block_len() void {
     }
     var p: vk.VkPhysicalDeviceProperties = undefined;
     vk.vkGetPhysicalDeviceProperties(__vulkan.vk_physical_device, &p);
-    nonCoherentAtomSize = p.limits.nonCoherentAtomSize;
+    nonCoherentAtomSize = @intCast(p.limits.nonCoherentAtomSize);
     i = 0;
     while (i < __vulkan.mem_prop.memoryTypeCount) : (i += 1) {
         if (__vulkan.mem_prop.memoryTypes[i].propertyFlags == vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_CACHED_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
@@ -1312,8 +1312,8 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
         unreachable;
     }
     var max_size = _max_size;
-    if (max_size < mem_require.size) {
-        max_size = mem_require.size;
+    if (max_size < @as(usize, @intCast(mem_require.size))) {
+        max_size = @intCast(mem_require.size);
     }
     var prop = _prop;
     if (@TypeOf(_res) == vk.VkBuffer and max_size <= 256 and prop & vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
@@ -1323,7 +1323,7 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
             prop = vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
         }
     }
-    const cnt = std.math.divCeil(usize, max_size, mem_require.alignment) catch 1;
+    const cnt = std.math.divCeil(usize, max_size, @intCast(mem_require.alignment)) catch 1;
     for (buffer_ids.items) |value| {
         if (value.*.cell_size != mem_require.alignment) continue;
         const tt = find_memory_type(mem_require.memoryTypeBits, prop) orelse blk: {
@@ -1353,10 +1353,9 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
             max_size = math.ceil_up(max_size, nonCoherentAtomSize);
             BLK = math.ceil_up(BLK, nonCoherentAtomSize);
         }
-
         const R = vulkan_res.init(
-            mem_require.alignment,
-            std.math.divCeil(usize, @max(BLK, max_size), mem_require.alignment) catch 1,
+            @intCast(mem_require.alignment),
+            std.math.divCeil(usize, @max(BLK, max_size), @intCast(mem_require.alignment)) catch 1,
             mem_require.memoryTypeBits,
             prop,
         );
@@ -1379,8 +1378,8 @@ fn create_allocator_and_bind(_res: anytype, _prop: vk.VkMemoryPropertyFlags, _ou
                     BLK = math.ceil_up(BLK, nonCoherentAtomSize);
                 }
                 res.?.* = vulkan_res.init(
-                    mem_require.alignment,
-                    std.math.divCeil(usize, @max(BLOCK_LEN, max_size), mem_require.alignment) catch 1,
+                    @intCast(mem_require.alignment),
+                    std.math.divCeil(usize, @max(BLOCK_LEN, max_size), @intCast(mem_require.alignment)) catch 1,
                     mem_require.memoryTypeBits,
                     prop,
                 ) orelse unreachable;
@@ -1410,7 +1409,7 @@ fn create_allocator_and_bind_single(_res: anytype) *vulkan_res {
         unreachable;
     }
 
-    const max_size = mem_require.size;
+    const max_size: usize = @intCast(mem_require.size);
     res = buffers.create() catch |err| {
         system.handle_error3("__vulkan_allocator.create_allocator_and_bind.self.*.buffers.create", err);
     };

@@ -698,7 +698,7 @@ pub fn vulkan_start() void {
         .applicationVersion = vk.VK_MAKE_API_VERSION(1, 0, 0, 0),
         .pEngineName = "No Engine",
         .engineVersion = vk.VK_MAKE_API_VERSION(1, 0, 0, 0),
-        .apiVersion = vk.VK_API_VERSION_1_3,
+        .apiVersion = vk.VK_API_VERSION_1_1,
     };
 
     var result: c_int = undefined;

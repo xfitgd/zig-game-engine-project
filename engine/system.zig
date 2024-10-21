@@ -207,6 +207,12 @@ pub inline fn dt() f64 {
 
 ///nanosec 1 / 1000000000 sec
 pub inline fn get_maxframe_u64() u64 {
+    if (@sizeOf(usize) == 4) {
+        const low: u64 = @atomicLoad(u32, @as(*u32, @ptrCast(&__system.init_set.maxframe)), std.builtin.AtomicOrder.monotonic);
+        const high: u64 = @atomicLoad(u32, &@as([*]u32, @ptrCast(&__system.init_set.maxframe))[1], std.builtin.AtomicOrder.monotonic);
+
+        return high << 32 | low;
+    }
     return @atomicLoad(u64, &__system.init_set.maxframe, std.builtin.AtomicOrder.monotonic);
 }
 pub inline fn get_maxframe() f64 {

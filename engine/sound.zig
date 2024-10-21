@@ -192,7 +192,7 @@ pub fn play_sound(path: []const u8, volume: f32, loop: bool) !?*Self {
         system.print_error("miniaudio.ma_decode_memory {d}\n", .{result});
         return std.posix.UnexpectedError.Unexpected;
     }
-    self.*.source.?.*.out_data = @as([*]u8, @ptrCast(output.?))[0 .. self.*.source.?.*.size_in_frames * self.*.source.?.*.channels];
+    self.*.source.?.*.out_data = @as([*]u8, @ptrCast(output.?))[0..@intCast(self.*.source.?.*.size_in_frames * self.*.source.?.*.channels)];
 
     const audio_buf_config: miniaudio.ma_audio_buffer_config = .{
         .channels = self.*.source.?.*.channels,
@@ -311,7 +311,7 @@ pub fn decode_sound_memory(data: []const u8) !*sound_source {
         system.print_error("miniaudio.ma_decode_memory {d}\n", .{result});
         return std.posix.UnexpectedError.Unexpected;
     }
-    self.*.out_data = @as([*]u8, @ptrCast(output.?))[0 .. self.*.size_in_frames * self.*.channels];
+    self.*.out_data = @as([*]u8, @ptrCast(output.?))[0..@intCast(self.*.size_in_frames * self.*.channels)];
     return self;
 }
 

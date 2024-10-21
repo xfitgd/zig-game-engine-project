@@ -34,6 +34,7 @@ inline fn get_arch_text(arch: std.Target.Cpu.Arch) []const u8 {
     return switch (arch) {
         .x86_64 => "x86_64",
         .aarch64 => "aarch64",
+        .arm => "arm",
         else => unreachable,
     };
 }
@@ -57,19 +58,19 @@ pub fn init(
 
     const arch_text = comptime [_][]const u8{
         "aarch64-linux-android",
-        //"arm-linux-androideabi", not support vulkan
+        "arm-linux-androideabi",
         //"i686-linux-android",
         "x86_64-linux-android",
     };
     const out_arch_text = comptime [_][]const u8{
         "../lib/arm64-v8a",
-        //"armeabi-v7a",
+        "../lib/armeabi-v7a",
         //"../lib/x86",
         "../lib/x86_64",
     };
     const targets = [_]std.Target.Query{
         .{ .os_tag = .linux, .cpu_arch = .aarch64, .abi = .android, .cpu_features_add = std.Target.aarch64.featureSet(&.{.v8a}) },
-        //.{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
+        .{ .os_tag = .linux, .cpu_arch = .arm, .abi = .android, .cpu_features_add = std.Target.arm.featureSet(&.{.v7a}) },
         //.{ .os_tag = .linux, .cpu_arch = .x86, .abi = .android },
         .{ .os_tag = .linux, .cpu_arch = .x86_64, .abi = .android },
     };
