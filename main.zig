@@ -93,6 +93,11 @@ fn error_func(text: []u8, stack_trace: []u8) void {
 var g_rect_button: *components.button = undefined;
 var move_callback_thread: std.Thread = undefined;
 
+var text_shape: *graphics.iobject = undefined;
+var rect_button: *graphics.iobject = undefined;
+var img: *graphics.iobject = undefined;
+var anim_img: *graphics.iobject = undefined;
+
 pub fn xfit_init() !void {
     // const luaT = lua.c.luaL_newstate();
     // defer lua.c.lua_close(luaT);
@@ -115,12 +120,13 @@ pub fn xfit_init() !void {
     try g_proj.init_matrix_orthographic(CANVAS_W, CANVAS_H);
     g_proj.build(.cpu);
 
-    const text_shape = try objects_mem_pool.create();
-    const rect_button = try objects_mem_pool.create();
-    const img = try objects_mem_pool.create();
-    const anim_img = try objects_mem_pool.create();
-    g_camera = graphics.camera.init(.{ 0, 0, -3, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
+    g_camera = graphics.camera.init(.{ 0, 0, -1, 1 }, .{ 0, 0, 0, 1 }, .{ 0, 1, 0, 1 });
     g_camera.build();
+
+    text_shape = try objects_mem_pool.create();
+    rect_button = try objects_mem_pool.create();
+    img = try objects_mem_pool.create();
+    anim_img = try objects_mem_pool.create();
 
     rect_button.* = .{ ._button = components.button.init(.{ .rect = math.rect.calc_with_canvas(button_area_rect, CANVAS_W, CANVAS_H) }) };
     try components.button.make_square_button(rect_button_srcs[0..2], .{ 100, 50 }, allocator);
@@ -193,7 +199,7 @@ pub fn xfit_init() !void {
     text_shape.*._shape.src = &shape_src;
     text_shape.*._shape.extra_src = extra_src[0..1];
 
-    text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200, 0, 0));
+    text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200, 0, 0.5));
     text_shape.*.build();
 
     color_trans = graphics.color_transform.init();
@@ -208,7 +214,7 @@ pub fn xfit_init() !void {
     img.*._image.color_tran = &color_trans;
     img.*._image.transform.camera = &g_camera;
     img.*._image.transform.projection = &g_proj;
-    img.*._image.transform.model = matrix.scaling(2, 2, 1.0);
+    img.*._image.transform.model = matrix.scaling(2, 2, 1.0).multiply(&matrix.translation(0, 0, 0.7));
     img.*.build();
 
     anim_img.*._anim_image.transform.camera = &g_camera;
@@ -275,6 +281,7 @@ fn touch_up(touch_idx: u32, pos: math.point) void {
     g_rect_button.on_touch_up(touch_idx, pos);
 }
 
+var image_front: bool = false;
 fn key_down(_key: input.key) void {
     if (_key == input.key.F4) {
         if (window.get_screen_mode() == .WINDOW) {
@@ -294,6 +301,10 @@ fn key_down(_key: input.key) void {
             else => {
                 if (_key == input.key.Esc) {
                     system.exit();
+                } else if (_key == input.key.Enter) {
+                    img.*._image.transform.model = matrix.scaling(2, 2, 1.0).multiply(&matrix.translation(0, 0, if (image_front) 0.7 else 0.3));
+                    image_front = !image_front;
+                    img.*._image.transform.copy_update();
                 }
             },
         }
@@ -309,13 +320,13 @@ fn multi_execute_and_wait() !void {
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {
     if (!system.exiting()) {
-        cmd.scene.?[1].*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0));
+        text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0.5));
     } else return false;
 
     shape_src.color[3] += 0.005;
     if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
 
-    cmd.scene.?[1].*._shape.transform.copy_update();
+    text_shape.*._shape.transform.copy_update();
     shape_src.copy_color_update();
 
     dx += 1;

@@ -478,10 +478,10 @@ fn cleanup_pipelines() void {
 fn create_pipelines() void {
     const defDepthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
         .stencilTestEnable = vk.VK_FALSE,
-        .depthTestEnable = vk.VK_FALSE,
-        .depthWriteEnable = vk.VK_FALSE,
+        .depthTestEnable = vk.VK_TRUE,
+        .depthWriteEnable = vk.VK_TRUE,
         .depthBoundsTestEnable = vk.VK_FALSE,
-        .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
+        .depthCompareOp = vk.VK_COMPARE_OP_LESS_OR_EQUAL,
     };
     {
         const vertexInputInfo: vk.VkPipelineVertexInputStateCreateInfo = .{
@@ -567,10 +567,10 @@ fn create_pipelines() void {
         };
         const depthStencilState = vk.VkPipelineDepthStencilStateCreateInfo{
             .stencilTestEnable = vk.VK_TRUE,
-            .depthTestEnable = vk.VK_FALSE,
-            .depthWriteEnable = vk.VK_FALSE,
+            .depthTestEnable = vk.VK_TRUE,
+            .depthWriteEnable = vk.VK_TRUE,
             .depthBoundsTestEnable = vk.VK_FALSE,
-            .depthCompareOp = vk.VK_COMPARE_OP_NEVER,
+            .depthCompareOp = vk.VK_COMPARE_OP_LESS_OR_EQUAL,
             .flags = 0,
             .maxDepthBounds = 0,
             .minDepthBounds = 0,
@@ -1035,7 +1035,7 @@ pub fn vulkan_start() void {
         .srcStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         .srcAccessMask = 0,
         .dstStageMask = vk.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | vk.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = vk.VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
     };
 
     var renderPassInfo: vk.VkRenderPassCreateInfo = .{
@@ -1812,7 +1812,7 @@ pub fn drawFrame() void {
         };
 
         const clearColor: vk.VkClearValue = .{ .color = .{ .float32 = .{ 0, 0, 0, 0 } } };
-        const clearDepthStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 0 } };
+        const clearDepthStencil: vk.VkClearValue = .{ .depthStencil = .{ .stencil = 0, .depth = 1 } };
         var renderPassInfo: vk.VkRenderPassBeginInfo = .{
             .sType = vk.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = vkRenderPassSampleClear,
