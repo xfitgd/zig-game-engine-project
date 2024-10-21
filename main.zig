@@ -99,14 +99,23 @@ var img: *graphics.iobject = undefined;
 var anim_img: *graphics.iobject = undefined;
 
 pub fn xfit_init() !void {
-    // const luaT = lua.c.luaL_newstate();
-    // defer lua.c.lua_close(luaT);
-    // lua.c.luaL_openlibs(luaT);
+    var luaT = lua.luaL_newstate();
+    defer luaT.lua_close();
+    luaT.luaL_openlibs();
 
-    // var ress = lua.c.luaL_loadfilex(luaT, "test.lua", null);
-    // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
-    // ress = lua.c.lua_getglobal(luaT, "Printhello");
-    // ress = lua.c.lua_pcallk(luaT, 0, 0, 0, 0, null);
+    try luaT.luaL_loadstring("function Printhello()\nprint(\"hello\")\nend\n");
+    try luaT.lua_pcall(0, 0, 0);
+    _ = luaT.lua_getglobal("Printhello");
+    try luaT.lua_pcall(0, 0, 0);
+
+    try luaT.luaL_dostring("print(\"hello\")\n");
+
+    if (system.platform != .android) {
+        try luaT.luaL_loadfile("test.lua");
+        try luaT.lua_pcall(0, 0, 0);
+        _ = luaT.lua_getglobal("Printhello");
+        try luaT.lua_pcall(0, 0, 0);
+    }
 
     system.set_error_handling_func(error_func);
 
