@@ -229,9 +229,6 @@ const operation_node = union(enum) {
     destroy_image: struct {
         buf: *vulkan_res_node(.texture),
     },
-    create_frame_buffer: struct {
-        buf: *frame_buffer,
-    },
     __update_descriptor_sets: struct {
         sets: []descriptor_set,
     },
@@ -281,14 +278,30 @@ pub fn update_descriptor_sets(sets: []descriptor_set) void {
 
 pub const frame_buffer = struct {
     res: vk.VkFramebuffer = null,
-    texs: []*vulkan_res_node(.texture),
-    __renderPass: vk.VkRenderPass,
 
-    pub fn create(self: *frame_buffer) void {
-        append_op(.{ .create_frame_buffer = .{ .buf = self } });
+    pub fn create_no_async(self: *frame_buffer, texs: []*vulkan_res_node(.texture), __renderPass: vk.VkRenderPass) void {
+        const attachments = __system.allocator.alloc(vk.VkImageView, texs.len) catch system.handle_error_msg2("create_no_async vk.VkImageView alloc");
+        defer __system.allocator.free(attachments);
+        for (attachments, texs) |*v, t| {
+            v.* = t.*.__image_view;
+        }
+
+        var frameBufferInfo: vk.VkFramebufferCreateInfo = .{
+            .sType = vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = __renderPass,
+            .attachmentCount = @intCast(texs.len),
+            .pAttachments = attachments.ptr,
+            .width = texs[0].*.texture_option.width,
+            .height = texs[0].*.texture_option.height,
+            .layers = 1,
+        };
+
+        const result = vk.vkCreateFramebuffer(__vulkan.vkDevice, &frameBufferInfo, null, &self.*.res);
+        system.handle_error(result == vk.VK_SUCCESS, "execute_create_frame_buffer vkCreateFramebuffer : {d}", .{result});
     }
     pub fn destroy_no_async(self: *frame_buffer) void {
         vk.vkDestroyFramebuffer(__vulkan.vkDevice, self.*.res, null);
+        self.*.res = null;
     }
 };
 
@@ -532,26 +545,6 @@ fn execute_create_texture(buf: *vulkan_res_node(.texture), _data: ?[]const u8) v
 fn execute_destroy_image(buf: *vulkan_res_node(.texture)) void {
     buf.*.__destroy_image();
 }
-fn execute_create_frame_buffer(buf: *frame_buffer) void {
-    const attachments = __system.allocator.alloc(vk.VkImageView, buf.*.texs.len) catch system.handle_error_msg2("execute_create_frame_buffer vk.VkImageView alloc");
-    defer __system.allocator.free(attachments);
-    for (attachments, buf.*.texs) |*v, t| {
-        v.* = t.*.__image_view;
-    }
-
-    var frameBufferInfo: vk.VkFramebufferCreateInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .renderPass = buf.*.__renderPass,
-        .attachmentCount = @intCast(buf.*.texs.len),
-        .pAttachments = attachments.ptr,
-        .width = buf.*.texs[0].*.texture_option.width,
-        .height = buf.*.texs[0].*.texture_option.height,
-        .layers = 1,
-    };
-
-    const result = vk.vkCreateFramebuffer(__vulkan.vkDevice, &frameBufferInfo, null, &buf.*.res);
-    system.handle_error(result == vk.VK_SUCCESS, "execute_create_frame_buffer vkCreateFramebuffer : {d}", .{result});
-}
 
 fn execute_register_descriptor_pool(__size: []descriptor_pool_size) void {
     _ = __size;
@@ -747,7 +740,7 @@ fn thread_func() void {
         for (op_save_queue.items) |*v| {
             if (v.* != null) {
                 switch (v.*.?) {
-                    .copy_buffer, .copy_buffer_to_image, .create_frame_buffer, .__update_descriptor_sets => {
+                    .copy_buffer, .copy_buffer_to_image, .__update_descriptor_sets => {
                         have_cmd = true;
                         break;
                     },
@@ -764,7 +757,6 @@ fn thread_func() void {
                     switch (v.*.?) {
                         .copy_buffer => execute_copy_buffer(v.*.?.copy_buffer.src, v.*.?.copy_buffer.target),
                         .copy_buffer_to_image => execute_copy_buffer_to_image(v.*.?.copy_buffer_to_image.src, v.*.?.copy_buffer_to_image.target),
-                        .create_frame_buffer => execute_create_frame_buffer(v.*.?.create_frame_buffer.buf),
                         .__update_descriptor_sets => execute_update_descriptor_sets(v.*.?.__update_descriptor_sets.sets),
                         else => continue,
                     }

@@ -1399,8 +1399,6 @@ fn cleanup_swapchain() void {
 
         var i: usize = 0;
         while (i < vk_swapchain_frame_buffers.len) : (i += 1) {
-            __system.allocator.free(vk_swapchain_frame_buffers[i].texs);
-            __system.allocator.free(vk_swapchain_frame_buffer_clears[i].texs);
             vk_swapchain_frame_buffers[i].destroy_no_async();
             vk_swapchain_frame_buffer_clears[i].destroy_no_async();
         }
@@ -1455,28 +1453,21 @@ fn create_framebuffer() void {
         .single = true,
     }, null, null);
 
+    refresh_pre_matrix();
+
+    __vulkan_allocator.execute_and_wait_all_op();
     var i: usize = 0;
     while (i < vk_swapchain_images.len) : (i += 1) {
-        vk_swapchain_frame_buffers[i] = .{
-            .__renderPass = vkRenderPass,
-            .texs = __system.allocator.alloc(*__vulkan_allocator.vulkan_res_node(.texture), 3) catch system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer.texs)"),
-        };
-        const texs = [_]*__vulkan_allocator.vulkan_res_node(.texture){
+        vk_swapchain_frame_buffers[i] = .{};
+        var texs = [_]*__vulkan_allocator.vulkan_res_node(.texture){
             &color_image_sample,
             &depth_stencil_image_sample,
             &vk_swapchain_images[i],
         };
-        @memcpy(vk_swapchain_frame_buffers[i].texs, texs[0..3]);
-        vk_swapchain_frame_buffers[i].create();
-        vk_swapchain_frame_buffer_clears[i] = .{
-            .__renderPass = vkRenderPassSampleClear,
-            .texs = __system.allocator.alloc(*__vulkan_allocator.vulkan_res_node(.texture), 3) catch system.handle_error_msg2("__vulkan.create_framebuffer.allocator.alloc(__vulkan_allocator.frame_buffer.texs)"),
-        };
-        @memcpy(vk_swapchain_frame_buffer_clears[i].texs, texs[0..3]);
-        vk_swapchain_frame_buffer_clears[i].create();
+        vk_swapchain_frame_buffers[i].create_no_async(texs[0..3], vkRenderPass);
+        vk_swapchain_frame_buffer_clears[i] = .{};
+        vk_swapchain_frame_buffer_clears[i].create_no_async(texs[0..3], vkRenderPassSampleClear);
     }
-
-    refresh_pre_matrix();
 }
 
 var rotate_mat: matrix = undefined;
