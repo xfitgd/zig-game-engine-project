@@ -1052,6 +1052,8 @@ pub fn vulkan_start() void {
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPass : {d}", .{result});
 
     renderPassInfo.pAttachments = &[_]vk.VkAttachmentDescription{ colorAttachmentSampleClear, depthAttachmentSampleClear, colorAttachmentResolve };
+    renderPassInfo.pDependencies = null;
+    renderPassInfo.dependencyCount = 0;
 
     result = vk.vkCreateRenderPass(vkDevice, &renderPassInfo, null, &vkRenderPassSampleClear);
     system.handle_error(result == vk.VK_SUCCESS, "__vulkan.vulkan_start.vkCreateRenderPass vkRenderPassSampleClear : {d}", .{result});
