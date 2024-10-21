@@ -114,6 +114,8 @@ fn render_thread(param: win32.LPVOID) callconv(std.os.windows.WINAPI) DWORD {
         system.handle_error3("xfit_init", e);
     };
 
+    __vulkan_allocator.execute_and_wait_all_op();
+
     while (!__system.exiting.load(std.builtin.AtomicOrder.acquire)) {
         __system.loop();
     }

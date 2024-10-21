@@ -147,7 +147,9 @@ pub fn loop() void {
         system.handle_error3("xfit_clean", e);
     };
 
-    __vulkan_allocator.execute_and_wait_all_op();
+    if (__vulkan_allocator.execute_all_cmd_per_update.load(.monotonic)) {
+        __vulkan_allocator.execute_all_op();
+    }
 
     if (!ispause) {
         __vulkan.drawFrame();

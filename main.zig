@@ -317,27 +317,37 @@ fn multi_execute_and_wait() !void {
     graphics.execute_and_wait_all_op();
 }
 
+var update_mutex: std.Thread.Mutex = .{};
+
+var dx: f32 = 0;
+var shape_alpha: f32 = 0.0;
+
 //다른 스레드에서 테스트 xfit_update에서 해도됨.
 fn move_callback() !bool {
-    if (!system.exiting()) {
-        text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0.5));
-    } else return false;
+    if (system.exiting()) return false;
 
-    shape_src.color[3] += 0.005;
-    if (shape_src.color[3] >= 1.0) shape_src.color[3] = 0;
+    update_mutex.lock();
+    shape_alpha += 0.005;
+    if (shape_alpha >= 1.0) shape_alpha = 0;
+    dx += 1;
+    if (dx >= 200) {
+        dx = 0;
+        //system.print("{d}\n", .{system.dt()});
+    }
+    update_mutex.unlock();
+
+    return true;
+}
+
+pub fn xfit_update() !void {
+    update_mutex.lock();
+    shape_src.color[3] = shape_alpha;
+    text_shape.*._shape.transform.model = matrix.scaling(5, 5, 1.0).multiply(&matrix.translation(-200 + dx, 0, 0.5));
+    update_mutex.unlock();
 
     text_shape.*._shape.transform.copy_update();
     shape_src.copy_color_update();
 
-    dx += 1;
-    if (dx >= 200) {
-        dx = 0;
-        //system.print("{d}\n", .{system.dt_i64()});
-    }
-    return true;
-}
-var dx: f32 = 0;
-pub fn xfit_update() !void {
     anim.update(system.dt());
 }
 

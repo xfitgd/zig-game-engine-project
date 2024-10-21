@@ -21,6 +21,8 @@ pub var nonCoherentAtomSize: usize = 0;
 pub var supported_cache_local: bool = false;
 pub var supported_noncache_local: bool = false;
 
+pub var execute_all_cmd_per_update: std.atomic.Value(bool) = std.atomic.Value(bool).init(true);
+
 pub fn init_block_len() void {
     var i: u32 = 0;
     var change: bool = false;
@@ -75,6 +77,7 @@ var op_save_queue: ArrayList(?operation_node) = undefined;
 var op_map_queue: ArrayList(?operation_node) = undefined;
 var staging_buf_queue: MemoryPoolExtra(vulkan_res_node(.buffer), .{}) = undefined;
 var mutex: std.Thread.Mutex = .{};
+pub var submit_mutex: std.Thread.Mutex = .{};
 var cond: std.Thread.Condition = .{};
 var finish_cond: std.Thread.Condition = .{};
 var finish_mutex: std.Thread.Mutex = .{};
@@ -409,16 +412,6 @@ inline fn is_depth_format(fmt: texture_format) bool {
     };
 }
 
-fn begin_single_time_commands(buf: vk.VkCommandBuffer) void {
-    const begin: vk.VkCommandBufferBeginInfo = .{ .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
-    const result = vk.vkBeginCommandBuffer(buf, &begin);
-    system.handle_error(result == vk.VK_SUCCESS, "begin_single_time_commands.vkBeginCommandBuffer : {d}", .{result});
-}
-fn end_single_time_commands(buf: vk.VkCommandBuffer) void {
-    const result = vk.vkEndCommandBuffer(buf);
-    system.handle_error(result == vk.VK_SUCCESS, "end_single_time_commands.vkEndCommandBuffer : {d}", .{result});
-    __vulkan.queue_submit_and_wait(&[_]vk.VkCommandBuffer{buf});
-}
 fn execute_copy_buffer(src: *vulkan_res_node(.buffer), target: *vulkan_res_node(.buffer)) void {
     const copyRegion: vk.VkBufferCopy = .{ .size = target.*.buffer_option.len, .srcOffset = 0, .dstOffset = 0 };
     vk.vkCmdCopyBuffer(cmd, src.*.res, target.*.res, 1, &copyRegion);
@@ -749,9 +742,13 @@ fn thread_func() void {
             }
         }
         if (have_cmd) {
+            submit_mutex.lock();
             _ = vk.vkResetCommandPool(__vulkan.vkDevice, cmd_pool, 0);
 
-            begin_single_time_commands(cmd);
+            const begin: vk.VkCommandBufferBeginInfo = .{ .flags = vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
+            var result = vk.vkBeginCommandBuffer(cmd, &begin);
+            system.handle_error(result == vk.VK_SUCCESS, "begin_single_time_commands.vkBeginCommandBuffer : {d}", .{result});
+
             for (op_save_queue.items) |*v| {
                 if (v.* != null) {
                     switch (v.*.?) {
@@ -772,7 +769,19 @@ fn thread_func() void {
                 set_list.resize(0) catch unreachable;
                 set_list_res.resize(0) catch unreachable;
             }
-            end_single_time_commands(cmd);
+            result = vk.vkEndCommandBuffer(cmd);
+            system.handle_error(result == vk.VK_SUCCESS, "end_single_time_commands.vkEndCommandBuffer : {d}", .{result});
+            const submitInfo: vk.VkSubmitInfo = .{
+                .sType = vk.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &cmd,
+            };
+
+            result = vk.vkQueueSubmit(__vulkan.vkGraphicsQueue, 1, &submitInfo, null);
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueSubmit : {d}", .{result});
+            submit_mutex.unlock();
+            result = vk.vkQueueWaitIdle(__vulkan.vkGraphicsQueue);
+            system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueWaitIdle : {d}", .{result});
         }
 
         for (op_save_queue.items) |*v| {

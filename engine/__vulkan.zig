@@ -1675,19 +1675,6 @@ pub fn set_fullscreen_ex() void {
     }
 }
 
-pub fn queue_submit_and_wait(bufs: []const vk.VkCommandBuffer) void {
-    const submitInfo: vk.VkSubmitInfo = .{
-        .sType = vk.VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = @intCast(bufs.len),
-        .pCommandBuffers = bufs.ptr,
-    };
-
-    var result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, null);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueSubmit : {d}", .{result});
-    result = vk.vkQueueWaitIdle(vkGraphicsQueue);
-    system.handle_error(result == vk.VK_SUCCESS, "__vulkan.queue_submit_and_wait.vkQueueWaitIdle : {d}", .{result});
-}
-
 ///rect는 Y가 작을수록 위
 // pub fn copy_buffer_to_image2(src_buf: vk.VkBuffer, dst_img: vk.VkImage, rect: math.recti, depth: c_uint) void {
 //     if (rect.left >= rect.right or rect.top >= rect.bottom) system.handle_error_msg2("copy_buffer_to_image2 invaild rect");
@@ -1790,8 +1777,6 @@ pub fn drawFrame() void {
 
         cmds[0] = vkCommandBuffer;
 
-        __vulkan_allocator.execute_and_wait_all_op();
-
         for (graphics.render_cmd.?, cmds[1..cmds.len]) |*cmd, *v| {
             if (@atomicLoad(bool, &cmd.*.*.__refesh[state.frame], .monotonic)) {
                 @atomicStore(bool, &cmd.*.*.__refesh[state.frame], false, .monotonic);
@@ -1836,9 +1821,10 @@ pub fn drawFrame() void {
         result = vk.vkResetFences(vkDevice, 1, &vkInFlightFence[state.frame]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkResetFences : {d}", .{result});
 
+        __vulkan_allocator.submit_mutex.lock();
         result = vk.vkQueueSubmit(vkGraphicsQueue, 1, &submitInfo, vkInFlightFence[state.frame]);
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.drawFrame.vkQueueSubmit : {d}", .{result});
-
+        __vulkan_allocator.submit_mutex.unlock();
         result = vk.vkWaitForFences(vkDevice, 1, &vkInFlightFence[state.frame], vk.VK_TRUE, std.math.maxInt(u64));
         system.handle_error(result == vk.VK_SUCCESS, "__vulkan.wait_for_fences.vkWaitForFences : {d}", .{result});
 
@@ -1852,7 +1838,9 @@ pub fn drawFrame() void {
             .pSwapchains = &swapChains,
             .pImageIndices = &imageIndex,
         };
+        __vulkan_allocator.submit_mutex.lock();
         result = vk.vkQueuePresentKHR(vkPresentQueue, &presentInfo);
+        __vulkan_allocator.submit_mutex.unlock();
 
         if (result == vk.VK_ERROR_OUT_OF_DATE_KHR) {
             recreate_swapchain();

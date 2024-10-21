@@ -464,6 +464,8 @@ fn engine_handle_cmd(_cmd: AppEvent) void {
                 if (!app.inited) {
                     //세로일 경우 원래대로?
                     root.main();
+
+                    __vulkan_allocator.execute_and_wait_all_op();
                     app.inited = true;
                 } else {
                     orientationChanged = true;

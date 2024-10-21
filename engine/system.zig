@@ -9,6 +9,7 @@ const __android = @import("__android.zig");
 const __windows = @import("__windows.zig");
 const window = @import("window.zig");
 const __vulkan = @import("__vulkan.zig");
+const __vulkan_allocator = @import("__vulkan_allocator.zig");
 const __system = @import("__system.zig");
 const math = @import("math.zig");
 const file = @import("file.zig");
@@ -392,4 +393,10 @@ pub fn exit() void {
         __system.exiting.store(true, .release);
         @atomicStore(bool, &__android.app.destroryRequested, true, .monotonic);
     }
+}
+pub fn set_execute_all_cmd_per_update(_on_off: bool) void {
+    __vulkan_allocator.execute_all_cmd_per_update.store(_on_off, .monotonic);
+}
+pub fn get_execute_all_cmd_per_update() bool {
+    return __vulkan_allocator.execute_all_cmd_per_update.load(.monotonic);
 }
